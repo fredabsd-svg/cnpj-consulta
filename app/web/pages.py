@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
@@ -17,6 +17,7 @@ from app import __version__
 from app.config import get_settings
 from app.core import formatting
 from app.core.cnpj_validator import normalize_or_none, strip
+from app.core.inbound_limit import check_company_lookup_limit
 from app.services.company_query import query_company_async
 from app.services.history_service import is_favorite, list_favorites, recent_queries
 from app.services.partner_search import MAX_LIMIT, search_partners
@@ -89,7 +90,11 @@ async def consulta(request: Request, cnpj: str = "") -> Response:
     return RedirectResponse(f"/empresa/{normalized}", status_code=303)
 
 
-@router.get("/empresa/{cnpj}", response_class=HTMLResponse)
+@router.get(
+    "/empresa/{cnpj}",
+    response_class=HTMLResponse,
+    dependencies=[Depends(check_company_lookup_limit)],
+)
 async def empresa(request: Request, cnpj: str, atualizar: bool = False) -> HTMLResponse:
     normalized = normalize_or_none(cnpj)
     if normalized is None:

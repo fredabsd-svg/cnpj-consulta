@@ -17,15 +17,17 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[No
 
     monkeypatch.setenv("APP_ENV", "development")
     monkeypatch.setenv("APP_DEBUG", "true")
+    monkeypatch.setenv("APP_HOST", "127.0.0.1")
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'data' / 'app.db'}")
     monkeypatch.setenv("RECEITA_LOCAL_PATH", str(tmp_path / "data" / "receita" / "receita.db"))
     monkeypatch.setenv("CACHE_TTL_SECONDS", "60")
     monkeypatch.setenv("BRASILAPI_ENABLED", "true")
     monkeypatch.setenv("MINHA_RECEITA_ENABLED", "true")
     monkeypatch.setenv("CNPJWS_ENABLED", "false")
-    monkeypatch.setenv("RECEITAWS_ENABLED", "true")
+    monkeypatch.setenv("RECEITAWS_ENABLED", "true")  # testes ainda cobrem a fonte
     monkeypatch.setenv("RECEITA_LOCAL_ENABLED", "false")
     monkeypatch.setenv("CACHE_BACKEND", "sqlite")
+    monkeypatch.setenv("INBOUND_RATE_LIMIT_PER_MINUTE", "1000")
     # Sem esperas reais entre retentativas nos testes
     monkeypatch.setenv("REQUEST_BACKOFF_SECONDS", "0")
 
@@ -36,6 +38,10 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[No
     from app.providers.registry import get_registry
 
     get_registry.cache_clear()
+
+    from app.core.inbound_limit import reset_inbound_limiter
+
+    reset_inbound_limiter()
 
     # Reseta engine/Factory do SQLAlchemy para apontar para o DB isolado
     import app.db as _db
@@ -48,6 +54,7 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[No
     # Limpa caches no teardown tambem (para o proximo teste)
     get_settings.cache_clear()
     get_registry.cache_clear()
+    reset_inbound_limiter()
     _db._engine = None
     _db._SessionLocal = None
 

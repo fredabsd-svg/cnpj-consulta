@@ -19,6 +19,12 @@ def _mk(provider: str, raw: dict, *, mirror: bool = False) -> ProviderResult:
     )
 
 
+def _scalar_conflicts(conflitos: list[str]) -> list[str]:
+    """Ignora conflitos de campos compostos (logradouro costuma divergir entre fontes)."""
+    prefixes = ("Endereco:", "Telefones:", "CNAE principal:", "CNAEs secundarios:")
+    return [c for c in conflitos if not c.startswith(prefixes)]
+
+
 class TestReconcile:
     def test_primary_wins_over_mirror(self, brasilapi_payload, receitaws_payload):
         # BrasilAPI (espelho) e ReceitaWS (espelho); Minha Receita e a primaria
@@ -66,7 +72,9 @@ class TestReconcile:
         c = reconcile("19131243000197", results)
         assert any(conflito.startswith("Razao social") for conflito in c.conflitos)
 
-    def test_same_company_in_different_formats_has_no_conflict(self, brasilapi_payload, receitaws_payload):
+    def test_same_company_in_different_formats_has_no_scalar_conflict(
+        self, brasilapi_payload, receitaws_payload
+    ):
         """Regressao: formato diferente ("399-9 - Associacao Privada") nao e conflito."""
         results = [
             _mk("minha_receita", brasilapi_payload),
@@ -74,7 +82,7 @@ class TestReconcile:
             _mk("receitaws", receitaws_payload, mirror=True),
         ]
         c = reconcile("19131243000197", results)
-        assert c.conflitos == []
+        assert _scalar_conflicts(c.conflitos) == []
         assert c.natureza_juridica == "Associacao Privada"
         assert c.situacao_cadastral == "ATIVA"
         assert c.porte == "DEMAIS"
@@ -89,7 +97,7 @@ class TestReconcile:
             "19131243000197",
             [_mk("minha_receita", brasilapi_payload), _mk("receitaws", receitaws_payload, mirror=True)],
         )
-        assert both.conflitos == []
+        assert _scalar_conflicts(both.conflitos) == []
 
     def test_partners_not_duplicated(self, brasilapi_payload, receitaws_payload):
         """Regressao: ReceitaWS sem data de entrada duplicava cada socio."""
@@ -182,3 +190,77 @@ class TestReconcile:
         brasil = next(f for f in c.fontes if f.fonte == "brasilapi")
         assert minha.espelho_rfb is False
         assert brasil.espelho_rfb is True
+
+    def test_compound_provenance_for_address_cnae_phones(self, brasilapi_payload):
+        c = reconcile("19131243000197", [_mk("minha_receita", brasilapi_payload)])
+        campos = {p.campo for p in c.campos_procedencia}
+        assert "endereco" in campos
+        assert "telefones" in campos
+        assert "cnae_principal" in campos
+        assert c.endereco is not None
+        assert c.endereco.cep == "01311902"
+        phone_prov = [p for p in c.campos_procedencia if p.campo == "telefones"]
+        assert phone_prov[0].confianca == "media"
+
+    def test_address_conflict_when_sources_diverge(self):
+        a = {
+            "razao_social": "EMPRESA X",
+            "logradouro": "RUA UM",
+            "numero": "10",
+            "municipio": "SAO PAULO",
+            "uf": "SP",
+            "cep": "01001000",
+        }
+        b = {
+            "nome": "EMPRESA X",
+            "logradouro": "RUA DOIS",
+            "numero": "10",
+            "municipio": "SAO PAULO",
+            "uf": "SP",
+            "cep": "01001000",
+        }
+        c = reconcile(
+            "19131243000197",
+            [_mk("minha_receita", a), _mk("receitaws", b, mirror=True)],
+        )
+        assert any(x.startswith("Endereco:") for x in c.conflitos)
+        assert {p.confianca for p in c.campos_procedencia if p.campo == "endereco"} == {"baixa"}
+        # Primaria vence
+        assert c.endereco is not None
+        assert "UM" in (c.endereco.logradouro or "").upper()
+
+    def test_cnae_principal_conflict(self):
+        a = {"razao_social": "X", "cnae_fiscal": 6201501, "cnae_fiscal_descricao": "Dev software"}
+        b = {
+            "nome": "X",
+            "atividade_principal": [{"code": "62.01-5-01", "text": "Outro"}],
+        }
+        # Mesmo codigo apos normalizacao -> sem conflito
+        ok = reconcile(
+            "19131243000197",
+            [_mk("minha_receita", a), _mk("receitaws", b, mirror=True)],
+        )
+        assert not any(x.startswith("CNAE principal:") for x in ok.conflitos)
+        assert ok.cnae_principal.codigo == "6201501"
+
+        b2 = {
+            "nome": "X",
+            "atividade_principal": [{"code": "47.11-3-01", "text": "Comercio"}],
+        }
+        bad = reconcile(
+            "19131243000197",
+            [_mk("minha_receita", a), _mk("receitaws", b2, mirror=True)],
+        )
+        assert any(x.startswith("CNAE principal:") for x in bad.conflitos)
+
+    def test_phones_agree_across_formats(self, brasilapi_payload, receitaws_payload):
+        c = reconcile(
+            "19131243000197",
+            [
+                _mk("minha_receita", brasilapi_payload),
+                _mk("receitaws", receitaws_payload, mirror=True),
+            ],
+        )
+        assert not any(x.startswith("Telefones:") for x in c.conflitos)
+        phone_conf = {p.confianca for p in c.campos_procedencia if p.campo == "telefones"}
+        assert phone_conf == {"alta"}

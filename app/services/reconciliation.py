@@ -76,6 +76,10 @@ _CONFLICT_FIELDS = (
     "opcao_simples",
     "opcao_mei",
     "matriz_filial",
+    "endereco",
+    "telefones",
+    "cnae_principal",
+    "cnaes_secundarios",
 )
 
 
@@ -475,6 +479,111 @@ def _comparable_value(value: Any) -> str | None:
     return comparable(value)
 
 
+def _address_key(addr: Address) -> str:
+    """Chave canonica: ignora diferencas so de formatacao."""
+    parts = [
+        comparable(addr.logradouro),
+        comparable(addr.numero),
+        comparable(addr.complemento),
+        comparable(addr.bairro),
+        comparable(addr.municipio),
+        comparable(addr.uf),
+        addr.cep or None,
+    ]
+    return "|".join(p or "" for p in parts)
+
+
+def _address_display(addr: Address) -> str:
+    bits: list[str] = []
+    if addr.logradouro:
+        bits.append(addr.logradouro)
+    if addr.numero:
+        bits.append(addr.numero)
+    if addr.bairro:
+        bits.append(addr.bairro)
+    cidade = "/".join(filter(None, [addr.municipio, addr.uf]))
+    if cidade:
+        bits.append(cidade)
+    if addr.cep:
+        bits.append(addr.cep)
+    return ", ".join(bits) if bits else "(vazio)"
+
+
+def _phones_key(phones: list[Phone]) -> str:
+    return "|".join(sorted(f"{(p.ddd or '')}{(p.numero or '')}" for p in phones))
+
+
+def _phones_display(phones: list[Phone]) -> str:
+    return "; ".join(f"({p.ddd}) {p.numero}" for p in phones) if phones else "(vazio)"
+
+
+def _cnae_principal_key(cnae: CNAE) -> str:
+    return cnae.codigo
+
+
+def _cnae_principal_display(cnae: CNAE) -> str:
+    if cnae.descricao:
+        return f"{cnae.codigo} - {cnae.descricao}"
+    return cnae.codigo
+
+
+def _cnaes_secundarios_key(cnaes: list[CNAE]) -> str:
+    return "|".join(sorted(c.codigo for c in cnaes))
+
+
+def _cnaes_secundarios_display(cnaes: list[CNAE]) -> str:
+    return ", ".join(sorted(c.codigo for c in cnaes)) if cnaes else "(vazio)"
+
+
+def _record_field(
+    *,
+    field: str,
+    label: str,
+    non_empty: list[tuple[str, Any]],
+    conflict_enabled: bool,
+    by_provider: dict[str, ProviderResult],
+    display_fn: Callable[[Any], str],
+    key_fn: Callable[[Any], str | None],
+    provenance: list[FieldProvenance],
+    conflitos: list[str],
+) -> Any | None:
+    """Resolve um campo (escalar ou composto), anexa procedencia e conflitos."""
+    if not non_empty:
+        return None
+    resolved = non_empty[0][1]
+    distinct = {key_fn(v) for _, v in non_empty}
+    groups = {_SOURCE_GROUP.get(p, p) for p, _ in non_empty}
+    if len(distinct) > 1:
+        confianca, obs = "baixa", "valor diverge entre fontes"
+        if conflict_enabled:
+            detalhes = "; ".join(f"{p}: {display_fn(v)}" for p, v in non_empty)
+            conflitos.append(f"{label}: {detalhes}")
+    elif len(groups) >= 2:
+        confianca, obs = "alta", None
+    else:
+        confianca = "media"
+        obs = (
+            "fonte unica"
+            if len(non_empty) == 1
+            else "confirmado apenas por espelho da mesma base"
+        )
+
+    for p, v in non_empty:
+        src = by_provider.get(p)
+        provenance.append(
+            FieldProvenance(
+                campo=field,
+                valor=display_fn(v),
+                fonte=p,
+                data_consulta=src.fetched_at if src else None,
+                data_atualizacao_fonte=src.updated_at if src else None,
+                confianca=confianca,
+                observacao=obs,
+            )
+        )
+    return resolved
+
+
 def reconcile(cnpj: str, results: list[ProviderResult]) -> CompanyUnified:
     """Combina os resultados de N provedores em um CompanyUnified."""
     fontes = [
@@ -491,7 +600,9 @@ def reconcile(cnpj: str, results: list[ProviderResult]) -> CompanyUnified:
         for r in results
     ]
 
-    valid = sorted((r for r in results if r.http_status == 200 and r.raw), key=lambda r: _rank(r.provider))
+    valid = sorted(
+        (r for r in results if r.http_status == 200 and r.raw), key=lambda r: _rank(r.provider)
+    )
     if not valid:
         return CompanyUnified(cnpj=cnpj, cnpj_formatado=_format_cnpj(cnpj), fontes=fontes)
 
@@ -503,47 +614,88 @@ def reconcile(cnpj: str, results: list[ProviderResult]) -> CompanyUnified:
     provenance: list[FieldProvenance] = []
     conflitos: list[str] = []
 
-    for field in _LABELS:
+    for field, label in _LABELS.items():
         non_empty = [(p, f[field]) for p, f in extracted if f.get(field) not in (None, "")]
-        if not non_empty:
-            resolved[field] = None
-            continue
-        resolved[field] = non_empty[0][1]  # valor da fonte de maior prioridade
+        resolved[field] = _record_field(
+            field=field,
+            label=label,
+            non_empty=non_empty,
+            conflict_enabled=field in _CONFLICT_FIELDS,
+            by_provider=by_provider,
+            display_fn=_display,
+            key_fn=_comparable_value,
+            provenance=provenance,
+            conflitos=conflitos,
+        )
 
-        distinct = {_comparable_value(v) for _, v in non_empty}
-        groups = {_SOURCE_GROUP.get(p, p) for p, _ in non_empty}
-        if len(distinct) > 1:
-            confianca, obs = "baixa", "valor diverge entre fontes"
-            if field in _CONFLICT_FIELDS:
-                detalhes = "; ".join(f"{p}: {_display(v)}" for p, v in non_empty)
-                conflitos.append(f"{_LABELS[field]}: {detalhes}")
-        elif len(groups) >= 2:
-            confianca, obs = "alta", None
-        else:
-            confianca = "media"
-            obs = "fonte unica" if len(non_empty) == 1 else "confirmado apenas por espelho da mesma base"
+    # ---- Compostos: endereco, telefones, CNAEs (mesma logica de confianca) ----
+    addr_entries = [
+        (r.provider, addr)
+        for r in valid
+        if (addr := _address_from(r.raw, r.provider)) is not None
+    ]
+    endereco = _record_field(
+        field="endereco",
+        label="Endereco",
+        non_empty=addr_entries,
+        conflict_enabled=True,
+        by_provider=by_provider,
+        display_fn=_address_display,
+        key_fn=_address_key,
+        provenance=provenance,
+        conflitos=conflitos,
+    )
 
-        for p, v in non_empty:
-            src = by_provider.get(p)
-            provenance.append(
-                FieldProvenance(
-                    campo=field,
-                    valor=_display(v),
-                    fonte=p,
-                    data_consulta=src.fetched_at if src else None,
-                    data_atualizacao_fonte=src.updated_at if src else None,
-                    confianca=confianca,
-                    observacao=obs,
-                )
-            )
+    phone_entries = [
+        (r.provider, phones)
+        for r in valid
+        if (phones := _phones_from(r.raw, r.provider))
+    ]
+    telefones = _record_field(
+        field="telefones",
+        label="Telefones",
+        non_empty=phone_entries,
+        conflict_enabled=True,
+        by_provider=by_provider,
+        display_fn=_phones_display,
+        key_fn=_phones_key,
+        provenance=provenance,
+        conflitos=conflitos,
+    )
 
-    def _first(extractor: Callable[[dict[str, Any], str], Any]) -> Any:
-        """Primeiro valor nao vazio seguindo a prioridade das fontes."""
-        for r in valid:
-            value = extractor(r.raw, r.provider)
-            if value:
-                return value
-        return None
+    cnae_entries = [
+        (r.provider, cnae)
+        for r in valid
+        if (cnae := _cnae_principal_from(r.raw, r.provider)) is not None
+    ]
+    cnae_principal = _record_field(
+        field="cnae_principal",
+        label="CNAE principal",
+        non_empty=cnae_entries,
+        conflict_enabled=True,
+        by_provider=by_provider,
+        display_fn=_cnae_principal_display,
+        key_fn=_cnae_principal_key,
+        provenance=provenance,
+        conflitos=conflitos,
+    )
+
+    sec_entries = [
+        (r.provider, secs)
+        for r in valid
+        if (secs := _cnaes_secundarios_from(r.raw, r.provider))
+    ]
+    cnaes_secundarios = _record_field(
+        field="cnaes_secundarios",
+        label="CNAEs secundarios",
+        non_empty=sec_entries,
+        conflict_enabled=True,
+        by_provider=by_provider,
+        display_fn=_cnaes_secundarios_display,
+        key_fn=_cnaes_secundarios_key,
+        provenance=provenance,
+        conflitos=conflitos,
+    )
 
     return CompanyUnified(
         cnpj=cnpj,
@@ -557,11 +709,11 @@ def reconcile(cnpj: str, results: list[ProviderResult]) -> CompanyUnified:
         natureza_juridica=resolved["natureza_juridica"],
         porte=resolved["porte"],
         capital_social=resolved["capital_social"],
-        endereco=_first(_address_from),
-        telefones=_first(_phones_from) or [],
+        endereco=endereco,
+        telefones=telefones or [],
         email=resolved["email"],
-        cnae_principal=_first(_cnae_principal_from),
-        cnaes_secundarios=_first(_cnaes_secundarios_from) or [],
+        cnae_principal=cnae_principal,
+        cnaes_secundarios=cnaes_secundarios or [],
         opcao_simples=resolved["opcao_simples"],
         opcao_mei=resolved["opcao_mei"],
         matriz_filial=resolved["matriz_filial"],

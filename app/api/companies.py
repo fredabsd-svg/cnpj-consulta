@@ -5,15 +5,17 @@ from __future__ import annotations
 import csv
 import io
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 
+from app.core.inbound_limit import check_company_lookup_limit
 from app.schemas.company import CompanyUnified
 from app.services.company_query import query_company_async
 
 router = APIRouter(prefix="/api/companies", tags=["companies"])
 
 _REFRESH = Query(False, description="Ignora o cache e consulta as fontes novamente")
+_LOOKUP_DEPS = [Depends(check_company_lookup_limit)]
 
 
 async def _load(cnpj: str, atualizar: bool = False) -> CompanyUnified:
@@ -23,13 +25,13 @@ async def _load(cnpj: str, atualizar: bool = False) -> CompanyUnified:
         raise HTTPException(status_code=400, detail="CNPJ invalido") from None
 
 
-@router.get("/{cnpj}", response_model=CompanyUnified)
+@router.get("/{cnpj}", response_model=CompanyUnified, dependencies=_LOOKUP_DEPS)
 async def get_company(cnpj: str, atualizar: bool = _REFRESH) -> CompanyUnified:
     """Consulta unificada do CNPJ (numerico ou alfanumerico) em todos os provedores habilitados."""
     return await _load(cnpj, atualizar)
 
 
-@router.get("/{cnpj}/sources")
+@router.get("/{cnpj}/sources", dependencies=_LOOKUP_DEPS)
 async def get_sources(cnpj: str) -> dict:
     """Tabela de procedencia isolada (sem dados da empresa)."""
     company = await _load(cnpj)
@@ -41,7 +43,7 @@ async def get_sources(cnpj: str) -> dict:
     }
 
 
-@router.get("/{cnpj}/partners")
+@router.get("/{cnpj}/partners", dependencies=_LOOKUP_DEPS)
 async def get_partners(cnpj: str) -> dict:
     """Quadro societario (apenas dados publicos)."""
     company = await _load(cnpj)
@@ -56,7 +58,7 @@ def _download(content: str | bytes, media_type: str, filename: str) -> Response:
     )
 
 
-@router.get("/{cnpj}/export.json")
+@router.get("/{cnpj}/export.json", dependencies=_LOOKUP_DEPS)
 async def export_json(cnpj: str) -> Response:
     """Exporta a consulta unificada em JSON para download."""
     company = await _load(cnpj)
@@ -65,7 +67,7 @@ async def export_json(cnpj: str) -> Response:
     )
 
 
-@router.get("/{cnpj}/export.csv")
+@router.get("/{cnpj}/export.csv", dependencies=_LOOKUP_DEPS)
 async def export_csv(
     cnpj: str,
     flatten: bool = Query(False, description="Se true, achata em uma unica linha"),
@@ -127,5 +129,5 @@ async def export_csv(
         for c in company.conflitos:
             writer.writerow(["conflito", c])
     text = buf.getvalue()
-    content = ("﻿" + text).encode("utf-8") if excel else text
+    content = ("\ufeff" + text).encode("utf-8") if excel else text
     return _download(content, "text/csv; charset=utf-8", f"cnpj_{company.cnpj}.csv")

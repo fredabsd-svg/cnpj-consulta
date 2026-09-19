@@ -17,7 +17,8 @@ log = logging.getLogger(__name__)
 # Suba a versao sempre que a conciliacao mudar de forma que invalide
 # respostas antigas: entradas de outras versoes sao simplesmente ignoradas.
 # v2: correcao de capital social, conflitos e socios (app 0.2.0).
-CACHE_VERSION = 2
+# v3: procedencia/conflitos para endereco, telefones e CNAEs.
+CACHE_VERSION = 3
 _UNIFIED = f"unified-v{CACHE_VERSION}"
 
 

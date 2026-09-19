@@ -6,6 +6,10 @@ API publica gratuita que busque empresas pelo nome do socio.
 
 Cada empresa aparece UMA vez (usa-se o estabelecimento matriz); UF e
 municipio filtram pela sede.
+
+Performance: syncs novos materializam `socios.nome_socio_norm` (sem acento,
+maiusculo) e criam indice. Bases antigas sem a coluna usam o fallback
+`strip_accents(upper(s.nome_socio))` ate o proximo `sync-receita`.
 """
 
 from __future__ import annotations
@@ -25,6 +29,7 @@ from app.providers.receita_local import (
 )
 
 MAX_LIMIT = 200
+MIN_QUERY_LEN = 3
 
 
 def _db_path() -> str:
@@ -50,6 +55,14 @@ def _post_process(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return rows
 
 
+def _has_nome_socio_norm(conn) -> bool:
+    rows = conn.execute(
+        "SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'socios' AND column_name = 'nome_socio_norm' LIMIT 1"
+    ).fetchall()
+    return bool(rows)
+
+
 def search_partners(
     nome: str,
     *,
@@ -60,7 +73,7 @@ def search_partners(
     """Busca socios por nome (parcial, sem acento) com filtros opcionais."""
     db_path = _db_path()
     nome_norm = normalize_name_for_search(nome)
-    if not nome_norm or len(nome_norm) < 2:
+    if not nome_norm or len(nome_norm) < MIN_QUERY_LEN:
         return []
     limit = max(1, min(int(limit), MAX_LIMIT))
 
@@ -69,6 +82,9 @@ def search_partners(
         j_mun, d_mun = lookup_join(tables, "municipios", "mun", "e.municipio")
         j_qual, d_qual = lookup_join(tables, "qualificacoes", "q", "s.qualificacao_socio")
         municipio_expr = f"COALESCE({d_mun}, e.municipio)"
+        use_norm = _has_nome_socio_norm(conn)
+        # Preferir coluna materializada; fallback para bases importadas antes desta release.
+        nome_expr = "s.nome_socio_norm" if use_norm else "strip_accents(upper(s.nome_socio))"
 
         sql = [
             "SELECT",
@@ -92,7 +108,7 @@ def search_partners(
         # ("joao silva" encontra "JOAO DA SILVA").
         params: list[Any] = []
         for word in nome_norm.split():
-            sql.append("AND strip_accents(upper(s.nome_socio)) LIKE ?")
+            sql.append(f"AND {nome_expr} LIKE ?")
             params.append(f"%{word}%")
         if uf:
             sql.append("AND e.uf = ?")
