@@ -11,6 +11,11 @@ from app.services.partner_search import MAX_LIMIT, companies_of_partner_document
 
 router = APIRouter(prefix="/api/partners", tags=["partners"])
 
+_CNPJ_INVALID_DETAIL = (
+    "CNPJ invalido: informe 14 caracteres (numeros ou letras A-Z) "
+    "com digitos verificadores corretos."
+)
+
 
 @router.get("/search")
 async def search(
@@ -37,7 +42,7 @@ async def partner_companies(cnpj: str) -> dict:
     try:
         normalized = normalize(cnpj)
     except ValueError:
-        raise HTTPException(status_code=400, detail="CNPJ invalido") from None
+        raise HTTPException(status_code=400, detail=_CNPJ_INVALID_DETAIL) from None
     try:
         rows = await asyncio.to_thread(companies_of_partner_document, normalized)
     except RuntimeError as e:

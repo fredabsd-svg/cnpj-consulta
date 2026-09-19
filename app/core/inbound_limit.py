@@ -58,12 +58,13 @@ def reset_inbound_limiter() -> None:
 def check_company_lookup_limit(request: Request) -> None:
     """Dependencia FastAPI: 429 se o IP excedeu o limite de consultas."""
     client = request.client.host if request.client else "unknown"
-    wait = get_inbound_limiter().reserve(client)
+    limiter = get_inbound_limiter()
+    wait = limiter.reserve(client)
     if wait > 0:
         raise HTTPException(
             status_code=429,
             detail=(
-                f"Limite de consultas atingido ({get_settings().inbound_rate_limit_per_minute}/min). "
+                f"Limite de consultas atingido ({limiter.per_minute}/min). "
                 f"Tente novamente em {wait:.0f}s."
             ),
             headers={"Retry-After": str(max(1, int(wait)))},
