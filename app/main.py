@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app import __version__
 from app.api import companies, health, history, partners, providers
-from app.config import get_settings
+from app.config import assert_bind_allowed, get_settings
 from app.db import init_database
 from app.providers.registry import get_registry
 from app.web.pages import router as pages_router
@@ -36,10 +36,12 @@ _SECURITY_HEADERS = {
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    settings = get_settings()
     logging.basicConfig(
-        level=get_settings().log_level,
+        level=settings.log_level,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+    assert_bind_allowed(settings)  # fail-fast se host inseguro em production
     init_database()  # idempotente: cria as tabelas se faltarem
     yield
     await get_registry().aclose()

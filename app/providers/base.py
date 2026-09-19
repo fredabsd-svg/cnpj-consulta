@@ -203,9 +203,12 @@ class Provider(abc.ABC):
         - 429: NAO repete (repetir so gasta a cota); pausa a fonte pelo
           tempo do header Retry-After (ou 60s) e devolve 429.
         - 5xx / erro de rede: repete ate `max_retries` com backoff.
+          O slot de rate limit e consumido so na 1a tentativa -- retries
+          de rede/5xx nao queimam a cota local.
         """
         for attempt in range(self.max_retries + 1):
-            self._take_slot()
+            if attempt == 0:
+                self._take_slot()
             try:
                 client = await self._get_client()
                 resp = await client.get(url)
