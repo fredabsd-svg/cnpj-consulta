@@ -39,9 +39,7 @@ class Settings(BaseSettings):
     # Base local Receita Federal
     receita_local_path: str = "./data/receita/receita.db"
     # Diretorio publico dos dados abertos; os arquivos ficam em {base}/{YYYY-MM}/
-    receita_base_url: str = (
-        "https://arquivos.receitafederal.gov.br/dados/cnpj/dados_abertos_cnpj"
-    )
+    receita_base_url: str = "https://arquivos.receitafederal.gov.br/dados/cnpj/dados_abertos_cnpj"
 
     # HTTP
     request_timeout_seconds: int = 10
@@ -72,8 +70,8 @@ class Settings(BaseSettings):
     minha_receita_enabled: bool = True
     minha_receita_base_url: str = "https://minhareceita.org"
 
-    # API publica gratuita (3 req/min); sem autenticacao -- chave removida
-    # (nunca foi usada pelo adaptador).
+    # API publica gratuita (3 req/min); sem autenticacao.
+    # cnpjws_api_key removida: nunca foi lida pelo adaptador CNPJ.ws.
     cnpjws_enabled: bool = False
     cnpjws_base_url: str = "https://publica.cnpj.ws"
 
