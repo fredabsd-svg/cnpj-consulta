@@ -15,11 +15,6 @@ from app.services.reconciliation import reconcile
 log = logging.getLogger(__name__)
 
 
-def _ok_sources(results: list) -> list[str]:
-    """Nomes das fontes que responderam HTTP 200 (para log/historico)."""
-    return [r.provider for r in results if getattr(r, "http_status", None) == 200]
-
-
 async def query_company_async(
     cnpj: str,
     registry: ProviderRegistry | None = None,
@@ -41,13 +36,12 @@ async def query_company_async(
         unified.origem_cache = True
     else:
         results = await registry.fetch_all_parallel(normalized)
-        ok = _ok_sources(results)
+        ok = [r for r in results if r.http_status == 200]
         if not ok:
             # Sem corpo de resposta: so status/provedor -- evita vazar payload.
-            summary = ", ".join(
-                f"{getattr(r, 'provider', '?')}:{getattr(r, 'http_status', '?')}"
-                for r in results
-            ) or "(nenhum provedor habilitado)"
+            summary = ", ".join(f"{r.provider}:{r.http_status}" for r in results) or (
+                "(nenhum provedor habilitado)"
+            )
             log.warning(
                 "nenhuma fonte OK para %s; procedencia parcial/vazia [%s]",
                 normalized,

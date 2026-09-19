@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 from fastapi.testclient import TestClient
 
 from app.config import Settings, get_settings
@@ -21,7 +20,7 @@ class TestDeadConfigRemoved:
 
 class TestPartnerSearchEdges:
     def test_documento_vazio_retorna_lista_vazia_sem_tocar_db(self, monkeypatch):
-        """Evita abrir DuckDB / exigir base local para entrada vazia."""
+        """Evita abrir a base local para entrada vazia."""
 
         def _boom() -> str:
             raise AssertionError("nao deveria resolver caminho da base")
