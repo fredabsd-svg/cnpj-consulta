@@ -10,6 +10,11 @@ Uso:
 Layout oficial (dados abertos do CNPJ): {RECEITA_BASE_URL}/{YYYY-MM}/<Arquivo>.zip
 Arquivos extraidos terminam em EMPRECSV, ESTABELE, SOCIOCSV, SIMPLES.CSV...,
 CNAECSV, MOTICSV, MUNICCSV, NATJUCSV, PAISCSV, QUALSCSV (ISO-8859-1, ';').
+
+A tabela socios inclui a coluna materializada `nome_socio_norm` (sem acento,
+maiusculo) e indice dedicado para acelerar a busca reversa. Bases geradas
+antes desta release continuam funcionando via fallback em partner_search;
+rode sync-receita de novo para obter a coluna.
 """
 
 from __future__ import annotations
@@ -281,6 +286,14 @@ class ReceitaFederalSync:
                         "SELECT *, cnpj_basico || cnpj_ordem || cnpj_dv AS cnpj_completo "
                         f"FROM {_read_csv_sql(files, cols)}"
                     )
+                elif table == "socios":
+                    # Materializa nome normalizado (alinha com normalize_name_for_search).
+                    select = (
+                        "SELECT *, trim(regexp_replace("
+                        "regexp_replace(strip_accents(upper(coalesce(nome_socio, ''))), "
+                        "'[^A-Z0-9 ]', ' ', 'g'), '\\s+', ' ', 'g')) AS nome_socio_norm "
+                        f"FROM {_read_csv_sql(files, cols)}"
+                    )
                 conn.execute(f"CREATE TABLE {table} AS {select}")
 
             for table, suffix in DOMAIN_TABLES:
@@ -293,8 +306,9 @@ class ReceitaFederalSync:
 
             conn.execute("CREATE TABLE metadata (chave VARCHAR, valor VARCHAR)")
             conn.execute(
-                "INSERT INTO metadata VALUES ('mes_referencia', ?), ('importado_em', ?)",
-                [self.mes, datetime.now(UTC).isoformat()],
+                "INSERT INTO metadata VALUES ('mes_referencia', ?), ('importado_em', ?), "
+                "('schema_socios', ?)",
+                [self.mes, datetime.now(UTC).isoformat(), "nome_socio_norm_v1"],
             )
 
             self._progress("Criando indices")
@@ -302,6 +316,7 @@ class ReceitaFederalSync:
             conn.execute("CREATE INDEX idx_estab_cnpj_basico ON estabelecimentos(cnpj_basico)")
             conn.execute("CREATE INDEX idx_socios_cnpj_basico ON socios(cnpj_basico)")
             conn.execute("CREATE INDEX idx_socios_documento ON socios(cpf_cnpj_socio)")
+            conn.execute("CREATE INDEX idx_socios_nome_norm ON socios(nome_socio_norm)")
             conn.execute("CREATE INDEX idx_empresas_cnpj ON empresas(cnpj_basico)")
             conn.execute("CREATE INDEX idx_simples_cnpj ON simples(cnpj_basico)")
 
