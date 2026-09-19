@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="8 8 48 48" role="img" aria-labelledby="gt">
+  <title id="gt">CNPJ Consulta</title>
+  <defs>
+    <linearGradient id="gg" x1="10" y1="54" x2="54" y2="10" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#22d3ee"/><stop offset="1" stop-color="#8b5cf6"/>
+    </linearGradient>
+  </defs>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="36" cy="28" r="14" stroke="url(#gg)" stroke-width="6"/>
+    <path d="M25.5 38.5 14.5 49.5" stroke="url(#gg)" stroke-width="7"/>
+    <path d="M29.6 28.2l4.6 4.6 8.2-9.6" stroke="#34d399" stroke-width="3.6"/>
+  </g>
+</svg>

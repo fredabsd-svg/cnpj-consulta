@@ -1,0 +1,33 @@
+{
+  "_comment": "Payload exemplo da BrasilAPI para CNPJ 19.131.243/0001-97 (Open Knowledge Brasil). Dados da pessoa juridica sao publicos; nome e CPF mascarado do socio foram substituidos por valores ficticios.",
+  "_fonte": "https://brasilapi.com.br/api/cnpj/v1/19131243000197",
+  "_data_coleta": "2026-09-18",
+  "uf": "SP",
+  "cep": "01311902",
+  "qsa": [
+    {
+      "nome_socio": "MARIA EXEMPLO DA SILVA",
+      "faixa_etaria": "Entre 41 a 50 anos",
+      "cnpj_cpf_do_socio": "***123456**",
+      "qualificacao_socio": "Presidente",
+      "data_entrada_sociedade": "2024-02-27",
+      "identificador_de_socio": 2
+    }
+  ],
+  "cnpj": "19131243000197",
+  "razao_social": "OPEN KNOWLEDGE BRASIL",
+  "nome_fantasia": "REDE PELO CONHECIMENTO LIVRE",
+  "porte": "DEMAIS",
+  "municipio": "SAO PAULO",
+  "logradouro": "PAULISTA 37",
+  "numero": "37",
+  "bairro": "BELA VISTA",
+  "cnae_fiscal": 9430800,
+  "cnae_fiscal_descricao": "Atividades de associacoes de defesa de direitos sociais",
+  "natureza_juridica": "Associacao Privada",
+  "capital_social": 0,
+  "situacao_cadastral": 2,
+  "descricao_situacao_cadastral": "ATIVA",
+  "data_situacao_cadastral": "2013-10-03",
+  "data_inicio_atividade": "2013-10-03"
+}

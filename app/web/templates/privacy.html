@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block title %}Privacidade e uso responsavel{% endblock %}
+
+{% block content %}
+<section class="prose">
+    <h1>Privacidade e uso responsavel</h1>
+    <p>Este aplicativo foi desenhado para respeitar a Lei Geral de Protecao de Dados (LGPD, Lei 13.709/2018).</p>
+
+    <h2>1. Dados que consultamos</h2>
+    <p>Apenas <strong>dados publicos</strong> disponibilizados pela Receita Federal do Brasil e por servicos que os
+        republicam (Minha Receita, BrasilAPI, ReceitaWS e CNPJ.ws). O CNPJ consultado e enviado a essas fontes; nenhum
+        outro dado seu e enviado.</p>
+
+    <h2>2. Dados pessoais</h2>
+    <ul>
+        <li><strong>CPF de socios:</strong> as fontes publicas disponibilizam o CPF <strong>mascarado</strong>
+            (ex.: <code>***123456**</code>). Este aplicativo <strong>nunca tenta</strong> descobrir, inferir ou desmascarar CPFs.</li>
+        <li><strong>Telefones e e-mails:</strong> exibidos apenas quando informados no cadastro do CNPJ.</li>
+        <li><strong>Enderecos:</strong> apenas o endereco do estabelecimento registrado no CNPJ.</li>
+    </ul>
+
+    <h2>3. Dados armazenados localmente</h2>
+    <p>Somente neste computador, no arquivo configurado em <code>DATABASE_URL</code>:</p>
+    <ul>
+        <li>Historico das consultas (CNPJ, razao social, situacao, data/hora).</li>
+        <li>Cache das respostas por {{ "%g" | format(cache_hours) }} hora(s) (<code>CACHE_TTL_SECONDS</code>).</li>
+        <li>Favoritos adicionados manualmente.</li>
+    </ul>
+    <p>Voce pode apagar o historico na pagina <a href="/historico">Historico e favoritos</a> ou pela linha de comando
+        (<code>python -m app.cli limpar-historico</code> e <code>limpar-cache</code>).</p>
+
+    <h2>4. Uso responsavel</h2>
+    <p>Nao use este software para spam, assedio, prospeccao abusiva, discriminacao, revenda de dados (atencao aos termos do
+        ReceitaWS) ou qualquer finalidade ilegal. O usuario e responsavel pela finalidade do tratamento (LGPD, art. 7&ordm;).</p>
+
+    <h2>5. Limitacao de responsabilidade</h2>
+    <p>Os dados podem estar desatualizados. Para fins oficiais, emita o comprovante em
+        <a href="https://www.gov.br/receitafederal/" target="_blank" rel="noopener noreferrer">gov.br/receitafederal</a>.</p>
+
+    <h2>6. Contato</h2>
+    {% if contact_email %}
+    <p>Duvidas, correcao ou remocao de dados exibidos: <a href="mailto:{{ contact_email }}">{{ contact_email }}</a>.</p>
+    {% else %}
+    <p>O responsavel por esta instalacao ainda nao configurou um contato. Defina <code>APP_CONTACT_EMAIL</code> no <code>.env</code>.</p>
+    {% endif %}
+
+    <h2>7. Base legal</h2>
+    <ul>
+        <li>LGPD &middot; Lei 13.709/2018</li>
+        <li>LAI &middot; Lei 12.527/2011 (art. 8&ordm;)</li>
+        <li>CTN &middot; Lei 5.172/1966 (art. 198, sigilo fiscal)</li>
+    </ul>
+</section>
+{% endblock %}

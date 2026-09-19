@@ -1,0 +1,4 @@
+cnpj,descricao
+19131243000197,Open Knowledge Brasil (exemplo documentacao)
+00000000000000,CNPJ invalido (todos zeros - usado em testes de erro)
+11111111111111,CNPJ invalido (digitos repetidos - usado em testes de erro)

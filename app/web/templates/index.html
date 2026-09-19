@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block title %}Consultar CNPJ{% endblock %}
+
+{% block content %}
+<section class="search-hero" aria-labelledby="titulo-consulta">
+    <div class="hero-grid">
+        <div>
+            <div class="eyebrow">Consulta</div>
+            <h1 id="titulo-consulta">Consultar CNPJ</h1>
+            <p class="lead">Dados cadastrais, quadro societario e CNAEs, cruzados entre fontes publicas gratuitas.
+                Aceita CNPJ numerico e o novo formato alfanumerico.</p>
+        </div>
+        {% include "_cartao3d.html" %}
+    </div>
+
+    <form action="/consulta" method="get" class="card" data-loading="Consultando fontes..." novalidate>
+        <div class="field">
+            <label for="cnpj">CNPJ</label>
+            <div class="search-bar">
+                <input class="input input-lg" type="text" id="cnpj" name="cnpj"
+                       value="{{ value }}" placeholder="00.000.000/0000-00"
+                       autocomplete="off" autocapitalize="characters" spellcheck="false"
+                       maxlength="18" autofocus required data-cnpj-mask
+                       aria-describedby="cnpj-hint{% if error %} cnpj-erro{% endif %}"
+                       {% if error %}aria-invalid="true"{% endif %}>
+                <button type="submit" class="btn btn-primary btn-lg">Consultar</button>
+            </div>
+            <span id="cnpj-hint" class="hint">Com ou sem pontuacao. A primeira consulta leva alguns segundos; as seguintes vem do cache local.</span>
+            {% if error %}<p id="cnpj-erro" class="field-error" role="alert">{{ error }}</p>{% endif %}
+            <p class="loading-note" aria-live="polite">Consultando Minha Receita, BrasilAPI e demais fontes habilitadas...</p>
+        </div>
+    </form>
+
+    <div class="grid-2 section">
+        <section aria-labelledby="titulo-recentes">
+            <div class="section-header">
+                <h2 id="titulo-recentes">Consultas recentes</h2>
+                {% if recent %}<a class="small" href="/historico">Ver todas</a>{% endif %}
+            </div>
+            {% if recent %}
+            <ul class="quick-list">
+                {% for q in recent %}
+                <li><a href="/empresa/{{ q.cnpj }}">
+                    <span class="quick-title">{{ q.razao_social or (q.cnpj | cnpj) }}</span>
+                    <span class="quick-meta mono">{{ q.cnpj | cnpj }}</span>
+                </a></li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="empty-state">Nenhuma consulta ainda. As empresas consultadas aparecem aqui para acesso rapido.</p>
+            {% endif %}
+        </section>
+
+        <section aria-labelledby="titulo-favoritos">
+            <div class="section-header"><h2 id="titulo-favoritos">Favoritos</h2></div>
+            {% if favorites %}
+            <ul class="quick-list">
+                {% for f in favorites[:8] %}
+                <li><a href="/empresa/{{ f.cnpj }}">
+                    <span class="quick-title">{{ f.label or (f.cnpj | cnpj) }}</span>
+                    <span class="quick-meta mono">{{ f.cnpj | cnpj }}</span>
+                </a></li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="empty-state">Use o botao <strong>Favoritar</strong> na pagina da empresa para fixar clientes consultados com frequencia.</p>
+            {% endif %}
+        </section>
+    </div>
+</section>
+{% endblock %}

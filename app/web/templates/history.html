@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block title %}Historico e favoritos{% endblock %}
+
+{% block content %}
+<h1>Historico e favoritos</h1>
+<p class="muted">Guardados apenas neste computador.</p>
+
+<section class="section card" aria-labelledby="titulo-fav">
+    <div class="section-header"><h2 id="titulo-fav">Favoritos ({{ favorites | length }})</h2></div>
+    {% if favorites %}
+    <div class="table-wrap">
+        <table class="data-table">
+            <thead><tr><th scope="col">Empresa</th><th scope="col">CNPJ</th><th scope="col">Adicionado em</th><th scope="col"><span class="visually-hidden">Acoes</span></th></tr></thead>
+            <tbody>
+                {% for f in favorites %}
+                <tr>
+                    <td><a href="/empresa/{{ f.cnpj }}">{{ f.label or "Sem nome" }}</a></td>
+                    <td class="mono nowrap">{{ f.cnpj | cnpj }}</td>
+                    <td class="nowrap">{{ f.created_at | data_br }}</td>
+                    <td class="num"><button type="button" class="btn btn-link btn-danger" data-delete-url="/api/favorites/{{ f.cnpj }}"
+                        aria-label="Remover {{ f.label or f.cnpj }} dos favoritos">Remover</button></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="empty-state">Nenhum favorito. Na pagina de uma empresa, use o botao <strong>Favoritar</strong>.</p>
+    {% endif %}
+</section>
+
+<section class="section card" aria-labelledby="titulo-hist">
+    <div class="section-header">
+        <h2 id="titulo-hist">Consultas recentes</h2>
+        {% if queries %}
+        <button type="button" class="btn btn-danger" data-delete-url="/api/history"
+                data-confirm="Apagar todo o historico de consultas? Os favoritos serao mantidos.">Apagar historico</button>
+        {% endif %}
+    </div>
+    {% if queries %}
+    <div class="table-wrap">
+        <table class="data-table">
+            <thead><tr><th scope="col">Quando</th><th scope="col">Empresa</th><th scope="col">CNPJ</th><th scope="col">Situacao</th></tr></thead>
+            <tbody>
+                {% for q in queries %}
+                <tr>
+                    <td class="nowrap">{{ q.queried_at | data_br }}</td>
+                    <td><a href="/empresa/{{ q.cnpj }}">{{ q.razao_social or "Empresa nao encontrada" }}</a></td>
+                    <td class="mono nowrap">{{ q.cnpj | cnpj }}</td>
+                    <td>{{ q.situacao or "-" }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="empty-state">Nenhuma consulta registrada. <a href="/">Fazer uma consulta</a>.</p>
+    {% endif %}
+</section>
+{% endblock %}

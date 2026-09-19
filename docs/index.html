@@ -1,0 +1,703 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CNPJ Consulta — consulta de CNPJ com fontes cruzadas e procedência</title>
+<meta name="description" content="Aplicativo local e open source para consultar CNPJ (numérico e alfanumérico). Cruza BrasilAPI, Minha Receita e ReceitaWS, aponta conflitos e mostra a procedência de cada dado.">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' data:; style-src 'self'; script-src 'self'; font-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0a0d16">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#eef1f7">
+<link rel="canonical" href="https://fredabsd-svg.github.io/cnpj-consulta/">
+<link rel="icon" href="assets/brand/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="assets/brand/favicon-32.png" type="image/png" sizes="32x32">
+<link rel="apple-touch-icon" href="assets/brand/apple-touch-icon.png">
+
+<meta property="og:type" content="website">
+<meta property="og:locale" content="pt_BR">
+<meta property="og:site_name" content="CNPJ Consulta">
+<meta property="og:title" content="CNPJ Consulta — consulta de CNPJ que mostra de onde veio cada dado">
+<meta property="og:description" content="Cruza BrasilAPI, Minha Receita, ReceitaWS e a base oficial da Receita Federal, aponta conflitos e mede a confiança de cada campo. Open source, MIT, 100% local.">
+<meta property="og:url" content="https://fredabsd-svg.github.io/cnpj-consulta/">
+<meta property="og:image" content="https://fredabsd-svg.github.io/cnpj-consulta/assets/brand/social-preview.png">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta property="og:image:alt" content="Logo do CNPJ Consulta ao lado de um cartão CNPJ em 3D">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="CNPJ Consulta — consulta de CNPJ que mostra de onde veio cada dado">
+<meta name="twitter:description" content="Cruza fontes públicas, aponta conflitos e mede a confiança de cada campo. Open source, MIT, 100% local.">
+<meta name="twitter:image" content="https://fredabsd-svg.github.io/cnpj-consulta/assets/brand/social-preview.png">
+
+<link rel="stylesheet" href="assets/site.css">
+<script src="assets/theme.js"></script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "CNPJ Consulta",
+  "applicationCategory": "BusinessApplication",
+  "operatingSystem": "Windows, Linux, macOS",
+  "description": "Aplicativo local e open source para consultar CNPJ (numérico e alfanumérico), cruzando fontes públicas e mostrando a procedência de cada dado.",
+  "url": "https://fredabsd-svg.github.io/cnpj-consulta/",
+  "sameAs": ["https://github.com/fredabsd-svg/cnpj-consulta"],
+  "license": "https://opensource.org/licenses/MIT",
+  "inLanguage": "pt-BR",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "BRL" }
+}
+</script>
+</head>
+<body>
+<a class="skip-link" href="#conteudo">Pular para o conteúdo</a>
+
+<!-- Ícones (traço 2px, estilo Lucide) usados via <use>; o sprite não é renderizado -->
+<svg class="sprite" aria-hidden="true" focusable="false" width="0" height="0">
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 2 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><line x1="8" x2="21" y1="6" y2="6"/><line x1="8" x2="21" y1="12" y2="12"/><line x1="8" x2="21" y1="18" y2="18"/><line x1="3" x2="3.01" y1="6" y2="6"/><line x1="3" x2="3.01" y1="12" y2="12"/><line x1="3" x2="3.01" y1="18" y2="18"/></symbol>
+  <symbol id="i-scale" viewBox="0 0 24 24"><path d="M12 3v18"/><path d="M5 7h14"/><path d="m5 7-3 7a3 3 0 0 0 6 0Z"/><path d="m19 7-3 7a3 3 0 0 0 6 0Z"/><path d="M8 21h8"/></symbol>
+  <symbol id="i-shield-check" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></symbol>
+  <symbol id="i-hash" viewBox="0 0 24 24"><path d="M4 9h16"/><path d="M4 15h16"/><path d="M10 3 8 21"/><path d="m16 3-2 18"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+  <symbol id="i-drive" viewBox="0 0 24 24"><line x1="22" x2="2" y1="12" y2="12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><line x1="6" x2="6.01" y1="16" y2="16"/><line x1="10" x2="10.01" y1="16" y2="16"/></symbol>
+  <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 15V3"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></symbol>
+  <symbol id="i-terminal" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></symbol>
+  <symbol id="i-gauge" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M9 2h6"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></symbol>
+  <symbol id="i-github" viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></symbol>
+</svg>
+
+<header class="site-header">
+  <div class="container header-inner">
+    <a class="brand" href="#topo" aria-label="CNPJ Consulta, início da página">
+      <img src="assets/brand/logo-mark.svg" alt="" width="32" height="32"><span>CNPJ Consulta</span>
+    </a>
+    <nav class="nav" aria-label="Seções da página">
+      <a href="#recursos">Recursos</a>
+      <a href="#como-funciona">Como funciona</a>
+      <a href="#experimente">Validador</a>
+      <a href="#instalacao">Instalação</a>
+      <a href="#uso">CLI e API</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+    <div class="header-actions">
+      <button class="icon-btn theme-toggle" type="button" data-theme-toggle aria-label="Mudar para o tema claro">
+        <svg class="i i-moon" aria-hidden="true"><use href="#i-moon"/></svg>
+        <svg class="i i-sun" aria-hidden="true"><use href="#i-sun"/></svg>
+      </button>
+      <a class="btn btn-sm" href="https://github.com/fredabsd-svg/cnpj-consulta">
+        <svg class="i i-fill" aria-hidden="true"><use href="#i-github"/></svg>GitHub
+      </a>
+      <details class="menu">
+        <summary class="icon-btn" aria-label="Menu"><svg class="i" aria-hidden="true"><use href="#i-menu"/></svg></summary>
+        <div class="menu-panel">
+          <a href="#recursos">Recursos</a>
+          <a href="#como-funciona">Como funciona</a>
+          <a href="#experimente">Validador</a>
+          <a href="#instalacao">Instalação</a>
+          <a href="#uso">CLI e API</a>
+          <a href="#faq">FAQ</a>
+          <a class="btn btn-primary" href="https://github.com/fredabsd-svg/cnpj-consulta">Ver no GitHub</a>
+        </div>
+      </details>
+    </div>
+  </div>
+</header>
+
+<main id="conteudo" tabindex="-1">
+
+<!-- ============================== HERO ============================== -->
+<section class="hero container" id="topo" aria-labelledby="titulo">
+  <p class="hero-eyebrow"><span class="badge badge-info">Open source</span> Licença MIT · roda 100% no seu computador</p>
+  <h1 id="titulo">Consulta de CNPJ que mostra <span class="grad">de onde veio cada dado</span>.</h1>
+  <p class="lead">Cruza BrasilAPI, Minha Receita, ReceitaWS e a base oficial da Receita Federal, aponta onde as fontes divergem e mede a confiança de cada campo. Sem chave de API, sem Docker, sem enviar nada a ninguém.</p>
+  <div class="hero-cta">
+    <a class="btn btn-primary btn-lg" href="#instalacao">Instalar em 2 minutos <svg class="i" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+    <a class="btn btn-lg" href="https://github.com/fredabsd-svg/cnpj-consulta"><svg class="i i-fill" aria-hidden="true"><use href="#i-github"/></svg>Ver no GitHub</a>
+  </div>
+  <ul class="trust">
+    <li><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>CNPJ numérico e alfanumérico</li>
+    <li><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Interface, CLI e API REST</li>
+    <li><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>123 testes automatizados</li>
+  </ul>
+
+  <div class="showcase reveal" data-tabs data-mobile-tab="tab-celular">
+    <div class="showcase-tabs">
+      <div class="seg" role="tablist" aria-label="Telas do aplicativo">
+        <button type="button" role="tab" id="tab-empresa" aria-controls="painel-empresa" aria-selected="true">Empresa</button>
+        <button type="button" role="tab" id="tab-fontes" aria-controls="painel-fontes" aria-selected="false">Fontes e procedência</button>
+        <button type="button" role="tab" id="tab-consulta" aria-controls="painel-consulta" aria-selected="false">Consulta</button>
+        <button type="button" role="tab" id="tab-claro" aria-controls="painel-claro" aria-selected="false">Tema claro</button>
+        <button type="button" role="tab" id="tab-celular" aria-controls="painel-celular" aria-selected="false">Celular</button>
+      </div>
+    </div>
+    <div class="frame">
+      <div class="frame-bar">
+        <div class="frame-dots" aria-hidden="true"><i></i><i></i><i></i></div>
+        <div class="frame-url" aria-hidden="true">127.0.0.1:8000</div>
+      </div>
+      <div class="frame-body">
+        <div class="tabpanel" role="tabpanel" id="painel-empresa" aria-labelledby="tab-empresa">
+          <p class="panel-title">Empresa</p>
+          <img src="assets/screenshots/tour-empresa.webp" width="2880" height="2000" fetchpriority="high" decoding="async"
+               alt="Página de uma empresa no app: razão social, CNPJ alfanumérico, situação ATIVA, resumo cadastral e um alerta amarelo informando que as fontes divergem no capital social.">
+        </div>
+        <div class="tabpanel" role="tabpanel" id="painel-fontes" aria-labelledby="tab-fontes">
+          <p class="panel-title">Fontes e procedência</p>
+          <img src="assets/screenshots/tour-fontes.webp" width="2880" height="2000" loading="lazy" decoding="async"
+               alt="Aba Fontes: tabela das fontes consultadas (Minha Receita como primária, BrasilAPI e ReceitaWS como espelho) e a procedência campo a campo, com selos de confiança.">
+        </div>
+        <div class="tabpanel" role="tabpanel" id="painel-consulta" aria-labelledby="tab-consulta">
+          <p class="panel-title">Consulta</p>
+          <img src="assets/screenshots/tour-home.webp" width="2880" height="2000" loading="lazy" decoding="async"
+               alt="Tela inicial: campo de CNPJ com máscara, consultas recentes, favoritos e o cartão CNPJ em 3D.">
+        </div>
+        <div class="tabpanel" role="tabpanel" id="painel-claro" aria-labelledby="tab-claro">
+          <p class="panel-title">Tema claro</p>
+          <img src="assets/screenshots/tour-claro.webp" width="2880" height="2000" loading="lazy" decoding="async"
+               alt="A mesma página da empresa no tema claro.">
+        </div>
+        <div class="tabpanel panel-phone" role="tabpanel" id="painel-celular" aria-labelledby="tab-celular">
+          <p class="panel-title">Celular</p>
+          <img src="assets/screenshots/tour-mobile.webp" width="780" height="1688" loading="lazy" decoding="async"
+               alt="Página da empresa em um celular: botões empilhados, resumo em uma coluna e o alerta de divergência.">
+        </div>
+      </div>
+    </div>
+    <p class="caption">Capturas reais do app rodando localmente, com dados fictícios (o CNPJ alfanumérico é o exemplo publicado pela Receita Federal).</p>
+  </div>
+</section>
+
+<!-- ============================== FONTES (faixa) ============================== -->
+<section class="section-tight container" aria-label="Fontes de dados">
+  <div class="sources-strip reveal">
+    <span class="label">Fontes públicas e gratuitas, lado a lado</span>
+    <span class="pill">Minha Receita <small>primária</small></span>
+    <span class="pill">BrasilAPI <small>espelho</small></span>
+    <span class="pill">ReceitaWS <small>espelho</small></span>
+    <span class="pill">CNPJ.ws <small>opcional</small></span>
+    <span class="pill">Receita Federal <small>base local</small></span>
+  </div>
+</section>
+
+<!-- ============================== RECURSOS ============================== -->
+<section class="section container" id="recursos" aria-labelledby="t-recursos">
+  <div class="section-head reveal">
+    <span class="eyebrow">Recursos</span>
+    <h2 id="t-recursos">Feito para conferir, não só consultar</h2>
+    <p class="lead">Uma consulta comum devolve o que uma API respondeu. O CNPJ Consulta compara várias fontes e mostra o que está confirmado, o que diverge e de onde cada dado veio.</p>
+  </div>
+
+  <div class="bento">
+    <article class="card feature reveal">
+      <span class="ico"><svg class="i" aria-hidden="true"><use href="#i-layers"/></svg></span>
+      <h3>Cruza fontes em paralelo</h3>
+      <p>Minha Receita, BrasilAPI, ReceitaWS (e CNPJ.ws, opcional) respondem ao mesmo tempo. Cada fonte tem limite local, timeout e retentativa só para falhas de servidor e de rede: uma fonte lenta nunca trava as outras.</p>
+      <div class="viz"><span class="src-dot">Minha Receita</span><span class="src-dot">BrasilAPI</span><span class="src-dot">ReceitaWS</span></div>
+    </article>
+
+    <article class="card feature reveal d1">
+      <span class="ico violet"><svg class="i" aria-hidden="true"><use href="#i-list"/></svg></span>
+      <h3>Procedência campo a campo</h3>
+      <p>Cada valor mostra qual fonte o informou, quando foi consultado e a data de atualização da base. Nada é preenchido com dado inventado: o que falta aparece como “não informado”.</p>
+      <div class="viz"><span class="badge badge-info">Primária</span><span class="badge badge-violet">Espelho</span><span class="badge badge-success">OK</span></div>
+    </article>
+
+    <article class="card feature reveal d2">
+      <span class="ico warning"><svg class="i" aria-hidden="true"><use href="#i-scale"/></svg></span>
+      <h3>Conflitos explícitos</h3>
+      <p>Quando as fontes divergem, o app avisa e mostra o valor de cada uma, sem escolher em silêncio. Diferenças só de formato (acentos, código antes da descrição, <span class="mono">1000.00</span> × <span class="mono">1.000,00</span>) não contam como conflito.</p>
+      <div class="viz"><span class="badge badge-warning">Capital social diverge</span></div>
+    </article>
+
+    <article class="card feature reveal">
+      <span class="ico success"><svg class="i" aria-hidden="true"><use href="#i-shield-check"/></svg></span>
+      <h3>Confiança por campo</h3>
+      <p>Cada campo recebe um selo que resume o quanto as fontes independentes concordam.</p>
+      <div class="viz">
+        <div class="conf-list">
+          <div><span class="badge badge-success">Alta</span><span>duas ou mais fontes independentes concordam</span></div>
+          <div><span class="badge badge-info">Média</span><span>uma única base (a BrasilAPI repassa a Minha Receita e conta como a mesma)</span></div>
+          <div><span class="badge badge-danger">Baixa</span><span>as fontes divergem</span></div>
+        </div>
+      </div>
+    </article>
+
+    <article class="card feature reveal d1">
+      <span class="ico"><svg class="i" aria-hidden="true"><use href="#i-hash"/></svg></span>
+      <h3>CNPJ alfanumérico, hoje</h3>
+      <p>Valida o formato numérico e o novo, com letras nas 12 primeiras posições (vigente desde julho de 2026). Os dois dígitos verificadores continuam numéricos.</p>
+      <div class="viz"><span class="viz-mono">12<em>.</em>ABC<em>.</em>345<em>/</em>01DE<em>-</em><b>35</b></span></div>
+    </article>
+
+    <article class="card feature reveal d2">
+      <span class="ico violet"><svg class="i" aria-hidden="true"><use href="#i-users"/></svg></span>
+      <h3>Busca reversa por sócio</h3>
+      <p>Com a base local da Receita, encontre empresas pelo nome do sócio (palavras em qualquer ordem, sem acento), pela UF e pelo município da sede.</p>
+      <div class="viz"><span class="viz-mono">socio "JOAO SILVA" --uf SP</span></div>
+    </article>
+  </div>
+
+  <div class="mini-grid">
+    <article class="card mini reveal">
+      <span class="ico"><svg class="i" aria-hidden="true"><use href="#i-drive"/></svg></span>
+      <div><h3>Modo offline</h3><p>Importe a base oficial da Receita Federal (DuckDB) e consulte sem depender das APIs. Com ela ativa, tem prioridade sobre as demais fontes.</p></div>
+    </article>
+    <article class="card mini reveal d1">
+      <span class="ico"><svg class="i" aria-hidden="true"><use href="#i-history"/></svg></span>
+      <div><h3>Cache, histórico e favoritos</h3><p>SQLite local, com cache de 24 h por padrão. Apague o histórico quando quiser.</p></div>
+    </article>
+    <article class="card mini reveal d2">
+      <span class="ico"><svg class="i" aria-hidden="true"><use href="#i-download"/></svg></span>
+      <div><h3>Exporta CSV e JSON</h3><p>CSV pronto para o Excel (separador <span class="mono">;</span> e BOM UTF-8).</p></div>
+    </article>
+    <article class="card mini reveal">
+      <span class="ico"><svg class="i" aria-hidden="true"><use href="#i-terminal"/></svg></span>
+      <div><h3>Interface, CLI e API REST</h3><p>Web em português com tema claro e escuro, CLI (Typer/Rich) e OpenAPI em <span class="mono">/docs</span>.</p></div>
+    </article>
+    <article class="card mini reveal d1">
+      <span class="ico"><svg class="i" aria-hidden="true"><use href="#i-gauge"/></svg></span>
+      <div><h3>Respeita os limites</h3><p>Janela deslizante por fonte: no limite, ela é pulada na hora. HTTP 429 pausa a fonte, sem repetir.</p></div>
+    </article>
+    <article class="card mini reveal d2">
+      <span class="ico"><svg class="i" aria-hidden="true"><use href="#i-lock"/></svg></span>
+      <div><h3>LGPD por padrão</h3><p>CPF de sócio sempre mascarado. O app não tenta descobrir dados pessoais nem monta perfis.</p></div>
+    </article>
+  </div>
+</section>
+
+<!-- ============================== COMO FUNCIONA ============================== -->
+<section class="section container" id="como-funciona" aria-labelledby="t-como">
+  <div class="section-head reveal">
+    <span class="eyebrow">Como funciona</span>
+    <h2 id="t-como">Do número digitado ao dado confirmado</h2>
+    <p class="lead">Quatro etapas, todas no seu computador. A conciliação é o coração do app: ela decide o que está confirmado e o que precisa de conferência.</p>
+  </div>
+
+  <ol class="steps" role="list">
+    <li class="card step reveal"><h3>Valida</h3><p>Confere os dígitos verificadores (módulo 11), numéricos ou alfanuméricos, antes de qualquer requisição. Entrada inválida nunca sai do seu computador.</p></li>
+    <li class="card step reveal d1"><h3>Consulta em paralelo</h3><p>As fontes habilitadas respondem juntas, com timeout de 10 s por requisição e teto de 20 s por consulta. Retentativa só em 5xx e falha de rede.</p></li>
+    <li class="card step reveal d2"><h3>Concilia</h3><p>Normaliza cada campo, compara, prioriza fontes primárias sobre espelhos e marca os conflitos com o valor de cada fonte.</p></li>
+    <li class="card step reveal d3"><h3>Entrega</h3><p>Interface web, CLI ou API REST. O resultado fica no cache local (24 h por padrão) e no histórico.</p></li>
+  </ol>
+
+  <div class="explain">
+    <div class="card flow-card reveal">
+      <h3>Fluxo de uma consulta</h3>
+      <p class="sub">Três fontes entram; uma resposta conciliada sai.</p>
+      <svg class="flow" viewBox="0 0 420 280" role="img" aria-labelledby="flow-t flow-d">
+        <title id="flow-t">Fluxo de uma consulta</title>
+        <desc id="flow-d">Três fontes (Minha Receita, BrasilAPI e ReceitaWS) alimentam a etapa de conciliação, que entrega o resultado à interface web, à API REST e à CLI.</desc>
+        <g class="wires">
+          <path class="wire" d="M132 50C150 50 150 140 168 140"/>
+          <path class="wire" d="M132 140H168"/>
+          <path class="wire" d="M132 230C150 230 150 140 168 140"/>
+          <path class="wire" d="M252 140C270 140 270 50 288 50"/>
+          <path class="wire" d="M252 140H288"/>
+          <path class="wire" d="M252 140C270 140 270 230 288 230"/>
+          <path class="pulse" d="M132 50C150 50 150 140 168 140"/>
+          <path class="pulse p2" d="M132 140H168"/>
+          <path class="pulse p3" d="M132 230C150 230 150 140 168 140"/>
+          <path class="pulse out" d="M252 140C270 140 270 50 288 50"/>
+          <path class="pulse out p2" d="M252 140H288"/>
+          <path class="pulse out p3" d="M252 140C270 140 270 230 288 230"/>
+        </g>
+        <rect class="node" x="8" y="28" width="124" height="44" rx="12"/><text x="70" y="55" text-anchor="middle">Minha Receita</text>
+        <rect class="node" x="8" y="118" width="124" height="44" rx="12"/><text x="70" y="145" text-anchor="middle">BrasilAPI</text>
+        <rect class="node" x="8" y="208" width="124" height="44" rx="12"/><text x="70" y="235" text-anchor="middle">ReceitaWS</text>
+        <rect class="node-core" x="168" y="96" width="84" height="88" rx="18"/>
+        <text x="210" y="134" text-anchor="middle">Concilia</text>
+        <text class="t-muted" x="210" y="152" text-anchor="middle">conflitos</text>
+        <text class="t-muted" x="210" y="166" text-anchor="middle">+ confiança</text>
+        <rect class="node" x="288" y="28" width="124" height="44" rx="12"/><text x="350" y="55" text-anchor="middle">Interface web</text>
+        <rect class="node" x="288" y="118" width="124" height="44" rx="12"/><text x="350" y="145" text-anchor="middle">API REST</text>
+        <rect class="node" x="288" y="208" width="124" height="44" rx="12"/><text x="350" y="235" text-anchor="middle">CLI</text>
+      </svg>
+    </div>
+
+    <div class="card recon reveal d1">
+      <h3>Uma conciliação de verdade</h3>
+      <p class="sub">Mesma empresa fictícia das capturas de tela. Três fontes, um campo com valor diferente.</p>
+      <div class="table-wrap">
+        <table class="table stack" role="table">
+          <thead><tr role="row"><th scope="col" role="columnheader">Campo</th><th scope="col" role="columnheader">Minha Receita</th><th scope="col" role="columnheader">BrasilAPI</th><th scope="col" role="columnheader">ReceitaWS</th><th scope="col" role="columnheader">Confiança</th></tr></thead>
+          <tbody>
+            <tr role="row"><th scope="row" role="rowheader">Situação</th><td role="cell" data-label="Minha Receita">ATIVA</td><td role="cell" data-label="BrasilAPI">ATIVA</td><td role="cell" data-label="ReceitaWS">ATIVA</td><td role="cell" data-label="Confiança"><span class="badge badge-success">Alta</span></td></tr>
+            <tr role="row"><th scope="row" role="rowheader">Natureza jurídica</th><td role="cell" data-label="Minha Receita">Sociedade Empresária Limitada</td><td role="cell" data-label="BrasilAPI">Sociedade Empresária Limitada</td><td role="cell" data-label="ReceitaWS">206-2 - Sociedade Empresária Limitada</td><td role="cell" data-label="Confiança"><span class="badge badge-success">Alta</span><br><span class="muted">só o formato muda</span></td></tr>
+            <tr role="row"><th scope="row" role="rowheader">Capital social</th><td role="cell" class="num" data-label="Minha Receita">150.000,00</td><td role="cell" class="num" data-label="BrasilAPI">150.000,00</td><td role="cell" class="num diff" data-label="ReceitaWS">100.000,00</td><td role="cell" data-label="Confiança"><span class="badge badge-danger">Baixa</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="alert" role="note">
+        <svg class="i" aria-hidden="true"><use href="#i-alert"/></svg>
+        <p><strong>As fontes divergem em 1 campo(s). Confira na fonte oficial antes de usar.</strong><br>Capital social: Minha Receita: 150.000,00; BrasilAPI: 150.000,00; ReceitaWS: 100.000,00</p>
+      </div>
+      <div class="legend">
+        <div><span class="badge badge-success">Alta</span><span>confirmado por 2+ fontes independentes.</span></div>
+        <div><span class="badge badge-info">Média</span><span>uma única base; BrasilAPI e Minha Receita contam como uma só.</span></div>
+        <div><span class="badge badge-danger">Baixa</span><span>as fontes divergem: vale conferir na fonte oficial.</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== VALIDADOR ============================== -->
+<section class="section container" id="experimente" aria-labelledby="t-exp">
+  <div class="try">
+    <div class="try-copy reveal">
+      <span class="eyebrow">Experimente</span>
+      <h2 id="t-exp">Valide um CNPJ, numérico ou alfanumérico</h2>
+      <p class="lead">O mesmo algoritmo do app (módulo 11) roda aqui, no seu navegador. Não há formulário nem requisição: o que você digita não sai desta página.</p>
+      <p class="muted">No formato novo, cada caractere vale <span class="mono">ord(c) − 48</span>: dígitos de 0 a 9 e letras de A a Z de 17 a 42. O resto do cálculo é o mesmo de sempre.</p>
+      <div class="note">
+        <svg class="i" aria-hidden="true"><use href="#i-info"/></svg>
+        <p>Dígitos corretos provam que o número é bem formado, não que a empresa existe. Para saber se existe e quem é, o app consulta as fontes.</p>
+      </div>
+    </div>
+
+    <div class="stage reveal d1">
+      <div class="card3d-wrap" aria-hidden="true">
+        <div class="card3d-stage">
+          <div class="card3d" id="cartao" data-estado="ok">
+            <div class="card3d-shadow"></div>
+            <div class="card3d-back"></div>
+            <div class="card3d-face">
+              <div class="card3d-top">
+                <div class="card3d-brand"><img src="assets/brand/logo-mark.svg" alt="" width="26" height="26"><span class="card3d-label">Validador de CNPJ</span></div>
+                <span class="badge"><span class="dot"></span><span id="cartao-selo">Válido</span></span>
+              </div>
+              <div class="card3d-number" id="cartao-numero">12.ABC.345/01DE-35</div>
+              <div class="card3d-bottom">
+                <div><div class="card3d-label">Formato</div><div class="card3d-value" id="cartao-formato">Alfanumérico</div></div>
+                <div class="right"><div class="card3d-label">Dígitos verificadores</div><div class="card3d-value" id="cartao-dv">35 ✓</div></div>
+              </div>
+            </div>
+            <div class="card3d-chip a"><span class="bars"><i></i><i></i><i></i></span>3 fontes · 2 independentes</div>
+            <div class="card3d-chip b"><span class="warn"></span>1 divergência</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="validator glass">
+        <label for="cnpj-input">CNPJ para validar</label>
+        <input class="input" id="cnpj-input" type="text" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="18"
+               placeholder="00.000.000/0000-00" value="12.ABC.345/01DE-35" aria-describedby="resultado">
+        <div class="chips" role="group" aria-label="Exemplos">
+          <button class="chip-btn" type="button" data-fill="19.131.243/0001-97">Numérico válido</button>
+          <button class="chip-btn" type="button" data-fill="12.ABC.345/01DE-35">Alfanumérico válido</button>
+          <button class="chip-btn" type="button" data-fill="12.ABC.345/01DE-36">Dígito errado</button>
+        </div>
+        <div class="result" id="resultado" role="status" aria-live="polite" data-estado="ok">
+          <svg class="i i-ok" aria-hidden="true"><use href="#i-check"/></svg>
+          <svg class="i i-bad" aria-hidden="true"><use href="#i-x"/></svg>
+          <svg class="i i-idle" aria-hidden="true"><use href="#i-info"/></svg>
+          <div><strong id="resultado-titulo">Dígitos verificadores conferem</strong><p id="resultado-detalhe">Formato alfanumérico (o novo), DV 35. Isso prova que o número é bem formado, não que a empresa existe: para isso o app consulta as fontes.</p></div>
+        </div>
+        <p class="fineprint">Os exemplos são números de teste: o numérico é o da Open Knowledge Brasil (usado na documentação da Minha Receita) e o alfanumérico é o exemplo oficial da Receita Federal.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== INSTALACAO ============================== -->
+<section class="section container" id="instalacao" aria-labelledby="t-inst">
+  <div class="section-head reveal">
+    <span class="eyebrow">Instalação</span>
+    <h2 id="t-inst">Rodando em 2 minutos</h2>
+    <p class="lead">Um script cria o ambiente virtual, instala as dependências e prepara o banco. Requer Python 3.12 ou superior e o Git.</p>
+  </div>
+
+  <div class="install">
+    <div class="reveal" data-tabs>
+      <div class="tabs-head">
+        <div class="seg" role="tablist" aria-label="Sistema operacional">
+          <button type="button" role="tab" id="tab-win" aria-controls="painel-win" aria-selected="true">Windows (PowerShell)</button>
+          <button type="button" role="tab" id="tab-nix" aria-controls="painel-nix" aria-selected="false">Linux / macOS</button>
+        </div>
+      </div>
+      <div class="tabpanel" role="tabpanel" id="painel-win" aria-labelledby="tab-win">
+        <div class="code">
+          <div class="code-head"><span class="code-title">PowerShell</span>
+            <button class="copy" type="button" data-copy="cod-win"><svg class="i i-copy" aria-hidden="true"><use href="#i-copy"/></svg><svg class="i i-check" aria-hidden="true"><use href="#i-check"/></svg><span class="copy-label">Copiar</span></button></div>
+          <pre><code id="cod-win"><span class="ps">PS&gt; </span>git clone https://github.com/fredabsd-svg/cnpj-consulta.git
+<span class="ps">PS&gt; </span>cd cnpj-consulta
+<span class="ps">PS&gt; </span>.\setup.ps1
+<span class="ps">PS&gt; </span>.\start.ps1</code></pre>
+        </div>
+        <p class="code-note">Se o PowerShell bloquear scripts, rode só esta vez: <code>powershell -ExecutionPolicy Bypass -File .\setup.ps1</code>. Isso não altera a política do sistema.</p>
+      </div>
+      <div class="tabpanel" role="tabpanel" id="painel-nix" aria-labelledby="tab-nix">
+        <div class="code">
+          <div class="code-head"><span class="code-title">bash</span>
+            <button class="copy" type="button" data-copy="cod-nix"><svg class="i i-copy" aria-hidden="true"><use href="#i-copy"/></svg><svg class="i i-check" aria-hidden="true"><use href="#i-check"/></svg><span class="copy-label">Copiar</span></button></div>
+          <pre><code id="cod-nix"><span class="ps">$ </span>git clone https://github.com/fredabsd-svg/cnpj-consulta.git
+<span class="ps">$ </span>cd cnpj-consulta
+<span class="ps">$ </span>chmod +x setup.sh start.sh
+<span class="ps">$ </span>./setup.sh
+<span class="ps">$ </span>./start.sh</code></pre>
+        </div>
+      </div>
+      <p class="code-note">Pronto: abra <a href="http://127.0.0.1:8000"><span class="mono">http://127.0.0.1:8000</span></a> no navegador. A primeira consulta leva alguns segundos; as seguintes vêm do cache local.</p>
+    </div>
+
+    <aside class="card aside-card reveal d1" aria-labelledby="t-setup">
+      <h3 id="t-setup">O que o setup faz</h3>
+      <ul class="checklist">
+        <li><svg class="i" aria-hidden="true"><use href="#i-check"/></svg><span>Cria o ambiente virtual <strong>.venv</strong></span></li>
+        <li><svg class="i" aria-hidden="true"><use href="#i-check"/></svg><span>Instala as dependências (<span class="mono">pip install -e ".[dev]"</span>)</span></li>
+        <li><svg class="i" aria-hidden="true"><use href="#i-check"/></svg><span>Gera o <strong>.env</strong> a partir do <span class="mono">.env.example</span></span></li>
+        <li><svg class="i" aria-hidden="true"><use href="#i-check"/></svg><span>Cria a pasta <strong>data/</strong> (banco, cache e base da Receita)</span></li>
+        <li><svg class="i" aria-hidden="true"><use href="#i-check"/></svg><span>Inicializa o banco <strong>SQLite</strong></span></li>
+      </ul>
+    </aside>
+  </div>
+</section>
+
+<!-- ============================== CLI E API ============================== -->
+<section class="section container" id="uso" aria-labelledby="t-uso">
+  <div class="section-head reveal">
+    <span class="eyebrow">CLI e API</span>
+    <h2 id="t-uso">Na linha de comando ou por HTTP</h2>
+    <p class="lead">Tudo o que a interface faz também está disponível para scripts e integrações. A saída abaixo é real, gerada com os dados fictícios das capturas de tela.</p>
+  </div>
+
+  <div class="reveal" data-tabs>
+    <div class="tabs-head">
+      <div class="seg" role="tablist" aria-label="Interface de uso">
+        <button type="button" role="tab" id="tab-cli" aria-controls="painel-cli" aria-selected="true">CLI</button>
+        <button type="button" role="tab" id="tab-api" aria-controls="painel-api" aria-selected="false">API REST</button>
+      </div>
+    </div>
+
+    <div class="tabpanel" role="tabpanel" id="painel-cli" aria-labelledby="tab-cli">
+      <p class="panel-title">CLI</p>
+      <div class="code">
+        <div class="code-head"><span class="code-title">terminal</span>
+          <button class="copy" type="button" data-copy="cod-cli1"><svg class="i i-copy" aria-hidden="true"><use href="#i-copy"/></svg><svg class="i i-check" aria-hidden="true"><use href="#i-check"/></svg><span class="copy-label">Copiar</span></button></div>
+        <pre><code id="cod-cli1"><span class="ps">$ </span>python -m app.cli consultar 12.ABC.345/01DE-35
+<span class="out"><span class="tk-m">──────────────── CNPJ 12.ABC.345/01DE-35 ────────────────</span>
+<span class="tk-h">Razao social:</span> EXEMPLO TECNOLOGIA E SERVICOS LTDA
+<span class="tk-h">Situacao:</span> <span class="tk-ok">ATIVA</span>
+<span class="tk-h">Porte:</span> EMPRESA DE PEQUENO PORTE
+<span class="tk-h">Capital social:</span> R$ 150.000,00
+<span class="tk-h">CNAE principal:</span> 6201-5/01 - Desenvolvimento de programas de computador sob encomenda
+<span class="tk-m">…</span>
+<span class="tk-m">─────────────── Divergencias entre fontes ───────────────</span>
+<span class="tk-w">  ! Capital social: minha_receita: 150.000,00; brasilapi: 150.000,00; receitaws: 100.000,00</span>
+<span class="tk-m">──────────────── Fontes consultadas ────────────────</span>
+  - Minha Receita: <span class="tk-ok">OK</span>
+  - BrasilAPI: <span class="tk-ok">OK</span> (espelho RFB)
+  - ReceitaWS: <span class="tk-ok">OK</span> (espelho RFB) - atualizado em 15/09/2026 20:59
+</span></code></pre>
+      </div>
+      <div class="code">
+        <div class="code-head"><span class="code-title">outros comandos</span>
+          <button class="copy" type="button" data-copy="cod-cli2"><svg class="i i-copy" aria-hidden="true"><use href="#i-copy"/></svg><svg class="i i-check" aria-hidden="true"><use href="#i-check"/></svg><span class="copy-label">Copiar</span></button></div>
+        <pre><code id="cod-cli2"><span class="ps">$ </span>python -m app.cli consultar 19131243000197 --json
+<span class="ps">$ </span>python -m app.cli consultar 12ABC34501DE35 --atualizar      <span class="tk-c"># ignora o cache</span>
+<span class="ps">$ </span>python -m app.cli socio "JOAO SILVA" --uf SP --municipio "sao paulo"   <span class="tk-c"># requer a base local</span>
+<span class="ps">$ </span>python -m app.cli providers list
+<span class="ps">$ </span>python -m app.cli sync-receita --mes 2026-08                 <span class="tk-c"># baixa e importa a base oficial</span>
+<span class="ps">$ </span>python -m app.cli limpar-historico</code></pre>
+      </div>
+      <p class="code-note">Com o ambiente virtual ativo, o atalho <span class="mono">cnpj</span> também funciona (por exemplo, <span class="mono">cnpj consultar 12ABC34501DE35</span>).</p>
+    </div>
+
+    <div class="tabpanel" role="tabpanel" id="painel-api" aria-labelledby="tab-api">
+      <p class="panel-title">API REST</p>
+      <div class="code">
+        <div class="code-head"><span class="code-title">curl</span>
+          <button class="copy" type="button" data-copy="cod-api1"><svg class="i i-copy" aria-hidden="true"><use href="#i-copy"/></svg><svg class="i i-check" aria-hidden="true"><use href="#i-check"/></svg><span class="copy-label">Copiar</span></button></div>
+        <pre><code id="cod-api1"><span class="ps">$ </span>curl http://127.0.0.1:8000/api/companies/12ABC34501DE35
+<span class="ps">$ </span>curl "http://127.0.0.1:8000/api/companies/12ABC34501DE35?atualizar=true"   <span class="tk-c"># ignora o cache</span>
+<span class="ps">$ </span>curl http://127.0.0.1:8000/api/companies/12ABC34501DE35/sources
+<span class="ps">$ </span>curl -o empresa.csv http://127.0.0.1:8000/api/companies/12ABC34501DE35/export.csv
+<span class="ps">$ </span>curl "http://127.0.0.1:8000/api/partners/search?q=joao%20silva&amp;uf=SP"   <span class="tk-c"># requer a base local</span></code></pre>
+      </div>
+      <div class="code">
+        <div class="code-head"><span class="code-title">resposta (trecho)</span></div>
+        <pre><code>{
+  <span class="tk-k">"cnpj_formatado"</span>: <span class="tk-s">"12.ABC.345/01DE-35"</span>,
+  <span class="tk-k">"razao_social"</span>: <span class="tk-s">"EXEMPLO TECNOLOGIA E SERVICOS LTDA"</span>,
+  <span class="tk-k">"situacao_cadastral"</span>: <span class="tk-s">"ATIVA"</span>,
+  <span class="tk-k">"capital_social"</span>: <span class="tk-f">150000.0</span>,
+  <span class="tk-k">"conflitos"</span>: [
+    <span class="tk-s">"Capital social: minha_receita: 150.000,00; brasilapi: 150.000,00; receitaws: 100.000,00"</span>
+  ],
+  <span class="tk-k">"fontes"</span>: [
+    { <span class="tk-k">"fonte"</span>: <span class="tk-s">"minha_receita"</span>, <span class="tk-k">"status"</span>: <span class="tk-f">200</span>, <span class="tk-k">"espelho_rfb"</span>: <span class="tk-f">false</span> },
+    { <span class="tk-k">"fonte"</span>: <span class="tk-s">"brasilapi"</span>, <span class="tk-k">"status"</span>: <span class="tk-f">200</span>, <span class="tk-k">"espelho_rfb"</span>: <span class="tk-f">true</span> }
+  ],
+  <span class="tk-k">"campos_procedencia"</span>: [
+    { <span class="tk-k">"campo"</span>: <span class="tk-s">"capital_social"</span>, <span class="tk-k">"valor"</span>: <span class="tk-s">"100.000,00"</span>, <span class="tk-k">"fonte"</span>: <span class="tk-s">"receitaws"</span>,
+      <span class="tk-k">"confianca"</span>: <span class="tk-s">"baixa"</span>, <span class="tk-k">"observacao"</span>: <span class="tk-s">"valor diverge entre fontes"</span> }
+  ]
+}</code></pre>
+      </div>
+      <p class="code-note">Documentação interativa (OpenAPI) em <span class="mono">http://127.0.0.1:8000/docs</span>. Requisições POST e DELETE vindas de outra origem são bloqueadas.</p>
+    </div>
+  </div>
+  <p id="aviso-copia" class="visually-hidden" role="status" aria-live="polite"></p>
+</section>
+
+<!-- ============================== MODOS E FONTES ============================== -->
+<section class="section container" id="fontes" aria-labelledby="t-modos">
+  <div class="section-head reveal">
+    <span class="eyebrow">Modos de operação</span>
+    <h2 id="t-modos">Online por padrão, offline quando você quiser</h2>
+    <p class="lead">Comece leve, só com as APIs gratuitas. Se precisar de busca por sócio ou de independência das APIs, importe a base oficial da Receita Federal.</p>
+  </div>
+
+  <div class="modes">
+    <article class="card mode reveal">
+      <h3><span class="ico"><svg class="i" aria-hidden="true"><use href="#i-layers"/></svg></span>Modo online <span class="badge badge-info">padrão</span></h3>
+      <p class="tagline">Instalação leve (cerca de 200 MB).</p>
+      <ul class="ticks">
+        <li><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Consulta as APIs gratuitas configuradas</li>
+        <li><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Sem chave de API</li>
+        <li><svg class="i off" aria-hidden="true"><use href="#i-x"/></svg>Não permite busca reversa por sócio</li>
+      </ul>
+    </article>
+    <article class="card mode reveal d1">
+      <h3><span class="ico violet"><svg class="i" aria-hidden="true"><use href="#i-drive"/></svg></span>Modo local <span class="badge badge-violet">opcional</span></h3>
+      <p class="tagline">Base oficial da Receita Federal, importada para o seu computador.</p>
+      <ul class="ticks">
+        <li><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Busca reversa por sócio, filiais e consulta offline</li>
+        <li><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Continua funcionando com as APIs fora do ar</li>
+        <li><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Download retomável; a base em uso só é trocada depois de validada</li>
+        <li><svg class="i off" aria-hidden="true"><use href="#i-x"/></svg>Cerca de 40 GB livres durante a importação</li>
+      </ul>
+    </article>
+  </div>
+
+  <div class="card table-card reveal">
+    <h3>Fontes de dados</h3>
+    <div class="table-wrap">
+      <table class="table stack" role="table">
+        <thead><tr role="row"><th scope="col" role="columnheader">Fonte</th><th scope="col" role="columnheader">Gratuita</th><th scope="col" role="columnheader">Chave</th><th scope="col" role="columnheader">Tipo</th><th scope="col" role="columnheader">Papel no app</th></tr></thead>
+        <tbody>
+          <tr role="row"><th scope="row" role="rowheader">Minha Receita</th><td role="cell" class="yes" data-label="Gratuita">Sim</td><td role="cell" data-label="Chave">Não</td><td role="cell" data-label="Tipo"><span class="badge badge-info">Primária</span></td><td role="cell" class="long" data-label="Papel no app">Fonte principal das consultas online (30 consultas/min)</td></tr>
+          <tr role="row"><th scope="row" role="rowheader">BrasilAPI</th><td role="cell" class="yes" data-label="Gratuita">Sim</td><td role="cell" data-label="Chave">Não</td><td role="cell" data-label="Tipo"><span class="badge badge-violet">Espelho</span></td><td role="cell" class="long" data-label="Papel no app">Proxy da Minha Receita: confirma o formato, mas conta como a mesma base (60/min)</td></tr>
+          <tr role="row"><th scope="row" role="rowheader">ReceitaWS</th><td role="cell" class="yes" data-label="Gratuita">Plano free</td><td role="cell" data-label="Chave">Não</td><td role="cell" data-label="Tipo"><span class="badge badge-violet">Espelho</span></td><td role="cell" class="long" data-label="Papel no app">Segunda opinião; o plano gratuito limita a 3 consultas/min</td></tr>
+          <tr role="row"><th scope="row" role="rowheader">CNPJ.ws</th><td role="cell" class="yes" data-label="Gratuita">Plano free</td><td role="cell" data-label="Chave">Não</td><td role="cell" data-label="Tipo"><span class="badge badge-violet">Espelho</span></td><td role="cell" class="long" data-label="Papel no app">Opcional, desligada por padrão (3/min)</td></tr>
+          <tr role="row"><th scope="row" role="rowheader">Receita Federal</th><td role="cell" class="yes" data-label="Gratuita">Sim</td><td role="cell" data-label="Chave">Não</td><td role="cell" data-label="Tipo"><span class="badge badge-info">Primária</span></td><td role="cell" class="long" data-label="Papel no app">Base local: busca por sócio, filiais e modo offline</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== PRIVACIDADE ============================== -->
+<section class="section container" id="privacidade" aria-labelledby="t-priv">
+  <div class="section-head reveal">
+    <span class="eyebrow">Privacidade e LGPD</span>
+    <h2 id="t-priv">Seus dados ficam com você</h2>
+    <p class="lead">O app guarda o histórico só no seu computador e usa apenas dados públicos. Esta página segue o mesmo princípio: nenhuma fonte de terceiros, nenhum rastreador.</p>
+  </div>
+
+  <div class="privacy">
+    <article class="card does reveal">
+      <h3><span class="ico success"><svg class="i" aria-hidden="true"><use href="#i-shield-check"/></svg></span>O que o app faz</h3>
+      <ul>
+        <li><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Guarda histórico, cache e favoritos apenas no seu computador (SQLite)</li>
+        <li><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Mostra o CPF de sócios sempre mascarado, como a Receita publica</li>
+        <li><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Permite apagar histórico e cache a qualquer momento</li>
+        <li><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Escuta só em 127.0.0.1, com CSP estrita e bloqueio de POST/DELETE de outra origem</li>
+      </ul>
+    </article>
+    <article class="card never reveal d1">
+      <h3><span class="ico warning"><svg class="i" aria-hidden="true"><use href="#i-lock"/></svg></span>O que o app nunca faz</h3>
+      <ul>
+        <li><svg class="i" aria-hidden="true"><use href="#i-x"/></svg>Tenta descobrir ou desmascarar o CPF de sócios</li>
+        <li><svg class="i" aria-hidden="true"><use href="#i-x"/></svg>Busca telefones pessoais, endereços residenciais, datas de nascimento ou e-mails pessoais</li>
+        <li><svg class="i" aria-hidden="true"><use href="#i-x"/></svg>Cruza dados para montar perfis de pessoas</li>
+        <li><svg class="i" aria-hidden="true"><use href="#i-x"/></svg>Compartilha o seu histórico com terceiros</li>
+      </ul>
+    </article>
+  </div>
+  <p class="caption reveal">Transparência: nas consultas online, o CNPJ consultado é enviado às fontes habilitadas, porque é assim que a consulta funciona. Com a base local da Receita, nada sai do seu computador.</p>
+</section>
+
+<!-- ============================== FAQ ============================== -->
+<section class="section container" id="faq" aria-labelledby="t-faq">
+  <div class="section-head center reveal">
+    <span class="eyebrow">Perguntas frequentes</span>
+    <h2 id="t-faq">O que costumam perguntar</h2>
+  </div>
+  <div class="faq reveal">
+    <details><summary>Preciso de chave de API?</summary><div class="answer"><p>Não. Todas as fontes usadas são gratuitas e funcionam sem chave.</p></div></details>
+    <details><summary>Funciona sem internet?</summary><div class="answer"><p>As consultas online precisam de internet. Com a base local da Receita Federal ativada (<span class="mono">RECEITA_LOCAL_ENABLED=true</span>), a consulta por CNPJ e a busca por sócio funcionam offline, inclusive com as APIs fora do ar. A importação exige cerca de 40 GB livres durante o processo.</p></div></details>
+    <details><summary>Os dados são oficiais?</summary><div class="answer"><p>Vêm de fontes públicas. A base local é a da própria Receita Federal; BrasilAPI, ReceitaWS e CNPJ.ws são espelhos ou proxies. Os dados podem estar defasados (a base da Receita é mensal), por isso o app mostra a fonte e a data de cada um. Ele não substitui o comprovante oficial.</p></div></details>
+    <details><summary>Aceita o CNPJ alfanumérico?</summary><div class="answer"><p>Sim. Aceita o formato numérico e o novo, com letras nas 12 primeiras posições, e valida os dígitos verificadores dos dois.</p></div></details>
+    <details><summary>Posso expor o app na internet ou usar em equipe?</summary><div class="answer"><p>O app foi feito para uso local e não tem login: ele escuta apenas em 127.0.0.1. Para expor em uma rede, coloque na frente um proxy reverso com autenticação.</p></div></details>
+    <details><summary>Posso usar comercialmente?</summary><div class="answer"><p>O código é MIT. Mas cada fonte tem os seus termos: por exemplo, a ReceitaWS proíbe a revenda dos dados por API pública. Leia os termos de cada uma antes de redistribuir dados.</p></div></details>
+    <details><summary>Como apago o que o app guardou?</summary><div class="answer"><p>Pela página <em>Histórico e favoritos</em> ou por linha de comando: <span class="mono">python -m app.cli limpar-historico</span> e <span class="mono">python -m app.cli limpar-cache</span>.</p></div></details>
+    <details><summary>Por que uma fonte aparece como “limite atingido”?</summary><div class="answer"><p>É normal, principalmente na ReceitaWS (3 consultas por minuto no plano gratuito). O app pula a fonte na hora, sem atrasar a resposta, e a consulta segue com as demais.</p></div></details>
+  </div>
+</section>
+
+<!-- ============================== CTA ============================== -->
+<section class="container section-tight" aria-labelledby="t-cta">
+  <div class="card cta reveal">
+    <h2 id="t-cta">Confira CNPJ com fontes cruzadas</h2>
+    <p class="lead">Instale, abra o navegador em 127.0.0.1:8000 e consulte. É open source, gratuito e roda no seu computador.</p>
+    <div class="hero-cta">
+      <a class="btn btn-primary btn-lg" href="#instalacao">Instalar agora <svg class="i" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+      <a class="btn btn-lg" href="https://github.com/fredabsd-svg/cnpj-consulta"><svg class="i i-fill" aria-hidden="true"><use href="#i-github"/></svg>Código no GitHub</a>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="container">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <img class="only-dark" src="assets/brand/logo-dark.svg" alt="CNPJ Consulta" width="210" height="66">
+        <img class="only-light" src="assets/brand/logo.svg" alt="CNPJ Consulta" width="210" height="66">
+        <p>Consulta de CNPJ com fontes cruzadas e procedência de cada dado. Open source, licença MIT.</p>
+      </div>
+      <div class="footer-col">
+        <h3>Projeto</h3>
+        <ul>
+          <li><a href="https://github.com/fredabsd-svg/cnpj-consulta">Repositório</a></li>
+          <li><a href="https://github.com/fredabsd-svg/cnpj-consulta/issues">Issues</a></li>
+          <li><a href="https://github.com/fredabsd-svg/cnpj-consulta/blob/main/LICENSE">Licença MIT</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h3>Documentação</h3>
+        <ul>
+          <li><a href="https://github.com/fredabsd-svg/cnpj-consulta#readme">README</a></li>
+          <li><a href="https://github.com/fredabsd-svg/cnpj-consulta/blob/main/politica-de-privacidade.md">Política de privacidade</a></li>
+          <li><a href="https://github.com/fredabsd-svg/cnpj-consulta/blob/main/RELATORIO_FINAL.md">Relatório técnico</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h3>Comunidade</h3>
+        <ul>
+          <li><a href="https://github.com/fredabsd-svg/cnpj-consulta/blob/main/CONTRIBUTING.md">Como contribuir</a></li>
+          <li><a href="https://github.com/fredabsd-svg/cnpj-consulta/issues/new/choose">Reportar um problema</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="legal">
+      <p>Os dados exibidos são de responsabilidade das fontes consultadas. Este software é uma ferramenta de conveniência e não substitui a consulta oficial em gov.br/receitafederal. Projeto independente, sem vínculo com a Receita Federal, BrasilAPI, Minha Receita, ReceitaWS ou CNPJ.ws.</p>
+      <p>Licença MIT</p>
+    </div>
+  </div>
+</footer>
+
+<script src="assets/site.js" defer></script>
+</body>
+</html>

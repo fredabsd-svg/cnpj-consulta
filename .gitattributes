@@ -1,0 +1,14 @@
+# Normaliza as quebras de linha no repositorio (LF); cada arquivo volta ao padrao do sistema no checkout.
+* text=auto
+
+# Scripts precisam da quebra de linha do sistema alvo: .sh com CRLF quebra no Linux/macOS/Git Bash
+# ("bash\r: No such file or directory"); .bat com LF quebra rotulos (goto) no cmd.exe.
+*.sh  text eol=lf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# Binarios
+*.png  binary
+*.webp binary
+*.ico  binary
+*.db   binary

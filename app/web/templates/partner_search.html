@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block title %}Buscar socio{% endblock %}
+
+{% block content %}
+<h1>Buscar empresas por socio</h1>
+<p class="muted">Encontra empresas em que uma pessoa ou empresa figura no quadro societario. Usa apenas a base publica da Receita Federal, baixada no seu computador.</p>
+
+{% if not enabled %}
+<div class="alert alert-warning" role="status">
+    <span class="alert-title">A busca por socio precisa da base local da Receita Federal.</span>
+    <p>Nenhuma API publica gratuita permite buscar pelo nome do socio. Para habilitar (cerca de 40 GB livres durante a importacao):</p>
+    <ol class="list-plain">
+        <li>Baixe e importe a base: <pre>python -m app.cli sync-receita --mes AAAA-MM</pre></li>
+        <li>No arquivo <code>.env</code>, defina <code>RECEITA_LOCAL_ENABLED=true</code> e reinicie o servidor.</li>
+    </ol>
+</div>
+{% else %}
+<form action="/socios" method="get" class="card" data-loading="Buscando..." novalidate>
+    <div class="form-row">
+        <div class="field">
+            <label for="q">Nome do socio</label>
+            <input class="input" type="text" id="q" name="q" value="{{ q }}" required minlength="3" maxlength="200"
+                   autocomplete="off" autofocus aria-describedby="q-hint{% if error %} q-erro{% endif %}"
+                   {% if error %}aria-invalid="true"{% endif %}>
+            <span id="q-hint" class="hint">Nome completo ou parte dele; acentos sao ignorados.</span>
+        </div>
+        <div class="field field-narrow">
+            <label for="uf">UF da sede</label>
+            <select class="select" id="uf" name="uf">
+                <option value="">Todas</option>
+                {% for sigla in ufs %}<option value="{{ sigla }}" {% if sigla == uf %}selected{% endif %}>{{ sigla }}</option>{% endfor %}
+            </select>
+        </div>
+        <div class="field">
+            <label for="municipio">Municipio da sede <span class="muted">(opcional)</span></label>
+            <input class="input" type="text" id="municipio" name="municipio" value="{{ municipio }}" maxlength="100" autocomplete="off">
+        </div>
+        <button type="submit" class="btn btn-primary">Buscar</button>
+    </div>
+    {% if error %}<p id="q-erro" class="field-error" role="alert">{{ error }}</p>{% endif %}
+    <p class="loading-note" aria-live="polite">Pesquisando na base local; nomes comuns podem levar alguns segundos.</p>
+</form>
+
+{% if rows is not none %}
+<section class="section card" aria-labelledby="titulo-resultados">
+    <div class="section-header">
+        <h2 id="titulo-resultados">{{ rows | length }} empresa(s) encontrada(s) para "{{ q }}"</h2>
+        {% if limit is defined and rows | length >= limit %}<span class="muted small">Mostrando as primeiras {{ limit }}. Refine com UF ou municipio.</span>{% endif %}
+    </div>
+    {% if rows %}
+    <div class="table-wrap">
+        <table class="data-table">
+            <thead><tr><th scope="col">Socio</th><th scope="col">Empresa</th><th scope="col">CNPJ</th><th scope="col">Situacao</th><th scope="col">Qualificacao</th><th scope="col">Municipio/UF</th></tr></thead>
+            <tbody>
+                {% for r in rows %}
+                <tr>
+                    <td>{{ r.nome_socio }}</td>
+                    <td><a href="/empresa/{{ r.cnpj }}">{{ r.razao_social or "Sem razao social" }}</a></td>
+                    <td class="mono nowrap">{{ r.cnpj | cnpj }}</td>
+                    <td>{{ r.situacao or "-" }}</td>
+                    <td>{{ r.qualificacao or "-" }}</td>
+                    <td>{{ r.municipio or "-" }}{% if r.uf %}/{{ r.uf }}{% endif %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="empty-state">Nenhum socio encontrado. Tente apenas o sobrenome ou remova os filtros.</p>
+    {% endif %}
+</section>
+{% endif %}
+{% endif %}
+{% endblock %}

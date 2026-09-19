@@ -1,0 +1,29 @@
+{# Cartao CNPJ 3D -- ilustracao decorativa ao lado do titulo da pagina inicial.
+   aria-hidden: nao e informacao. Estilos em styles.css (.cartao3d-*); sem style=""
+   porque a CSP do servidor bloqueia estilos inline. Escondido abaixo de 1024px. #}
+<div class="cartao3d-wrap" aria-hidden="true">
+  <div>
+    <div class="cartao3d">
+      <div class="cartao3d-sombra"></div>
+      <div class="cartao3d-fundo"></div>
+      <div class="cartao3d-face">
+        <div class="cartao3d-topo">
+          <div class="cartao3d-marca"><img class="logo-mark" src="{{ static_url('logo-mark.svg') }}" alt="" width="24" height="24"><span class="cartao3d-rotulo">Cartão CNPJ</span></div>
+          <span class="badge badge-success"><span class="cartao3d-ponto"></span>Ativa</span>
+        </div>
+        <div class="cartao3d-numero">19.131.243<em>/0001</em>-97</div>
+        <div class="cartao3d-rodape">
+          <div class="cartao3d-razao"><div class="cartao3d-rotulo">Razão social</div><div class="cartao3d-valor">Open Knowledge Brasil</div></div>
+          <div class="cartao3d-direita"><div class="cartao3d-rotulo">Abertura</div><div class="cartao3d-valor">03/10/2013</div></div>
+        </div>
+      </div>
+      <div class="cartao3d-chip cartao3d-chip-fontes">
+        <span class="cartao3d-fontes-barras"><i></i><i></i><i></i></span>2 de 3 fontes
+      </div>
+      <div class="cartao3d-chip cartao3d-chip-grafico">
+        <div class="cartao3d-rotulo">Sócios · CNAEs</div>
+        <div class="cartao3d-barras"><i></i><i></i><i></i><i></i></div>
+      </div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,60 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Ambientes virtuais
+.venv/
+venv/
+env/
+.ENV/
+
+# Dados locais e caches
+data/app.db
+data/app.db-journal
+data/cache.db
+data/receita/*.csv
+data/receita/*.zip
+data/receita/receita.db
+data/receita/receita.db.wal
+# Temporarios do sync-receita (dezenas de GB) e backups da base
+data/receita/zips/
+data/receita/extracted/
+data/receita/*.db
+data/receita/*.db.bak
+data/receita/*.wal
+data/cache/
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Cobertura
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Ferramentas locais (configuracao do editor/assistente; nao faz parte do projeto)
+.claude/
+
+# Dados de execucao: historico, cache e a base da Receita Federal (o setup cria estas pastas)
+data/
