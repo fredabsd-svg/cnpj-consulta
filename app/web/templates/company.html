@@ -43,12 +43,14 @@
                 {% endif %}
                 <a class="btn" href="/empresa/{{ c.cnpj }}?atualizar=1" data-loading="Atualizando...">Atualizar dados</a>
                 {% if c.razao_social %}
+                <a class="btn btn-primary" href="/empresa/{{ c.cnpj }}/relatorio">Relatorio personalizado</a>
                 <details class="more-actions">
                     <summary class="btn">Mais acoes</summary>
                     <div class="more-actions-menu">
+                        <a class="btn" href="/empresa/{{ c.cnpj }}/relatorio">Relatorio personalizado</a>
                         <a class="btn" href="/api/companies/{{ c.cnpj }}/export.csv" download>Exportar CSV (Excel)</a>
                         <a class="btn" href="/api/companies/{{ c.cnpj }}/export.json" download>Exportar JSON</a>
-                        <button type="button" class="btn" data-print>Imprimir</button>
+                        <button type="button" class="btn" data-print>Imprimir pagina</button>
                     </div>
                 </details>
                 {% endif %}
@@ -98,6 +100,32 @@
             <a href="/empresa/{{ c.cnpj }}?atualizar=1" data-loading="Atualizando...">Atualizar agora</a></p>
         {% endif %}
     </div>
+
+
+    {% if diligence %}
+    <section class="card section" id="diligencia" aria-labelledby="diligencia-title">
+        <div class="section-header">
+            <h2 id="diligencia-title">Checklist de diligencia</h2>
+            <a class="btn" href="/empresa/{{ c.cnpj }}/relatorio">Abrir relatorio</a>
+        </div>
+        <ul class="list-plain diligence-list">
+            {% for item in diligence %}
+            <li>
+                {% set cls = {"ok": "badge-success", "alerta": "badge-warning", "falha": "badge-danger", "info": "badge-info"}[item.status] %}
+                <span class="badge {{ cls }}">{{ item.status }}</span>
+                <strong>{{ item.rotulo }}</strong>
+                <span class="muted small"> — {{ item.detalhe }}</span>
+            </li>
+            {% endfor %}
+        </ul>
+        {% if c.conflitos %}
+        <div class="alert alert-warning section" role="status">
+            <span class="alert-title">Divergencias em destaque ({{ c.conflitos | length }})</span>
+            <ul>{% for item in c.conflitos %}<li>{{ item | replace("minha_receita", "Minha Receita") | replace("receitaws", "ReceitaWS") | replace("brasilapi", "BrasilAPI") | replace("receita_local", "Receita (local)") | replace("cnpjws", "CNPJ.ws") }}</li>{% endfor %}</ul>
+        </div>
+        {% endif %}
+    </section>
+    {% endif %}
 
     {% if c.razao_social %}
     <div class="tabs" role="tablist" aria-label="Detalhes da empresa">
