@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="mt">
+  <title id="mt">CNPJ Consulta</title>
+  <defs>
+    <linearGradient id="mg" x1="10" y1="54" x2="54" y2="10" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#22d3ee"/><stop offset="1" stop-color="#8b5cf6"/>
+    </linearGradient>
+    <radialGradient id="mh" cx=".18" cy=".08" r=".95"><stop offset="0" stop-color="#fff" stop-opacity=".22"/><stop offset=".6" stop-color="#fff" stop-opacity="0"/></radialGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="#0f1424"/>
+  <rect width="64" height="64" rx="16" fill="url(#mh)"/>
+  <rect x=".6" y=".6" width="62.8" height="62.8" rx="15.4" fill="none" stroke="#fff" stroke-opacity=".14" stroke-width="1.2"/>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="36" cy="28" r="14" stroke="url(#mg)" stroke-width="6"/>
+    <path d="M25.5 38.5 14.5 49.5" stroke="url(#mg)" stroke-width="7"/>
+    <path d="M29.6 28.2l4.6 4.6 8.2-9.6" stroke="#34d399" stroke-width="3.6"/>
+  </g>
+</svg>

@@ -70,9 +70,10 @@ class Settings(BaseSettings):
     minha_receita_enabled: bool = True
     minha_receita_base_url: str = "https://minhareceita.org"
 
+    # API publica gratuita (3 req/min); sem autenticacao.
+    # cnpjws_api_key removida: nunca foi lida pelo adaptador CNPJ.ws.
     cnpjws_enabled: bool = False
     cnpjws_base_url: str = "https://publica.cnpj.ws"
-    cnpjws_api_key: str = ""
 
     # Opt-in: a API publica do ReceitaWS proibe republicacao/revenda (Clausula
     # Oitava). Desligado por padrao; habilite so para uso pessoal local.

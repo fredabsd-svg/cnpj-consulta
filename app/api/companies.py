@@ -5,24 +5,55 @@ from __future__ import annotations
 import csv
 import io
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import Response
+from datetime import datetime
+from pathlib import Path
 
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse, Response
+from fastapi.templating import Jinja2Templates
+
+from app import __version__
+from app.core import formatting
 from app.core.inbound_limit import check_company_lookup_limit
 from app.schemas.company import CompanyUnified
 from app.services.company_query import query_company_async
+from app.services.diligence import build_diligence_checklist
 
 router = APIRouter(prefix="/api/companies", tags=["companies"])
 
+_TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "web" / "templates"
+_STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+_templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+_templates.env.globals["version"] = __version__
+
+
+def _static_url(path: str) -> str:
+    try:
+        stamp = int((_STATIC_DIR / path).stat().st_mtime)
+    except OSError:
+        stamp = 0
+    return f"/static/{path}?v={stamp}"
+
+
+_templates.env.globals["static_url"] = _static_url
+for _name in ("brl", "data_br", "cep", "telefone", "cnae", "cnpj", "fonte"):
+    _templates.env.filters[_name] = getattr(formatting, _name)
+
+
 _REFRESH = Query(False, description="Ignora o cache e consulta as fontes novamente")
 _LOOKUP_DEPS = [Depends(check_company_lookup_limit)]
+
+_CNPJ_INVALID_DETAIL = (
+    "CNPJ invalido: informe 14 caracteres (numeros ou letras A-Z) "
+    "com digitos verificadores corretos."
+)
 
 
 async def _load(cnpj: str, atualizar: bool = False) -> CompanyUnified:
     try:
         return await query_company_async(cnpj, force_refresh=atualizar)
     except ValueError:
-        raise HTTPException(status_code=400, detail="CNPJ invalido") from None
+        raise HTTPException(status_code=400, detail=_CNPJ_INVALID_DETAIL) from None
 
 
 @router.get("/{cnpj}", response_model=CompanyUnified, dependencies=_LOOKUP_DEPS)
@@ -131,3 +162,21 @@ async def export_csv(
     text = buf.getvalue()
     content = ("\ufeff" + text).encode("utf-8") if excel else text
     return _download(content, "text/csv; charset=utf-8", f"cnpj_{company.cnpj}.csv")
+
+
+@router.get("/{cnpj}/export.relatorio", response_class=HTMLResponse, dependencies=_LOOKUP_DEPS)
+async def export_relatorio(request: Request, cnpj: str) -> HTMLResponse:
+    """Relatorio personalizado HTML (mesmo conteudo de /empresa/{cnpj}/relatorio)."""
+    company = await _load(cnpj)
+    diligence = build_diligence_checklist(company)
+    status = 200 if company.razao_social else 404
+    return _templates.TemplateResponse(
+        request,
+        "relatorio.html",
+        {
+            "company": company,
+            "diligence": diligence,
+            "consulta_em": formatting.data_br(datetime.now().astimezone()),
+        },
+        status_code=status,
+    )

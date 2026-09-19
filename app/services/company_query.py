@@ -36,8 +36,19 @@ async def query_company_async(
         unified.origem_cache = True
     else:
         results = await registry.fetch_all_parallel(normalized)
+        ok = [r for r in results if r.http_status == 200]
+        if not ok:
+            # Sem corpo de resposta: so status/provedor -- evita vazar payload.
+            summary = ", ".join(f"{r.provider}:{r.http_status}" for r in results) or (
+                "(nenhum provedor habilitado)"
+            )
+            log.warning(
+                "nenhuma fonte OK para %s; procedencia parcial/vazia [%s]",
+                normalized,
+                summary,
+            )
         unified = reconcile(normalized, results)
-        if any(r.http_status == 200 for r in results):
+        if ok:
             try:
                 await asyncio.to_thread(cache_put, normalized, unified)
             except Exception as e:  # noqa: BLE001

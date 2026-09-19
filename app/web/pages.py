@@ -17,8 +17,10 @@ from app import __version__
 from app.config import get_settings
 from app.core import formatting
 from app.core.cnpj_validator import normalize_or_none, strip
+from app.core.formatting import data_br
 from app.core.inbound_limit import check_company_lookup_limit
 from app.services.company_query import query_company_async
+from app.services.diligence import build_diligence_checklist
 from app.services.history_service import is_favorite, list_favorites, recent_queries
 from app.services.partner_search import MAX_LIMIT, search_partners
 
@@ -103,10 +105,46 @@ async def empresa(request: Request, cnpj: str, atualizar: bool = False) -> HTMLR
         )
     company = await query_company_async(normalized, force_refresh=atualizar)
     favorite = await asyncio.to_thread(is_favorite, normalized)
+    diligence = build_diligence_checklist(company) if company.razao_social else []
     return _render(
         request,
         "company.html",
-        {"active": "inicio", "company": company, "favorite": favorite},
+        {
+            "active": "inicio",
+            "company": company,
+            "favorite": favorite,
+            "diligence": diligence,
+        },
+        200 if company.razao_social else 404,
+    )
+
+
+@router.get(
+    "/empresa/{cnpj}/relatorio",
+    response_class=HTMLResponse,
+    dependencies=[Depends(check_company_lookup_limit)],
+)
+async def empresa_relatorio(request: Request, cnpj: str, atualizar: bool = False) -> HTMLResponse:
+    """Relatorio personalizado (HTML A4 / PDF via impressao do navegador)."""
+    from datetime import datetime
+
+    normalized = normalize_or_none(cnpj)
+    if normalized is None:
+        return await _index(
+            request, error="CNPJ invalido. Confira os digitos.", value=cnpj[:18], status=400
+        )
+    company = await query_company_async(normalized, force_refresh=atualizar)
+    diligence = build_diligence_checklist(company)
+    consulta_em = data_br(datetime.now().astimezone())
+    return _render(
+        request,
+        "relatorio.html",
+        {
+            "active": "inicio",
+            "company": company,
+            "diligence": diligence,
+            "consulta_em": consulta_em,
+        },
         200 if company.razao_social else 404,
     )
 

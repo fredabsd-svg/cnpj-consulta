@@ -76,6 +76,7 @@ def search_partners(
     if not nome_norm or len(nome_norm) < MIN_QUERY_LEN:
         return []
     limit = max(1, min(int(limit), MAX_LIMIT))
+    uf_clean = uf.strip().upper() if uf and uf.strip() else None
 
     with connect_readonly(db_path) as conn:
         tables = existing_tables(conn)
@@ -110,9 +111,9 @@ def search_partners(
         for word in nome_norm.split():
             sql.append(f"AND {nome_expr} LIKE ?")
             params.append(f"%{word}%")
-        if uf:
+        if uf_clean:
             sql.append("AND e.uf = ?")
-            params.append(uf.strip().upper())
+            params.append(uf_clean)
         if municipio and (mun_norm := normalize_name_for_search(municipio)):
             sql.append(f"AND strip_accents(upper({municipio_expr})) LIKE ?")
             params.append(f"%{mun_norm}%")
@@ -129,6 +130,8 @@ def companies_of_partner_document(documento: str, limit: int = 200) -> list[dict
     O CPF de pessoa fisica vem mascarado na base publica, entao so faz
     sentido buscar por CNPJ completo de socio PJ.
     """
+    if not documento or not str(documento).strip():
+        return []
     db_path = _db_path()
     limit = max(1, min(int(limit), MAX_LIMIT))
     with connect_readonly(db_path) as conn:
@@ -149,6 +152,6 @@ def companies_of_partner_document(documento: str, limit: int = 200) -> list[dict
             ORDER BY em.razao_social
             LIMIT ?
             """,
-            [documento, limit],
+            [str(documento).strip(), limit],
         ).fetchall()
         return _post_process(rows_as_dicts(conn, rows))

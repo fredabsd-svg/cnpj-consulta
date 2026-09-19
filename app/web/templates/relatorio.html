@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Relatorio — {{ company.cnpj_formatado }} — CNPJ Consulta</title>
+  <link rel="stylesheet" href="{{ static_url('css/relatorio.css') }}">
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+</head>
+<body>
+{% macro v(x) -%}
+{%- if x is none or x == "" -%}<span class="nao-informado">Nao informado</span>{%- else -%}{{ x }}{%- endif -%}
+{%- endmacro %}
+{% macro sim_nao(x) -%}
+{%- if x is none -%}<span class="nao-informado">Nao informado</span>{%- elif x -%}Sim{%- else -%}Nao{%- endif -%}
+{%- endmacro %}
+{% set c = company %}
+
+<nav class="toolbar" aria-label="Acoes do relatorio">
+  <a class="btn" href="/empresa/{{ c.cnpj }}">&larr; Voltar a empresa</a>
+  <button type="button" class="btn btn-primary" id="btn-imprimir" data-print>Imprimir / Salvar PDF</button>
+  <a class="btn" href="/api/companies/{{ c.cnpj }}/export.csv">CSV (Excel)</a>
+  <span class="hint">Use Imprimir → “Salvar como PDF” para arquivo A4.</span>
+</nav>
+
+<main class="report">
+  <header class="cover">
+    <div class="cover-brand">
+      <img src="/static/brand/logo.svg" alt="CNPJ Consulta" width="180" height="56">
+      <div>
+        <div class="product">Relatorio personalizado</div>
+        <h1>{{ c.razao_social or "Empresa nao encontrada" }}</h1>
+      </div>
+    </div>
+    <div class="cover-meta">
+      <strong>Data da consulta</strong>
+      {{ consulta_em }}
+      <div class="cover-cnpj">{{ c.cnpj_formatado }}</div>
+      {% if c.situacao_cadastral %}
+      <div class="cover-situacao">
+        <span class="badge {% if c.situacao_cadastral == 'ATIVA' %}badge-ativa{% else %}badge-outra{% endif %}">{{ c.situacao_cadastral }}</span>
+      </div>
+      {% endif %}
+    </div>
+  </header>
+
+  {% if not c.razao_social %}
+  <section class="section divergencias">
+    <h2>Sem dados</h2>
+    <p>Nenhuma fonte retornou dados para este CNPJ. O documento permanece valido, mas pode ser inexistente, recente ou as fontes podem estar indisponiveis.</p>
+  </section>
+  {% else %}
+
+  <section class="section" id="checklist">
+    <h2>Checklist de diligencia</h2>
+    <ul class="checklist">
+      {% for item in diligence %}
+      <li>
+        <span class="badge badge-{{ item.status }}">{{ item.status }}</span>
+        <div>
+          <div class="rotulo">{{ item.rotulo }}</div>
+          <div class="detalhe">{{ item.detalhe }}</div>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  <section class="section {% if c.conflitos %}divergencias{% else %}divergencias limpo{% endif %}" id="divergencias">
+    <h2>Destaque de divergencias</h2>
+    {% if c.conflitos %}
+    <p><strong>{{ c.conflitos | length }} campo(s)</strong> com divergencia entre fontes. Confira na fonte oficial antes de usar.</p>
+    <ul>
+      {% for item in c.conflitos %}
+      <li>{{ item | replace("minha_receita", "Minha Receita") | replace("receitaws", "ReceitaWS") | replace("brasilapi", "BrasilAPI") | replace("receita_local", "Receita (local)") | replace("cnpjws", "CNPJ.ws") }}</li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p>Nenhuma divergencia detectada entre as fontes consultadas neste snapshot.</p>
+    {% endif %}
+  </section>
+
+  <section class="section" id="resumo">
+    <h2>Resumo cadastral</h2>
+    <dl class="kv">
+      <dt>CNPJ</dt><dd class="mono">{{ c.cnpj_formatado }}</dd>
+      <dt>Razao social</dt><dd>{{ c.razao_social }}</dd>
+      <dt>Nome fantasia</dt><dd>{{ v(c.nome_fantasia) }}</dd>
+      <dt>Situacao</dt><dd>{{ c.situacao_cadastral or "—" }}{% if c.data_situacao_cadastral %} desde {{ c.data_situacao_cadastral | data_br }}{% endif %}</dd>
+      <dt>Motivo da situacao</dt><dd>{{ v(c.motivo_situacao) }}</dd>
+      <dt>Abertura</dt><dd>{{ c.data_abertura | data_br }}</dd>
+      <dt>Natureza juridica</dt><dd>{{ v(c.natureza_juridica) }}</dd>
+      <dt>Porte</dt><dd>{{ v(c.porte) }}</dd>
+      <dt>Capital social</dt><dd>{{ c.capital_social | brl }}</dd>
+      <dt>Simples Nacional</dt><dd>{{ sim_nao(c.opcao_simples) }}</dd>
+      <dt>MEI</dt><dd>{{ sim_nao(c.opcao_mei) }}</dd>
+      <dt>Tipo</dt><dd>{{ v(c.matriz_filial) }}</dd>
+      <dt>Endereco</dt>
+      <dd>
+        {% if c.endereco %}
+        {% set e = c.endereco %}
+        {{ e.logradouro or "" }}{% if e.numero %}, {{ e.numero }}{% endif %}{% if e.complemento %} · {{ e.complemento }}{% endif %}<br>
+        {% if e.bairro %}{{ e.bairro }} · {% endif %}{{ e.municipio or "" }}{% if e.uf %}/{{ e.uf }}{% endif %}
+        {% if e.cep %} · CEP <span class="mono">{{ e.cep | cep }}</span>{% endif %}
+        {% else %}{{ v(none) }}{% endif %}
+      </dd>
+      <dt>E-mail</dt><dd>{{ v(c.email) }}</dd>
+    </dl>
+    <p class="snapshot-note">
+      Snapshot da consulta unificada
+      {% if c.origem_cache %}(cache local){% else %}(consulta ao vivo){% endif %}.
+      Exportacao tabular: <a href="/api/companies/{{ c.cnpj }}/export.csv">CSV Excel-friendly</a>
+      ou <a href="/api/companies/{{ c.cnpj }}/export.json">JSON</a>.
+    </p>
+  </section>
+
+  <section class="section" id="qsa">
+    <h2>Quadro societario (QSA)</h2>
+    {% if c.socios %}
+    <table>
+      <thead>
+        <tr>
+          <th>Nome</th>
+          <th>Qualificacao</th>
+          <th>Entrada</th>
+          <th>Documento</th>
+          <th>Fonte</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in c.socios %}
+        <tr>
+          <td>{{ s.nome }}{% if s.tipo == "PESSOA_JURIDICA" %} (PJ){% elif s.tipo == "ESTRANGEIRO" %} (Estrangeiro){% endif %}</td>
+          <td>{{ v(s.qualificacao) }}</td>
+          <td>{{ s.data_entrada | data_br }}</td>
+          <td class="mono">{{ s.documento_mascarado or "—" }}</td>
+          <td class="small muted">{{ s.fonte | fonte }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="small muted">CPFs mascarados conforme publicados pela Receita Federal (LGPD). Este aplicativo nao tenta revela-los.</p>
+    {% else %}
+    <p class="muted">Nenhum socio informado pelas fontes (comum em empresario individual e MEI).</p>
+    {% endif %}
+  </section>
+
+  <section class="section" id="cnaes">
+    <h2>CNAEs / atividades</h2>
+    {% if c.cnae_principal %}
+    <p><strong>Principal:</strong> <span class="mono">{{ c.cnae_principal.codigo | cnae }}</span> · {{ v(c.cnae_principal.descricao) }}</p>
+    {% else %}
+    <p class="muted">Atividade principal nao informada.</p>
+    {% endif %}
+    {% if c.cnaes_secundarios %}
+    <table>
+      <thead><tr><th>Codigo</th><th>Descricao</th></tr></thead>
+      <tbody>
+        {% for a in c.cnaes_secundarios %}
+        <tr><td class="mono">{{ a.codigo | cnae }}</td><td>{{ v(a.descricao) }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </section>
+
+  <section class="section" id="procedencia">
+    <h2>Procedencia campo a campo</h2>
+    {% if c.campos_procedencia %}
+    <table>
+      <thead>
+        <tr><th>Campo</th><th>Fonte</th><th>Valor</th><th>Confianca</th></tr>
+      </thead>
+      <tbody>
+        {% for p in c.campos_procedencia %}
+        <tr>
+          <td>{{ p.campo | replace("_", " ") | capitalize }}</td>
+          <td>{{ p.fonte | fonte }}</td>
+          <td>{{ p.valor }}</td>
+          <td><span class="badge badge-{% if p.confianca == 'alta' %}ok{% elif p.confianca == 'media' %}info{% else %}falha{% endif %}">{{ p.confianca }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">Sem tabela de procedencia neste snapshot.</p>
+    {% endif %}
+  </section>
+
+  {% endif %}
+
+  <section class="section" id="fontes">
+    <h2>Fontes consultadas</h2>
+    <div class="fontes-resumo">
+      {% for f in c.fontes %}
+      <span class="fonte-pill">
+        {{ f.fonte | fonte }}
+        <span class="badge badge-{% if f.status == 200 %}ok{% else %}falha{% endif %}">{% if f.status == 200 %}OK{% else %}Falhou{% endif %}</span>
+      </span>
+      {% else %}
+      <span class="muted">Nenhuma fonte registrada.</span>
+      {% endfor %}
+    </div>
+    {% if c.fontes %}
+    <table>
+      <thead>
+        <tr><th>Fonte</th><th>Tipo</th><th>Resultado</th><th>Consultada em</th></tr>
+      </thead>
+      <tbody>
+        {% for f in c.fontes %}
+        <tr>
+          <td>{{ f.fonte | fonte }}</td>
+          <td>{% if f.espelho_rfb %}Espelho RFB{% else %}Primaria{% endif %}</td>
+          <td>{% if f.status == 200 %}OK{% else %}{{ f.erro or ("HTTP " ~ f.status) }}{% endif %}</td>
+          <td>{{ f.data_consulta | data_br }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </section>
+
+  <footer class="disclaimer">
+    <strong>Disclaimer.</strong>
+    Este relatorio e um snapshot informativo gerado pelo CNPJ Consulta a partir de fontes publicas.
+    Nao substitui certidoes oficiais da Receita Federal, Junta Comercial ou outros orgaos.
+    Dados de pessoas fisicas (CPF) aparecem apenas mascarados, conforme publicados pelas fontes (LGPD).
+    Confirme divergencias e situacao cadastral na fonte oficial antes de decisoes contratuais, fiscais ou crediticias.
+    Gerado em {{ consulta_em }} · versao {{ version }}.
+  </footer>
+</main>
+<script src="{{ static_url('js/relatorio.js') }}" defer></script>
+</body>
+</html>
