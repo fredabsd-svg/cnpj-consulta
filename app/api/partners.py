@@ -14,7 +14,7 @@ router = APIRouter(prefix="/api/partners", tags=["partners"])
 
 @router.get("/search")
 async def search(
-    q: str = Query(..., min_length=2, max_length=200, description="Nome (ou parte do nome) do socio"),
+    q: str = Query(..., min_length=3, max_length=200, description="Nome (ou parte do nome) do socio"),
     uf: str | None = Query(None, min_length=2, max_length=2, description="Sigla UF da sede"),
     municipio: str | None = Query(None, max_length=100, description="Municipio da sede"),
     limit: int = Query(50, ge=1, le=MAX_LIMIT),
