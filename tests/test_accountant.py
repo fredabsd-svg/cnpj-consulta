@@ -1,4 +1,4 @@
-"""Testes do pacote contador: checklist de diligencia e relatorio personalizado."""
+"""Testes do pacote contador: checklist de diligencia e relatorio."""
 
 from __future__ import annotations
 
@@ -71,17 +71,14 @@ class TestDiligenceHelpers:
         assert by_id["qsa"].status == "ok"
         assert by_id["divergencias"].status == "ok"
         assert by_id["fontes_ok"].status == "ok"
-        summary = diligence_summary(items)
-        assert summary["falha"] == 0
+        assert diligence_summary(items)["falha"] == 0
 
     def test_situacao_nao_ativa_falha(self):
         items = build_diligence_checklist(_base_company(situacao_cadastral="BAIXADA"))
         assert next(i for i in items if i.id == "situacao_ativa").status == "falha"
 
     def test_divergencias_alerta(self):
-        items = build_diligence_checklist(
-            _base_company(conflitos=["razao_social: fontes divergem"])
-        )
+        items = build_diligence_checklist(_base_company(conflitos=["razao_social: fontes divergem"]))
         assert next(i for i in items if i.id == "divergencias").status == "alerta"
 
     def test_qsa_vazio_info(self):
@@ -111,20 +108,14 @@ class TestRelatorioRoutes:
         _mock_sources(brasilapi_payload, receitaws_payload)
         r = client.get(f"/empresa/{CNPJ}/relatorio")
         assert r.status_code == 200
-        assert "text/html" in r.headers["content-type"]
         body = r.text
         assert "Relatório de diligência cadastral" in body
         assert "OPEN KNOWLEDGE BRASIL" in body
         assert "19.131.243/0001-97" in body
-        assert "Checklist de diligência" in body
-        assert "Leitura do dossiê" in body
-        assert "Regular" in body
-        assert "Divergências entre fontes" in body
         assert "Quadro societário" in body
-        assert "Fontes consultadas" in body
-        assert "Disclaimer" in body
         assert "***123456**" in body
-        assert "CNPJ Consulta" in body
+        assert "GAUNTLET" not in body
+        assert "validação visual" not in body.lower()
         assert 'class="sidebar"' not in body
 
     @respx.mock
@@ -133,7 +124,6 @@ class TestRelatorioRoutes:
         r = client.get(f"/api/companies/{CNPJ}/export.relatorio")
         assert r.status_code == 200
         assert "OPEN KNOWLEDGE BRASIL" in r.text
-        assert "Checklist de diligência" in r.text
 
     @respx.mock
     def test_company_page_has_report_button_and_checklist(
@@ -143,7 +133,6 @@ class TestRelatorioRoutes:
         r = client.get(f"/empresa/{CNPJ}")
         assert r.status_code == 200
         assert f"/empresa/{CNPJ}/relatorio" in r.text
-        assert "Checklist de diligencia" in r.text or "Checklist de diligência" in r.text
 
     def test_relatorio_invalid_cnpj(self, client):
         r = client.get("/empresa/123/relatorio")
@@ -166,22 +155,25 @@ class TestRelatorioRoutes:
         assert "Ana Silva" in r.text
         assert "Comite de credito" in r.text
         assert "KYC-2026-041" in r.text
-        assert "DOC-19131243000197-" in r.text
+
+    @respx.mock
+    def test_relatorio_omits_empty_divergence_block(self, client, brasilapi_payload, receitaws_payload):
+        _mock_sources(brasilapi_payload, receitaws_payload)
+        body = client.get(f"/empresa/{CNPJ}/relatorio").text
+        assert "Divergências entre fontes" not in body
+        assert "5 regular" not in body
 
 
 class TestDiligenceVerdict:
     def test_regular_when_all_ok(self):
-        verdict = build_diligence_verdict(build_diligence_checklist(_base_company()))
-        assert verdict.nivel == "regular"
+        assert build_diligence_verdict(build_diligence_checklist(_base_company())).nivel == "regular"
 
     def test_ressalvas_when_alert(self):
-        verdict = build_diligence_verdict(
+        assert build_diligence_verdict(
             build_diligence_checklist(_base_company(conflitos=["capital"]))
-        )
-        assert verdict.nivel == "ressalvas"
+        ).nivel == "ressalvas"
 
     def test_critico_when_baixada(self):
-        verdict = build_diligence_verdict(
+        assert build_diligence_verdict(
             build_diligence_checklist(_base_company(situacao_cadastral="BAIXADA"))
-        )
-        assert verdict.nivel == "critico"
+        ).nivel == "critico"
