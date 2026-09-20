@@ -5,7 +5,6 @@ from __future__ import annotations
 import csv
 import io
 
-from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -17,7 +16,7 @@ from app.core import formatting
 from app.core.inbound_limit import check_company_lookup_limit
 from app.schemas.company import CompanyUnified
 from app.services.company_query import query_company_async
-from app.services.diligence import build_diligence_checklist
+from app.services.report_context import build_report_context
 
 router = APIRouter(prefix="/api/companies", tags=["companies"])
 
@@ -165,18 +164,22 @@ async def export_csv(
 
 
 @router.get("/{cnpj}/export.relatorio", response_class=HTMLResponse, dependencies=_LOOKUP_DEPS)
-async def export_relatorio(request: Request, cnpj: str) -> HTMLResponse:
-    """Relatorio personalizado HTML (mesmo conteudo de /empresa/{cnpj}/relatorio)."""
+async def export_relatorio(
+    request: Request,
+    cnpj: str,
+    escritorio: str = Query("", max_length=80),
+    responsavel: str = Query("", max_length=80),
+    referencia: str = Query("", max_length=80),
+    cliente: str = Query("", max_length=80),
+) -> HTMLResponse:
+    """Relatorio de diligencia cadastral HTML (mesmo conteudo de /empresa/{cnpj}/relatorio)."""
     company = await _load(cnpj)
-    diligence = build_diligence_checklist(company)
-    status = 200 if company.razao_social else 404
-    return _templates.TemplateResponse(
-        request,
-        "relatorio.html",
-        {
-            "company": company,
-            "diligence": diligence,
-            "consulta_em": formatting.data_br(datetime.now().astimezone()),
-        },
-        status_code=status,
+    ctx = build_report_context(
+        company,
+        escritorio=escritorio,
+        responsavel=responsavel,
+        referencia=referencia,
+        cliente=cliente,
     )
+    status = 200 if company.razao_social else 404
+    return _templates.TemplateResponse(request, "relatorio.html", ctx, status_code=status)
