@@ -13,6 +13,13 @@ from app.schemas.company import CompanyUnified
 
 StatusOk = Literal["ok", "alerta", "falha", "info"]
 
+STATUS_LABELS: dict[str, str] = {
+    "ok": "Regular",
+    "alerta": "Atenção",
+    "falha": "Crítico",
+    "info": "Informativo",
+}
+
 
 @dataclass(frozen=True, slots=True)
 class DiligenceItem:
@@ -27,27 +34,39 @@ class DiligenceItem:
         return asdict(self)
 
 
+@dataclass(frozen=True, slots=True)
+class DiligenceVerdict:
+    """Sintese de 10 segundos para a capa do relatorio."""
+
+    nivel: Literal["regular", "ressalvas", "critico"]
+    titulo: str
+    detalhe: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
 def _situacao_item(company: CompanyUnified) -> DiligenceItem:
     sit = (company.situacao_cadastral or "").strip().upper()
     if sit == "ATIVA":
         return DiligenceItem(
             "situacao_ativa",
-            "Situacao cadastral ATIVA",
+            "Situação cadastral ATIVA",
             "ok",
             "Empresa ativa na Receita Federal (conforme fontes).",
         )
     if not sit:
         return DiligenceItem(
             "situacao_ativa",
-            "Situacao cadastral ATIVA",
+            "Situação cadastral ATIVA",
             "alerta",
-            "Situacao nao informada pelas fontes.",
+            "Situação não informada pelas fontes.",
         )
     return DiligenceItem(
         "situacao_ativa",
-        "Situacao cadastral ATIVA",
+        "Situação cadastral ATIVA",
         "falha",
-        f"Situacao atual: {sit}. Confirme na fonte oficial antes de operar.",
+        f"Situação atual: {sit}. Confirme na fonte oficial antes de operar.",
     )
 
 
@@ -58,20 +77,20 @@ def _simples_mei_item(company: CompanyUnified) -> DiligenceItem:
             "simples_mei",
             "Flags Simples / MEI informadas",
             "alerta",
-            "Simples Nacional e MEI nao informados pelas fontes consultadas.",
+            "Simples Nacional e MEI não informados pelas fontes consultadas.",
         )
     if company.opcao_simples is True:
         partes.append("optante do Simples")
     elif company.opcao_simples is False:
-        partes.append("nao optante do Simples")
+        partes.append("não optante do Simples")
     else:
-        partes.append("Simples nao informado")
+        partes.append("Simples não informado")
     if company.opcao_mei is True:
         partes.append("optante MEI")
     elif company.opcao_mei is False:
-        partes.append("nao MEI")
+        partes.append("não MEI")
     else:
-        partes.append("MEI nao informado")
+        partes.append("MEI não informado")
     return DiligenceItem(
         "simples_mei",
         "Flags Simples / MEI informadas",
@@ -86,7 +105,7 @@ def _capital_item(company: CompanyUnified) -> DiligenceItem:
             "capital",
             "Capital social informado",
             "alerta",
-            "Capital social nao informado.",
+            "Capital social não informado.",
         )
     from app.core.formatting import brl
 
@@ -103,15 +122,15 @@ def _qsa_item(company: CompanyUnified) -> DiligenceItem:
     if n == 0:
         return DiligenceItem(
             "qsa",
-            "Quadro societario (QSA) presente",
+            "Quadro societário (QSA) presente",
             "info",
-            "Nenhum socio informado (comum em EI/MEI). Confirme se esperado.",
+            "Nenhum sócio informado (comum em EI/MEI). Confirme se esperado.",
         )
     return DiligenceItem(
         "qsa",
-        "Quadro societario (QSA) presente",
+        "Quadro societário (QSA) presente",
         "ok",
-        f"{n} socio(s)/administrador(es) listado(s). CPFs mascarados (LGPD).",
+        f"{n} sócio(s)/administrador(es) listado(s). CPFs mascarados (LGPD).",
     )
 
 
@@ -120,15 +139,15 @@ def _divergencias_item(company: CompanyUnified) -> DiligenceItem:
     if n == 0:
         return DiligenceItem(
             "divergencias",
-            "Divergencias entre fontes",
+            "Divergências entre fontes",
             "ok",
-            "Nenhuma divergencia detectada entre as fontes consultadas.",
+            "Nenhuma divergência detectada entre as fontes consultadas.",
         )
     return DiligenceItem(
         "divergencias",
-        "Divergencias entre fontes",
+        "Divergências entre fontes",
         "alerta" if n < 3 else "falha",
-        f"{n} campo(s) com divergencia. Revise antes de usar o dado.",
+        f"{n} campo(s) com divergência. Revise antes de usar o dado.",
     )
 
 
@@ -182,3 +201,28 @@ def diligence_summary(items: list[DiligenceItem]) -> dict[str, int]:
     for item in items:
         counts[item.status] = counts.get(item.status, 0) + 1
     return counts
+
+
+def build_diligence_verdict(items: list[DiligenceItem]) -> DiligenceVerdict:
+    """Leitura de capa: o cliente decide em 10 segundos se segue ou para."""
+    counts = diligence_summary(items)
+    if counts["falha"]:
+        return DiligenceVerdict(
+            "critico",
+            "Requer atenção imediata",
+            f"{counts['falha']} item(ns) crítico(s) no checklist. "
+            "Não use este snapshot sozinho para contratar, creditar ou protocolar.",
+        )
+    if counts["alerta"]:
+        return DiligenceVerdict(
+            "ressalvas",
+            "Apto com ressalvas",
+            f"{counts['alerta']} ponto(s) de atenção. Siga com o dossiê, "
+            "mas confira os campos destacados na fonte oficial.",
+        )
+    return DiligenceVerdict(
+        "regular",
+        "Sem alertas críticos neste snapshot",
+        "Situação e fontes sem falha neste recorte. "
+        "Ainda assim, o documento não substitui certidões oficiais.",
+    )
