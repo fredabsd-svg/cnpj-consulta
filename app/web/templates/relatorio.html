@@ -15,7 +15,6 @@
 {%- if x is none -%}—{%- elif x -%}Sim{%- else -%}Não{%- endif -%}
 {%- endmacro %}
 {% set c = company %}
-{% set flags = diligence | selectattr("status", "in", ["alerta", "falha"]) | list %}
 {% set e = c.endereco %}
 
 <nav class="toolbar" aria-label="Ações do relatório">
@@ -33,128 +32,153 @@
 </form>
 
 <main class="report">
-  <header class="cover">
-    <p class="brand">{% if escritorio %}{{ escritorio }}{% else %}CNPJ Consulta{% endif %}</p>
-    <p class="doc-type">Relatório de diligência cadastral</p>
-    <h1>{{ c.razao_social or "Empresa não encontrada" }}</h1>
-    {% if c.nome_fantasia and c.nome_fantasia != c.razao_social %}
-    <p class="fantasia">{{ c.nome_fantasia }}</p>
-    {% endif %}
-    <p class="idline">
-      <span class="mono">{{ c.cnpj_formatado }}</span>
-      {% if c.situacao_cadastral %}<span class="sit sit-{{ c.situacao_cadastral|lower }}">{{ c.situacao_cadastral }}</span>{% endif %}
-    </p>
-    <p class="metaline">
-      {{ consulta_em }}
-      {% if cliente %} · {{ cliente }}{% endif %}
-      {% if responsavel %} · {{ responsavel }}{% endif %}
-      {% if referencia %} · {{ referencia }}{% endif %}
-    </p>
-  </header>
-
-  {% if not c.razao_social %}
-  <section class="verdict critico">
-    <h2>Sem dados nas fontes</h2>
-    <p>A inscrição é válida na forma, mas nenhuma fonte devolveu cadastro.</p>
-  </section>
-  {% else %}
-
-  <section class="verdict {{ verdict.nivel }}" id="veredicto">
-    <h2>{{ verdict.titulo }}</h2>
-    <p>{{ verdict.detalhe }}</p>
-  </section>
-
-  {% if flags %}
-  <section id="checklist">
-    <h2>Pendências</h2>
-    <ul class="flags">
-      {% for item in flags %}
-      <li><strong>{{ status_labels[item.status] }}.</strong> {{ item.detalhe }}</li>
-      {% endfor %}
-    </ul>
-  </section>
-  {% endif %}
-
-  {% if c.conflitos %}
-  <section class="alert" id="divergencias">
-    <h2>Divergências entre fontes</h2>
-    <ul>
-      {% for item in c.conflitos %}
-      <li>{{ item | replace("minha_receita", "Minha Receita") | replace("receitaws", "ReceitaWS") | replace("brasilapi", "BrasilAPI") | replace("receita_local", "Receita Federal") | replace("cnpjws", "CNPJ.ws") }}</li>
-      {% endfor %}
-    </ul>
-  </section>
-  {% endif %}
-
-  <section id="resumo">
-    <h2>Cadastro</h2>
-    <dl class="kv">
-      <dt>Abertura</dt><dd>{{ c.data_abertura | data_br }}</dd>
-      <dt>Natureza</dt><dd>{{ v(c.natureza_juridica) }}</dd>
-      <dt>Capital</dt><dd>{{ c.capital_social | brl }}</dd>
-      <dt>Simples / MEI</dt><dd>{{ sim_nao(c.opcao_simples) }} / {{ sim_nao(c.opcao_mei) }}</dd>
-      {% if e and (e.municipio or e.uf or e.logradouro) %}
-      <dt>Endereço</dt>
-      <dd>
-        {{ e.logradouro or "" }}{% if e.numero %}, {{ e.numero }}{% endif %}{% if e.complemento %} · {{ e.complemento }}{% endif %}
-        {% if e.bairro %}<br>{{ e.bairro }}{% endif %}
-        {% if e.municipio or e.uf %}<br>{{ e.municipio or "" }}{% if e.uf %}/{{ e.uf }}{% endif %}{% endif %}
-        {% if e.cep %} · {{ e.cep | cep }}{% endif %}
-      </dd>
+  <div class="band" aria-hidden="true"></div>
+  <div class="inner">
+    <header class="cover">
+      <p class="brand">{% if escritorio %}{{ escritorio }}{% else %}CNPJ Consulta{% endif %}</p>
+      <p class="doc-type">Relatório de diligência cadastral</p>
+      <h1>{{ c.razao_social or "Empresa não encontrada" }}</h1>
+      {% if c.nome_fantasia and c.nome_fantasia != c.razao_social %}
+      <p class="fantasia">{{ c.nome_fantasia }}</p>
       {% endif %}
-      {% if c.telefones %}
-      <dt>Telefone</dt>
-      <dd>{% for t in c.telefones %}{{ t.ddd | telefone(t.numero) }}{% if not loop.last %}<br>{% endif %}{% endfor %}</dd>
-      {% endif %}
-      {% if c.email %}
-      <dt>E-mail</dt><dd>{{ c.email }}</dd>
-      {% endif %}
-      {% if c.cnae_principal %}
-      <dt>Atividade</dt>
-      <dd><span class="mono">{{ c.cnae_principal.codigo | cnae }}</span> · {{ v(c.cnae_principal.descricao) }}</dd>
-      {% endif %}
-    </dl>
-  </section>
+      <p class="idline">
+        <span class="mono">{{ c.cnpj_formatado }}</span>
+        {% if c.situacao_cadastral %}
+        <span class="pill pill-{{ c.situacao_cadastral | lower }}">{{ c.situacao_cadastral }}</span>
+        {% endif %}
+      </p>
+      <p class="metaline">
+        {{ consulta_em }}
+        {% if e and e.municipio %} · {{ e.municipio }}{% if e.uf %}/{{ e.uf }}{% endif %}{% endif %}
+        {% if cliente %} · {{ cliente }}{% endif %}
+        {% if responsavel %} · {{ responsavel }}{% endif %}
+        {% if referencia %} · {{ referencia }}{% endif %}
+      </p>
+    </header>
 
-  <section id="qsa">
-    <h2>Quadro societário</h2>
-    {% if c.socios %}
-    <table>
-      <thead><tr><th>Nome</th><th>Qualificação</th><th>Desde</th><th>Documento</th></tr></thead>
-      <tbody>
-        {% for s in c.socios %}
-        <tr>
-          <td>{{ s.nome }}</td>
-          <td>{{ v(s.qualificacao) }}</td>
-          <td>{{ s.data_entrada | data_br }}</td>
-          <td class="mono">{{ s.documento_mascarado or "—" }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    {% if not c.razao_social %}
+    <section class="verdict critico">
+      <h2>Sem dados nas fontes</h2>
+      <p>A inscrição é válida na forma, mas nenhuma fonte devolveu cadastro.</p>
+    </section>
     {% else %}
-    <p class="muted">Nenhum sócio informado (comum em EI e MEI).</p>
+
+    <section class="verdict {{ verdict.nivel }}" id="veredicto">
+      <h2>{{ verdict.titulo }}</h2>
+      <p>{{ verdict.detalhe }}</p>
+    </section>
+
+    {% set ns = namespace(tem_pendencia=false) %}
+    {% for item in diligence %}
+      {% if item.status == "alerta" or item.status == "falha" %}
+        {% set ns.tem_pendencia = true %}
+      {% endif %}
+    {% endfor %}
+    {% if ns.tem_pendencia %}
+    <section id="checklist">
+      <h2 class="sec">Pendências</h2>
+      <ul class="flags">
+        {% for item in diligence if item.status == "alerta" or item.status == "falha" %}
+        <li class="flag-{{ item.status }}"><strong>{{ status_labels[item.status] }}.</strong> {{ item.detalhe }}</li>
+        {% endfor %}
+      </ul>
+    </section>
     {% endif %}
-  </section>
 
-  {% if c.cnaes_secundarios and c.cnaes_secundarios|length <= 8 %}
-  <section id="cnaes">
-    <h2>Atividades secundárias</h2>
-    <ul class="plain">
-      {% for a in c.cnaes_secundarios %}
-      <li><span class="mono">{{ a.codigo | cnae }}</span> · {{ v(a.descricao) }}</li>
-      {% endfor %}
-    </ul>
-  </section>
-  {% elif c.cnaes_secundarios %}
-  <p class="muted">+ {{ c.cnaes_secundarios|length }} atividades secundárias (ver CSV).</p>
-  {% endif %}
+    {% if c.conflitos %}
+    <section class="alert" id="divergencias">
+      <h2 class="sec">Divergências entre fontes</h2>
+      <ul>
+        {% for item in c.conflitos %}
+        <li>{{ item | replace("minha_receita", "Minha Receita") | replace("receitaws", "ReceitaWS") | replace("brasilapi", "BrasilAPI") | replace("receita_local", "Receita Federal") | replace("cnpjws", "CNPJ.ws") }}</li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
 
-  {% endif %}
+    <section id="resumo">
+      <h2 class="sec">Cadastro</h2>
+      <dl class="kv">
+        <dt>Abertura</dt><dd>{{ c.data_abertura | data_br }}</dd>
+        <dt>Natureza</dt><dd>{{ v(c.natureza_juridica) }}</dd>
+        <dt>Capital</dt><dd>{{ c.capital_social | brl }}</dd>
+        <dt>Simples / MEI</dt><dd>{{ sim_nao(c.opcao_simples) }} / {{ sim_nao(c.opcao_mei) }}</dd>
+        {% if e and (e.municipio or e.uf or e.logradouro) %}
+        <dt>Endereço</dt>
+        <dd>
+          {{ e.logradouro or "" }}{% if e.numero %}, {{ e.numero }}{% endif %}{% if e.complemento %} · {{ e.complemento }}{% endif %}
+          {% if e.bairro %}<br>{{ e.bairro }}{% endif %}
+          {% if e.municipio or e.uf %}<br>{{ e.municipio or "" }}{% if e.uf %}/{{ e.uf }}{% endif %}{% endif %}
+          {% if e.cep %} · {{ e.cep | cep }}{% endif %}
+        </dd>
+        {% endif %}
+        {% if c.telefones %}
+        <dt>Telefone</dt>
+        <dd>{% for t in c.telefones %}{{ t.ddd | telefone(t.numero) }}{% if not loop.last %}<br>{% endif %}{% endfor %}</dd>
+        {% endif %}
+        {% if c.email %}
+        <dt>E-mail</dt><dd>{{ c.email }}</dd>
+        {% endif %}
+      </dl>
+    </section>
 
-  {% if c.fontes %}
-  <p class="fontes">Fontes: {% for f in c.fontes %}{{ f.fonte | fonte }}{% if f.status != 200 %} (indisponível){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}.</p>
-  {% endif %}
+    <section id="qsa">
+      <h2 class="sec">Quadro societário</h2>
+      {% if c.socios %}
+      <ul class="partners">
+        {% for s in c.socios %}
+        <li class="partner">
+          <div class="nome">
+            <span class="lbl">Nome</span>
+            <span class="val">{{ s.nome }}</span>
+          </div>
+          <div>
+            <span class="lbl">Qualificação</span>
+            <span class="val">{{ v(s.qualificacao) }}</span>
+          </div>
+          <div>
+            <span class="lbl">Desde</span>
+            <span class="val">{{ s.data_entrada | data_br }}</span>
+          </div>
+          <div>
+            <span class="lbl">Documento</span>
+            <span class="val mono">{{ s.documento_mascarado or "—" }}</span>
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="muted">Nenhum sócio informado (comum em EI e MEI).</p>
+      {% endif %}
+    </section>
+
+    <section id="cnaes">
+      <h2 class="sec">Atividades econômicas</h2>
+      {% if c.cnae_principal %}
+      <div class="cnae-principal">
+        <p class="lbl">CNAE principal</p>
+        <p><span class="code">{{ c.cnae_principal.codigo | cnae }}</span> · {{ v(c.cnae_principal.descricao) }}</p>
+      </div>
+      {% else %}
+      <p class="muted">Atividade principal não informada pelas fontes.</p>
+      {% endif %}
+      {% if c.cnaes_secundarios %}
+      <p class="cnae-count">{{ c.cnaes_secundarios | length }} atividade{% if c.cnaes_secundarios | length != 1 %}s{% endif %} secundária{% if c.cnaes_secundarios | length != 1 %}s{% endif %}</p>
+      <ul class="cnaes">
+        {% for a in c.cnaes_secundarios %}
+        <li><span class="code">{{ a.codigo | cnae }}</span> {{ v(a.descricao) }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </section>
+
+    {% endif %}
+
+    {% if c.fontes %}
+    <p class="fontes">Fontes:
+      {% for f in c.fontes %}{{ f.fonte | fonte }}{% if f.status != 200 %} (indisponível){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}.</p>
+    {% endif %}
+  </div>
 
   <footer class="disclaimer">
     Dados públicos consolidados. Não substitui certidão da Receita Federal ou Junta Comercial.
