@@ -23,8 +23,6 @@ STATUS_LABELS: dict[str, str] = {
 
 @dataclass(frozen=True, slots=True)
 class DiligenceItem:
-    """Item do checklist de diligencia."""
-
     id: str
     rotulo: str
     status: StatusOk
@@ -36,8 +34,6 @@ class DiligenceItem:
 
 @dataclass(frozen=True, slots=True)
 class DiligenceVerdict:
-    """Sintese de 10 segundos para a capa do relatorio."""
-
     nivel: Literal["regular", "ressalvas", "critico"]
     titulo: str
     detalhe: str
@@ -49,142 +45,53 @@ class DiligenceVerdict:
 def _situacao_item(company: CompanyUnified) -> DiligenceItem:
     sit = (company.situacao_cadastral or "").strip().upper()
     if sit == "ATIVA":
-        return DiligenceItem(
-            "situacao_ativa",
-            "Situação cadastral ATIVA",
-            "ok",
-            "Empresa ativa na Receita Federal (conforme fontes).",
-        )
+        return DiligenceItem("situacao_ativa", "Situação cadastral", "ok", "Situação cadastral ativa.")
     if not sit:
-        return DiligenceItem(
-            "situacao_ativa",
-            "Situação cadastral ATIVA",
-            "alerta",
-            "Situação não informada pelas fontes.",
-        )
-    return DiligenceItem(
-        "situacao_ativa",
-        "Situação cadastral ATIVA",
-        "falha",
-        f"Situação atual: {sit}. Confirme na fonte oficial antes de operar.",
-    )
+        return DiligenceItem("situacao_ativa", "Situação cadastral", "alerta", "Situação não informada.")
+    return DiligenceItem("situacao_ativa", "Situação cadastral", "falha", f"Situação atual: {sit}.")
 
 
 def _simples_mei_item(company: CompanyUnified) -> DiligenceItem:
-    partes: list[str] = []
     if company.opcao_simples is None and company.opcao_mei is None:
-        return DiligenceItem(
-            "simples_mei",
-            "Flags Simples / MEI informadas",
-            "alerta",
-            "Simples Nacional e MEI não informados pelas fontes consultadas.",
-        )
-    if company.opcao_simples is True:
-        partes.append("optante do Simples")
-    elif company.opcao_simples is False:
-        partes.append("não optante do Simples")
-    else:
-        partes.append("Simples não informado")
-    if company.opcao_mei is True:
-        partes.append("optante MEI")
-    elif company.opcao_mei is False:
-        partes.append("não MEI")
-    else:
-        partes.append("MEI não informado")
-    return DiligenceItem(
-        "simples_mei",
-        "Flags Simples / MEI informadas",
-        "ok",
-        "; ".join(partes).capitalize() + ".",
-    )
+        return DiligenceItem("simples_mei", "Simples / MEI", "alerta", "Simples e MEI não informados.")
+    return DiligenceItem("simples_mei", "Simples / MEI", "ok", "Enquadramento informado.")
 
 
 def _capital_item(company: CompanyUnified) -> DiligenceItem:
     if company.capital_social is None:
-        return DiligenceItem(
-            "capital",
-            "Capital social informado",
-            "alerta",
-            "Capital social não informado.",
-        )
-    from app.core.formatting import brl
-
-    return DiligenceItem(
-        "capital",
-        "Capital social informado",
-        "ok",
-        f"Capital social presente ({brl(company.capital_social)}).",
-    )
+        return DiligenceItem("capital", "Capital social", "alerta", "Capital social não informado.")
+    return DiligenceItem("capital", "Capital social", "ok", "Capital social informado.")
 
 
 def _qsa_item(company: CompanyUnified) -> DiligenceItem:
-    n = len(company.socios)
-    if n == 0:
-        return DiligenceItem(
-            "qsa",
-            "Quadro societário (QSA) presente",
-            "info",
-            "Nenhum sócio informado (comum em EI/MEI). Confirme se esperado.",
-        )
-    return DiligenceItem(
-        "qsa",
-        "Quadro societário (QSA) presente",
-        "ok",
-        f"{n} sócio(s)/administrador(es) listado(s). CPFs mascarados (LGPD).",
-    )
+    if not company.socios:
+        return DiligenceItem("qsa", "Quadro societário", "info", "Nenhum sócio informado.")
+    return DiligenceItem("qsa", "Quadro societário", "ok", f"{len(company.socios)} sócio(s) listado(s).")
 
 
 def _divergencias_item(company: CompanyUnified) -> DiligenceItem:
     n = len(company.conflitos)
     if n == 0:
-        return DiligenceItem(
-            "divergencias",
-            "Divergências entre fontes",
-            "ok",
-            "Nenhuma divergência detectada entre as fontes consultadas.",
-        )
+        return DiligenceItem("divergencias", "Divergências", "ok", "Fontes alinhadas neste recorte.")
     return DiligenceItem(
         "divergencias",
-        "Divergências entre fontes",
+        "Divergências",
         "alerta" if n < 3 else "falha",
-        f"{n} campo(s) com divergência. Revise antes de usar o dado.",
+        f"{n} campo(s) com valor diferente entre fontes.",
     )
 
 
 def _fontes_item(company: CompanyUnified) -> DiligenceItem:
     total = len(company.fontes)
     ok = sum(1 for f in company.fontes if f.status == 200)
-    if total == 0:
-        return DiligenceItem(
-            "fontes_ok",
-            "Fontes consultadas OK",
-            "falha",
-            "Nenhuma fonte habilitada ou consultada.",
-        )
-    if ok == 0:
-        return DiligenceItem(
-            "fontes_ok",
-            "Fontes consultadas OK",
-            "falha",
-            f"0 de {total} fontes responderam OK.",
-        )
+    if total == 0 or ok == 0:
+        return DiligenceItem("fontes_ok", "Fontes", "falha", "Nenhuma fonte respondeu.")
     if ok < total:
-        return DiligenceItem(
-            "fontes_ok",
-            "Fontes consultadas OK",
-            "alerta",
-            f"{ok} de {total} fontes responderam OK.",
-        )
-    return DiligenceItem(
-        "fontes_ok",
-        "Fontes consultadas OK",
-        "ok",
-        f"{ok} de {total} fontes responderam OK.",
-    )
+        return DiligenceItem("fontes_ok", "Fontes", "alerta", f"{ok} de {total} fontes responderam.")
+    return DiligenceItem("fontes_ok", "Fontes", "ok", f"{ok} fontes responderam.")
 
 
 def build_diligence_checklist(company: CompanyUnified) -> list[DiligenceItem]:
-    """Monta o checklist de diligencia a partir da consulta unificada."""
     return [
         _situacao_item(company),
         _simples_mei_item(company),
@@ -196,7 +103,6 @@ def build_diligence_checklist(company: CompanyUnified) -> list[DiligenceItem]:
 
 
 def diligence_summary(items: list[DiligenceItem]) -> dict[str, int]:
-    """Contagem por status para badges e testes."""
     counts = {"ok": 0, "alerta": 0, "falha": 0, "info": 0}
     for item in items:
         counts[item.status] = counts.get(item.status, 0) + 1
@@ -204,25 +110,21 @@ def diligence_summary(items: list[DiligenceItem]) -> dict[str, int]:
 
 
 def build_diligence_verdict(items: list[DiligenceItem]) -> DiligenceVerdict:
-    """Leitura de capa: o cliente decide em 10 segundos se segue ou para."""
     counts = diligence_summary(items)
     if counts["falha"]:
         return DiligenceVerdict(
             "critico",
-            "Requer atenção imediata",
-            f"{counts['falha']} item(ns) crítico(s) no checklist. "
-            "Não use este snapshot sozinho para contratar, creditar ou protocolar.",
+            "Não use este recorte sozinho",
+            "Há ponto crítico no cadastro. Confira na Receita Federal antes de contratar ou protocolar.",
         )
     if counts["alerta"]:
         return DiligenceVerdict(
             "ressalvas",
-            "Apto com ressalvas",
-            f"{counts['alerta']} ponto(s) de atenção. Siga com o dossiê, "
-            "mas confira os campos destacados na fonte oficial.",
+            "Siga com ressalvas",
+            "Há ponto de atenção abaixo. O restante do cadastro pode ser usado com checagem pontual.",
         )
     return DiligenceVerdict(
         "regular",
-        "Sem alertas críticos neste snapshot",
-        "Situação e fontes sem falha neste recorte. "
-        "Ainda assim, o documento não substitui certidões oficiais.",
+        "Cadastro ativo, sem ressalvas neste recorte",
+        "As fontes consultadas não apontaram conflito nem situação irregular. Isto não substitui certidão oficial.",
     )
