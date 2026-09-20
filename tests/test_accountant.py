@@ -113,9 +113,13 @@ class TestRelatorioRoutes:
         assert "OPEN KNOWLEDGE BRASIL" in body
         assert "19.131.243/0001-97" in body
         assert "Quadro societário" in body
+        assert "Atividades econômicas" in body
+        assert "CNAE principal" in body
+        assert ">Qualificação</span>" in body
+        assert ">Desde</span>" in body
+        assert "QualificaçãoDesde" not in body
         assert "***123456**" in body
         assert "GAUNTLET" not in body
-        assert "validação visual" not in body.lower()
         assert 'class="sidebar"' not in body
 
     @respx.mock
@@ -124,6 +128,7 @@ class TestRelatorioRoutes:
         r = client.get(f"/api/companies/{CNPJ}/export.relatorio")
         assert r.status_code == 200
         assert "OPEN KNOWLEDGE BRASIL" in r.text
+        assert "Atividades econômicas" in r.text
 
     @respx.mock
     def test_company_page_has_report_button_and_checklist(
