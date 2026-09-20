@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.schemas.company import CompanyUnified, PartnerPublic, SourceEntry
-from app.services.diligence import build_diligence_checklist, diligence_summary
+from app.services.diligence import build_diligence_checklist, build_diligence_verdict, diligence_summary
 
 CNPJ = "19131243000197"
 
@@ -113,17 +113,18 @@ class TestRelatorioRoutes:
         assert r.status_code == 200
         assert "text/html" in r.headers["content-type"]
         body = r.text
-        assert "Relatorio personalizado" in body
+        assert "Relatório de diligência cadastral" in body
         assert "OPEN KNOWLEDGE BRASIL" in body
         assert "19.131.243/0001-97" in body
-        assert "Checklist de diligencia" in body
-        assert "Destaque de divergencias" in body
-        assert "Quadro societario" in body
+        assert "Checklist de diligência" in body
+        assert "Leitura do dossiê" in body
+        assert "Regular" in body
+        assert "Divergências entre fontes" in body
+        assert "Quadro societário" in body
         assert "Fontes consultadas" in body
         assert "Disclaimer" in body
-        assert "***123456**" in body  # CPF mascarado
-        assert "CNPJ Consulta" in body  # marca / logo alt
-        # Sem layout interativo (sidebar)
+        assert "***123456**" in body
+        assert "CNPJ Consulta" in body
         assert 'class="sidebar"' not in body
 
     @respx.mock
@@ -132,7 +133,7 @@ class TestRelatorioRoutes:
         r = client.get(f"/api/companies/{CNPJ}/export.relatorio")
         assert r.status_code == 200
         assert "OPEN KNOWLEDGE BRASIL" in r.text
-        assert "Checklist de diligencia" in r.text
+        assert "Checklist de diligência" in r.text
 
     @respx.mock
     def test_company_page_has_report_button_and_checklist(
@@ -141,10 +142,46 @@ class TestRelatorioRoutes:
         _mock_sources(brasilapi_payload, receitaws_payload)
         r = client.get(f"/empresa/{CNPJ}")
         assert r.status_code == 200
-        assert "Relatorio personalizado" in r.text
         assert f"/empresa/{CNPJ}/relatorio" in r.text
-        assert "Checklist de diligencia" in r.text
+        assert "Checklist de diligencia" in r.text or "Checklist de diligência" in r.text
 
     def test_relatorio_invalid_cnpj(self, client):
         r = client.get("/empresa/123/relatorio")
         assert r.status_code == 400
+
+    @respx.mock
+    def test_relatorio_personalizacao_na_capa(self, client, brasilapi_payload, receitaws_payload):
+        _mock_sources(brasilapi_payload, receitaws_payload)
+        r = client.get(
+            f"/empresa/{CNPJ}/relatorio",
+            params={
+                "escritorio": "Silva e Associados",
+                "responsavel": "Ana Silva",
+                "cliente": "Comite de credito",
+                "referencia": "KYC-2026-041",
+            },
+        )
+        assert r.status_code == 200
+        assert "Silva e Associados" in r.text
+        assert "Ana Silva" in r.text
+        assert "Comite de credito" in r.text
+        assert "KYC-2026-041" in r.text
+        assert "DOC-19131243000197-" in r.text
+
+
+class TestDiligenceVerdict:
+    def test_regular_when_all_ok(self):
+        verdict = build_diligence_verdict(build_diligence_checklist(_base_company()))
+        assert verdict.nivel == "regular"
+
+    def test_ressalvas_when_alert(self):
+        verdict = build_diligence_verdict(
+            build_diligence_checklist(_base_company(conflitos=["capital"]))
+        )
+        assert verdict.nivel == "ressalvas"
+
+    def test_critico_when_baixada(self):
+        verdict = build_diligence_verdict(
+            build_diligence_checklist(_base_company(situacao_cadastral="BAIXADA"))
+        )
+        assert verdict.nivel == "critico"
