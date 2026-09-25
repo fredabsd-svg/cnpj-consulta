@@ -163,7 +163,7 @@
       <a class="btn btn-primary btn-lg" href="#instalacao">Instalar grátis<svg class="i" aria-hidden="true"><use href="#i-arrow"/></svg></a>
       <a class="btn btn-lg" href="https://github.com/fredabsd-svg/cnpj-consulta"><svg class="i i-fill" aria-hidden="true"><use href="#i-github"/></svg>Ver no GitHub</a>
     </div>
-    <ul class="trust" aria-label="Garantias">
+    <ul class="trust">
       <li><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Open source (MIT)</li>
       <li><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Sem chave de API</li>
       <li><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>100% local</li>
@@ -175,7 +175,9 @@
         <div class="seg" role="tablist" aria-label="Telas do aplicativo">
           <button type="button" role="tab" id="tab-empresa" aria-controls="painel-empresa" aria-selected="true">Empresa</button>
           <button type="button" role="tab" id="tab-fontes" aria-controls="painel-fontes" aria-selected="false">Fontes e procedência</button>
-          <button type="button" role="tab" id="tab-consulta" aria-controls="painel-consulta" aria-selected="false">Consulta</button>
+          <button type="button" role="tab" id="tab-internet" aria-controls="painel-internet" aria-selected="false">Pesquisa na internet</button>
+          <button type="button" role="tab" id="tab-lote" aria-controls="painel-lote" aria-selected="false">Lote</button>
+          <button type="button" role="tab" id="tab-consulta" aria-controls="painel-consulta" aria-selected="false">Início</button>
           <button type="button" role="tab" id="tab-claro" aria-controls="painel-claro" aria-selected="false">Tema claro</button>
           <button type="button" role="tab" id="tab-celular" aria-controls="painel-celular" aria-selected="false">Celular</button>
         </div>
@@ -190,17 +192,27 @@
           <div class="tabpanel" role="tabpanel" id="painel-empresa" aria-labelledby="tab-empresa">
             <p class="panel-title">Empresa</p>
             <img src="assets/screenshots/tour-empresa.webp" width="2880" height="2000" fetchpriority="high" decoding="async"
-                 alt="Página de uma empresa no app: razão social, CNPJ alfanumérico, situação ATIVA, resumo cadastral e um alerta amarelo informando que as fontes divergem no capital social.">
+                 alt="Página de uma empresa no app: razão social, CNPJ alfanumérico, situação ATIVA, resumo com abertura e idade da empresa, alerta de divergência no capital social e o veredicto Siga com ressalvas com o checklist de diligência.">
           </div>
           <div class="tabpanel" role="tabpanel" id="painel-fontes" aria-labelledby="tab-fontes">
             <p class="panel-title">Fontes e procedência</p>
             <img src="assets/screenshots/tour-fontes.webp" width="2880" height="2000" loading="lazy" decoding="async"
                  alt="Aba Fontes: tabela das fontes consultadas (Minha Receita como primária, BrasilAPI e ReceitaWS como espelho) e a procedência campo a campo, com selos de confiança.">
           </div>
+          <div class="tabpanel" role="tabpanel" id="painel-internet" aria-labelledby="tab-internet">
+            <p class="panel-title">Pesquisa na internet</p>
+            <img src="assets/screenshots/tour-internet.webp" width="2880" height="2000" loading="lazy" decoding="async"
+                 alt="Aba Pesquisa na internet: campo de busca com a razão social entre aspas, quatro resultados da web dentro do app e, abaixo, os grupos de atalhos Buscadores e Reputação e processos.">
+          </div>
+          <div class="tabpanel" role="tabpanel" id="painel-lote" aria-labelledby="tab-lote">
+            <p class="panel-title">Consulta em lote</p>
+            <img src="assets/screenshots/tour-lote.webp" width="2880" height="2000" loading="lazy" decoding="async"
+                 alt="Consulta em lote: cartões com 5 empresas consultadas, 3 ativas, 2 em situação irregular e 1 com divergência, e a tabela com situação, município, porte, Simples/MEI e veredicto de cada empresa, com botão para exportar CSV.">
+          </div>
           <div class="tabpanel" role="tabpanel" id="painel-consulta" aria-labelledby="tab-consulta">
             <p class="panel-title">Consulta</p>
             <img src="assets/screenshots/tour-home.webp" width="2880" height="2000" loading="lazy" decoding="async"
-                 alt="Tela inicial: campo de CNPJ com máscara, consultas recentes, favoritos e o cartão CNPJ em 3D.">
+                 alt="Tela inicial: campo de CNPJ com máscara, métricas de uso (consultas hoje, empresas, favoritos, fontes ativas), atalhos para lote, sócio e API, consultas recentes e favoritos.">
           </div>
           <div class="tabpanel" role="tabpanel" id="painel-claro" aria-labelledby="tab-claro">
             <p class="panel-title">Tema claro</p>
@@ -210,7 +222,7 @@
           <div class="tabpanel panel-phone" role="tabpanel" id="painel-celular" aria-labelledby="tab-celular">
             <p class="panel-title">Celular</p>
             <img src="assets/screenshots/tour-mobile.webp" width="780" height="1688" loading="lazy" decoding="async"
-                 alt="Página da empresa em um celular: botões empilhados, resumo em uma coluna e o alerta de divergência.">
+                 alt="Página da empresa em um celular: botões empilhados, resumo em duas colunas e o alerta de divergência.">
           </div>
         </div>
       </div>
@@ -226,7 +238,7 @@
       <div class="metric"><dt>fontes públicas cruzadas</dt><dd>5</dd></div>
       <div class="metric"><dt>chaves de API necessárias</dt><dd>0</dd></div>
       <div class="metric"><dt>no seu computador</dt><dd>100%</dd></div>
-      <div class="metric"><dt>testes automatizados</dt><dd>160+</dd></div>
+      <div class="metric"><dt>testes automatizados</dt><dd>200+</dd></div>
     </dl>
     <div class="sources reveal">
       <span class="sources-label">Fontes gratuitas, lado a lado</span>
@@ -267,7 +279,7 @@
         <p>Diligência de fornecedores e clientes, com registro do que cada fonte informou.</p>
         <ul class="ticks">
           <li><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Checklist com veredicto por empresa</li>
-          <li><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Atalho para sanções CEIS/CNEP</li>
+          <li><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Sanções CEIS/CNEP no checklist (opcional)</li>
           <li><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Conflitos entre fontes sempre à vista</li>
         </ul>
       </article>
@@ -590,11 +602,11 @@
         </li>
         <li>
           <span class="ico ico-sm success"><svg class="i" aria-hidden="true"><use href="#i-shield-check"/></svg></span>
-          <div><h3>Só dados da empresa</h3><p>Razão social, nome fantasia, CNPJ e endereço da sede. Nomes de sócios nunca entram nas buscas (LGPD).</p></div>
+          <div><h3>Só dados da empresa</h3><p>Razão social, nome fantasia, CNPJ, endereço da sede e domínio do e-mail cadastral. Nomes de sócios nunca entram nas buscas (LGPD).</p></div>
         </li>
         <li>
           <span class="ico ico-sm violet"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg></span>
-          <div><h3>Resultados no app, se você quiser</h3><p>Configure a Brave Search API com a sua própria chave, ou uma instância SearXNG sua, e veja os resultados sem sair da tela.</p></div>
+          <div><h3>Resultados no app, se você quiser</h3><p>Configure o Tavily (1.000 buscas grátis por mês), a Brave Search API ou uma instância SearXNG sua e veja os resultados sem sair da tela. Com a chave gratuita do Portal da Transparência, o checklist confere sozinho CEIS, CNEP, CEPIM e CEAF.</p></div>
         </li>
       </ul>
     </div>
@@ -611,32 +623,32 @@
           <div class="rgroups">
             <div class="rgroup">
               <p class="rg-title"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg>Buscadores</p>
-              <ul class="rg-links" aria-label="Buscadores">
+              <ul class="rg-links">
                 <li>Google</li><li>Bing</li><li>DuckDuckGo</li><li>Google Notícias</li>
               </ul>
             </div>
             <div class="rgroup">
               <p class="rg-title"><svg class="i" aria-hidden="true"><use href="#i-scale"/></svg>Reputação e processos</p>
-              <ul class="rg-links" aria-label="Reputação e processos">
+              <ul class="rg-links">
                 <li>Jusbrasil</li><li>Reclame Aqui</li>
               </ul>
             </div>
             <div class="rgroup">
               <p class="rg-title"><svg class="i" aria-hidden="true"><use href="#i-clipboard-check"/></svg>Certidões e cadastros oficiais</p>
-              <ul class="rg-links" aria-label="Certidões e cadastros oficiais">
+              <ul class="rg-links">
                 <li>Comprovante de CNPJ</li><li>CND federal</li><li>CRF do FGTS</li><li>CNDT trabalhista</li><li>CEIS/CNEP</li><li>Simples Nacional</li><li>Sintegra</li>
               </ul>
               <p class="rg-note">Onde o site oficial pede captcha, um botão copia o CNPJ para você colar.</p>
             </div>
             <div class="rgroup rgroup-half">
               <p class="rg-title"><svg class="i" aria-hidden="true"><use href="#i-map-pin"/></svg>Localização</p>
-              <ul class="rg-links" aria-label="Localização">
+              <ul class="rg-links">
                 <li>Google Maps</li><li>OpenStreetMap</li>
               </ul>
             </div>
             <div class="rgroup rgroup-half">
               <p class="rg-title"><svg class="i" aria-hidden="true"><use href="#i-globe"/></svg>Presença digital</p>
-              <ul class="rg-links" aria-label="Presença digital">
+              <ul class="rg-links">
                 <li>Site pelo domínio do e-mail</li><li>LinkedIn</li>
               </ul>
             </div>
@@ -827,7 +839,7 @@
     <div class="section-head center reveal">
       <span class="eyebrow">Preço</span>
       <h2 id="t-preco">Um plano só: gratuito para sempre</h2>
-      <p class="lead">O CNPJ Consulta é open source sob a licença MIT. Não há versão paga, cadastro nem limite de uso imposto pelo app.</p>
+      <p class="lead">O CNPJ Consulta é open source sob a licença MIT. Não há versão paga, cadastro nem cota mensal: o ritmo das consultas acompanha os limites das fontes públicas.</p>
     </div>
 
     <div class="pricing">
@@ -1122,10 +1134,10 @@
       <p class="lead">Não achou a resposta? Pergunte nas <a href="https://github.com/fredabsd-svg/cnpj-consulta/issues">issues do GitHub</a>.</p>
     </div>
     <div class="faq reveal">
-      <details><summary>Preciso de chave de API?</summary><div class="answer"><p>Não. Todas as fontes de dados são gratuitas e funcionam sem chave. A única exceção é opcional: mostrar resultados de busca dentro do app pela Brave Search API exige a sua própria chave. Com uma instância SearXNG sua, não há chave.</p></div></details>
+      <details><summary>Preciso de chave de API?</summary><div class="answer"><p>Não. Todas as fontes de dados são gratuitas e funcionam sem chave. As exceções são opcionais: mostrar resultados de busca dentro do app pelo Tavily ou pela Brave Search API exige a sua própria chave (com uma instância SearXNG sua, não há chave), e a checagem automática de sanções usa a chave gratuita da API do Portal da Transparência.</p></div></details>
       <details><summary>Como gero o relatório de diligência em PDF?</summary><div class="answer"><p>Na página da empresa, abra o relatório, preencha se quiser o escritório, o responsável, o destinatário e a referência, e clique em <em>Salvar PDF</em>: o próprio navegador gera o arquivo em A4. O relatório traz o veredicto, as pendências, as divergências entre fontes, o cadastro, o quadro societário (com CPF mascarado) e as atividades.</p></div></details>
       <details><summary>O relatório substitui certidões oficiais?</summary><div class="answer"><p>Não. Ele resume o que as fontes públicas informam e deixa claro de onde veio cada dado. Para certidões (CND federal, CNDT, CRF do FGTS), use os atalhos da aba Pesquisa na internet, que levam aos sites oficiais.</p></div></details>
-      <details><summary>O que a pesquisa na internet envia, e para quem?</summary><div class="answer"><p>Nada, até você clicar. Cada atalho abre o site escolhido em uma nova aba, com a razão social, o nome fantasia, o CNPJ ou o endereço da sede na busca, nunca o nome de um sócio. Os resultados dentro do app são opcionais e usam o provedor que você configurar (Brave Search API ou SearXNG).</p></div></details>
+      <details><summary>O que a pesquisa na internet envia, e para quem?</summary><div class="answer"><p>Nada, até você clicar. Cada atalho abre o site escolhido em uma nova aba, com a razão social, o nome fantasia, o CNPJ ou o endereço da sede na busca, nunca o nome ou o documento de um sócio. Os resultados dentro do app são opcionais e usam o provedor que você configurar (Tavily, Brave Search API ou SearXNG). Se você ligar a checagem de sanções, o CNPJ (e só ele) vai à API do Portal da Transparência quando você abre a empresa.</p></div></details>
       <details><summary>Como funciona a consulta em lote?</summary><div class="answer"><p>Cole até 30 CNPJs, com ou sem pontuação, separados por linha, espaço, vírgula ou ponto e vírgula; duplicados são ignorados. O app consulta cada um respeitando os limites das fontes (o que já está no cache não gasta consulta) e monta uma tabela com situação, UF, porte, Simples/MEI e conflitos, que você exporta em CSV.</p></div></details>
       <details><summary>Funciona sem internet?</summary><div class="answer"><p>As consultas online precisam de internet. Com a base local da Receita Federal ativada (<span class="mono">RECEITA_LOCAL_ENABLED=true</span>), a consulta por CNPJ e a busca por sócio funcionam offline, inclusive com as APIs fora do ar. A importação exige cerca de 40 GB livres durante o processo.</p></div></details>
       <details><summary>Os dados são oficiais?</summary><div class="answer"><p>Vêm de fontes públicas. A base local é a da própria Receita Federal; BrasilAPI, ReceitaWS e CNPJ.ws são espelhos ou proxies. Os dados podem estar defasados (a base da Receita é mensal), por isso o app mostra a fonte e a data de cada um. Ele não substitui o comprovante oficial.</p></div></details>

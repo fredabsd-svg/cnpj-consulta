@@ -32,7 +32,7 @@
 
 <p align="center">
   <img src="docs/assets/screenshots/tour-empresa.webp" width="920"
-       alt="Página de uma empresa no CNPJ Consulta: resumo cadastral, CNPJ alfanumérico e um alerta informando que as fontes divergem no capital social">
+       alt="Página de uma empresa no CNPJ Consulta: resumo cadastral, CNPJ alfanumérico, alerta de divergência no capital social e veredicto de diligência com checklist">
 </p>
 <p align="center"><sub>Capturas reais do app rodando localmente, com dados fictícios.</sub></p>
 
@@ -94,11 +94,19 @@ flowchart LR
 <table>
   <tr>
     <td width="50%"><img src="docs/assets/screenshots/tour-fontes.webp" alt="Aba Fontes: fontes consultadas e procedência campo a campo com selos de confiança"></td>
-    <td width="50%"><img src="docs/assets/screenshots/tour-claro.webp" alt="Página da empresa no tema claro"></td>
+    <td width="50%"><img src="docs/assets/screenshots/tour-internet.webp" alt="Aba Pesquisa na internet com resultados da web e atalhos para buscadores, processos e certidões"></td>
   </tr>
   <tr>
     <td align="center"><sub>Procedência campo a campo</sub></td>
-    <td align="center"><sub>Tema claro</sub></td>
+    <td align="center"><sub>Pesquisa na internet</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/assets/screenshots/tour-lote.webp" alt="Consulta em lote com resumo e veredicto de cada empresa"></td>
+    <td width="50%"><img src="docs/assets/screenshots/tour-relatorio.webp" alt="Relatório de diligência cadastral em A4 com o nome do escritório"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Consulta em lote</sub></td>
+    <td align="center"><sub>Relatório de diligência (A4/PDF)</sub></td>
   </tr>
 </table>
 
@@ -225,7 +233,7 @@ Requisições POST e DELETE vindas de outra origem (outro site aberto no navegad
 |---|---|---|---|---|
 | Minha Receita | Sim | Não | Primária | Fonte principal das consultas online (30 consultas/min) |
 | BrasilAPI | Sim | Não | Espelho | Proxy da Minha Receita: confirma o formato, mas conta como a mesma base (60/min) |
-| ReceitaWS | Plano free | Não | Espelho | Segunda opinião; o plano gratuito limita a 3 consultas/min |
+| ReceitaWS | Plano free | Não | Espelho | Segunda opinião, desligada por padrão (termos restritivos); o plano gratuito limita a 3 consultas/min |
 | CNPJ.ws | Plano free | Não | Espelho | Opcional, desligada por padrão (3/min) |
 | Receita Federal (base local) | Sim | Não | Primária | Busca por sócio, filiais e modo offline |
 
@@ -241,7 +249,8 @@ Tudo é configurado por variáveis de ambiente (ou pelo arquivo `.env`; veja o `
 
 | Variável | Padrão | Para quê |
 |---|---|---|
-| `BRASILAPI_ENABLED`, `MINHA_RECEITA_ENABLED`, `RECEITAWS_ENABLED` | `true` | Liga/desliga cada fonte |
+| `BRASILAPI_ENABLED`, `MINHA_RECEITA_ENABLED` | `true` | Liga/desliga cada fonte |
+| `RECEITAWS_ENABLED` | `false` | ReceitaWS (opcional: os termos proíbem republicar os dados; use só localmente) |
 | `CNPJWS_ENABLED` | `false` | CNPJ.ws (opcional) |
 | `RECEITA_LOCAL_ENABLED` | `false` | Usa a base local da Receita Federal |
 | `RATE_LIMIT_<FONTE>` | 60 / 30 / 3 / 3 | Consultas por minuto de cada fonte |
