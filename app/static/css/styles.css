@@ -40,7 +40,7 @@
     --color-surface: rgba(255, 255, 255, .045);
     --color-surface-2: rgba(255, 255, 255, .07);
     --color-surface-hover: rgba(255, 255, 255, .09);
-    --color-surface-sidebar: rgba(12, 16, 28, .72);
+    --color-surface-sidebar: rgba(12, 16, 28, .88);
     --color-popover: rgba(18, 22, 36, .96);
     --color-text: #eef1f7;
     --color-text-muted: #a6adbf;
@@ -78,7 +78,7 @@
     --color-bg: #eef1f7;
     --color-bg-glow-1: rgba(6, 182, 212, .14); --color-bg-glow-2: rgba(124, 58, 237, .10);
     --color-surface: rgba(255, 255, 255, .72); --color-surface-2: rgba(255, 255, 255, .9);
-    --color-surface-hover: rgba(255, 255, 255, .96); --color-surface-sidebar: rgba(255, 255, 255, .75);
+    --color-surface-hover: rgba(255, 255, 255, .96); --color-surface-sidebar: rgba(255, 255, 255, .9);
     --color-popover: rgba(255, 255, 255, .98);
     --color-text: #0f1420; --color-text-muted: #4f586b; --color-text-faint: #5f6878;
     --color-border: rgba(15, 20, 32, .11); --color-border-strong: rgba(15, 20, 32, .24);
@@ -102,7 +102,7 @@
         color-scheme: light;
         --color-bg: #eef1f7; --color-bg-glow-1: rgba(6, 182, 212, .14); --color-bg-glow-2: rgba(124, 58, 237, .10);
         --color-surface: rgba(255, 255, 255, .72); --color-surface-2: rgba(255, 255, 255, .9);
-        --color-surface-hover: rgba(255, 255, 255, .96); --color-surface-sidebar: rgba(255, 255, 255, .75);
+        --color-surface-hover: rgba(255, 255, 255, .96); --color-surface-sidebar: rgba(255, 255, 255, .9);
         --color-popover: rgba(255, 255, 255, .98);
         --color-text: #0f1420; --color-text-muted: #4f586b; --color-text-faint: #5f6878;
         --color-border: rgba(15, 20, 32, .11); --color-border-strong: rgba(15, 20, 32, .24);
