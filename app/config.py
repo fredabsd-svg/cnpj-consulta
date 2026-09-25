@@ -102,6 +102,15 @@ class Settings(BaseSettings):
     # Consulta em lote: maximo de CNPJs por pedido.
     batch_max_items: int = 30
 
+    # Inscricao estadual automatica (opcional): web service de consulta cadastral
+    # da SEFAZ com o certificado digital A1 (.pfx) do escritorio. Sem isso, o app
+    # abre o portal CCC (login gov.br) para a consulta manual.
+    certificado_a1_path: str = ""
+    certificado_a1_senha: str = ""
+    # Cadeia de CAs extra (ex.: ICP-Brasil) se a SEFAZ usar certificado de
+    # servidor fora do repositorio do sistema.
+    sefaz_ca_bundle: str = ""
+
 
 def assert_bind_allowed(settings: Settings | None = None) -> None:
     """Recusa subir com host nao-loopback em production ou sem debug.

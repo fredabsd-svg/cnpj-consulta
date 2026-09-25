@@ -540,3 +540,54 @@ class TestReviewFindings:
         result = CliRunner().invoke(cli_app, ["lote", str(lista), "--csv", str(saida)])
         assert result.exit_code == 0, result.output
         assert saida.exists()
+
+
+# ---------------------------------------------------------------------------
+# Cartao CNPJ oficial dentro do app
+# ---------------------------------------------------------------------------
+
+
+class TestCartaoCnpj:
+    @respx.mock
+    def test_pagina_embute_site_oficial_com_cnpj(self, client, brasilapi_payload):
+        _mock_sources(brasilapi_payload)
+        r = client.get(f"/empresa/{CNPJ}/cartao-cnpj")
+        assert r.status_code == 200
+        oficial = (
+            "https://solucoes.receita.fazenda.gov.br/Servicos/cnpjreva/"
+            f"Cnpjreva_Solicitacao.asp?cnpj={CNPJ}"
+        )
+        assert f'<iframe class="official-frame" src="{oficial}"' in r.text
+        assert "sandbox=" in r.text and "allow-top-navigation" not in r.text
+        assert "OPEN KNOWLEDGE BRASIL" in r.text
+        csp = r.headers["content-security-policy"]
+        assert "frame-src https://solucoes.receita.fazenda.gov.br" in csp
+        assert "frame-ancestors 'none'" in csp  # o app continua sem poder ser enquadrado
+
+    @respx.mock
+    def test_funciona_mesmo_sem_fontes(self, client):
+        """Quem emite e a Receita: a pagina abre mesmo com as APIs fora do ar."""
+        for url in (
+            f"https://minhareceita.org/{CNPJ}",
+            f"https://brasilapi.com.br/api/cnpj/v1/{CNPJ}",
+            f"https://www.receitaws.com.br/v1/cnpj/{CNPJ}",
+        ):
+            respx.get(url).mock(return_value=httpx.Response(503))
+        r = client.get(f"/empresa/{CNPJ}/cartao-cnpj")
+        assert r.status_code == 200
+        assert "official-frame" in r.text
+
+    def test_cnpj_alfanumerico_na_url_oficial(self):
+        from app.services.official_docs import comprovante_url
+
+        assert comprovante_url(CNPJ_ALFA).endswith("?cnpj=12ABC34501DE35")
+
+    def test_cnpj_invalido(self, client):
+        assert client.get("/empresa/123/cartao-cnpj").status_code == 400
+
+    @respx.mock
+    def test_empresa_tem_botoes_cartao_e_ie(self, client, brasilapi_payload):
+        _mock_sources(brasilapi_payload)
+        r = client.get(f"/empresa/{CNPJ}")
+        assert f"/empresa/{CNPJ}/cartao-cnpj" in r.text
+        assert f"/empresa/{CNPJ}/inscricao-estadual" in r.text

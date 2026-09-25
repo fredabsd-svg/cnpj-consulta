@@ -63,8 +63,10 @@ python -m app.cli limpar-historico
 | Atalhos de pesquisa (aba "Pesquisa na internet") | Razao social, nome fantasia, CNPJ ou endereco **da empresa** | Site que voce escolher (Google, Jusbrasil, Portal da Transparencia...) | Somente quando voce clica no link |
 | Resultados na tela (`WEB_SEARCH_PROVIDER`) | O texto da pesquisa que voce confirma (por padrao, razao social + cidade) | Provedor configurado: Tavily, Brave Search ou sua instancia SearXNG | Somente quando voce clica em "Pesquisar" |
 | Sancoes federais (`PORTAL_TRANSPARENCIA_API_KEY`) | O CNPJ consultado | API de dados do Portal da Transparencia (CGU) | Ao abrir a pagina ou o relatorio da empresa |
+| Cartao CNPJ (pagina "Cartao CNPJ") | O CNPJ, na URL da pagina oficial | Receita Federal (o navegador acessa o site oficial direto; o app nao le o conteudo) | Ao abrir a pagina |
+| Inscricao estadual (`CERTIFICADO_A1_PATH`) | CNPJ e UF, autenticados com o certificado do escritorio | Web service de consulta cadastral da SEFAZ da UF | Ao abrir a pagina "Inscricao estadual" ou clicar em Consultar |
 
-Ambas as integracoes vem **desligadas** por padrao. Nomes e documentos de socios **nunca** entram nessas consultas. Os resultados ficam em cache apenas na memoria do servidor local.
+As integracoes com chave ou certificado vem **desligadas** por padrao; o certificado A1 e a senha ficam apenas no `.env` local e nunca sao exibidos nem registrados em log. Nomes e documentos de socios **nunca** entram nessas consultas. Os resultados ficam em cache apenas na memoria do servidor local.
 
 ## 5. Base legal de tratamento
 

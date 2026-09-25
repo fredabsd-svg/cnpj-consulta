@@ -17,6 +17,7 @@ from app.api import batch, companies, health, history, partners, providers
 from app.config import assert_bind_allowed, get_settings
 from app.db import init_database
 from app.providers.registry import get_registry
+from app.services.official_docs import RECEITA_ORIGIN
 from app.web.pages import router as pages_router
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -26,7 +27,10 @@ _SECURITY_HEADERS = {
     # Sem scripts/estilos inline nem de terceiros: bloqueia XSS por injecao.
     "Content-Security-Policy": (
         "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
-        "connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+        "connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; "
+        # Unico site externo que pode aparecer DENTRO do app: a pagina oficial do
+        # Cartao CNPJ (o usuario resolve o captcha la; o app nao le o conteudo).
+        f"frame-src {RECEITA_ORIGIN}"
     ),
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",

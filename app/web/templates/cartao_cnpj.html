@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+
+{% block title %}Cartão CNPJ · {{ company.razao_social or company.cnpj_formatado }}{% endblock %}
+
+{% block content %}
+{% set c = company %}
+<nav class="breadcrumb no-print" aria-label="Você está em"><a href="/">Início</a><span aria-hidden="true">/</span><a href="/empresa/{{ c.cnpj }}">Empresa</a><span aria-hidden="true">/</span><span>Cartão CNPJ</span></nav>
+
+<header class="page-header">
+    <div>
+        <div class="eyebrow">{{ ui.icon('landmark') }} Documento oficial · Receita Federal</div>
+        <h1>Cartão CNPJ</h1>
+        <p class="muted">Comprovante de Inscrição e de Situação Cadastral de
+            <strong>{{ c.razao_social or "empresa não identificada nas fontes" }}</strong> ·
+            <span class="mono">{{ c.cnpj_formatado }}</span></p>
+    </div>
+    <div class="actions">
+        <a class="btn btn-primary" href="{{ oficial_url }}" target="_blank" rel="noopener noreferrer">{{ ui.icon('external') }} Abrir em nova janela</a>
+        <button type="button" class="btn" data-copy="{{ c.cnpj_formatado }}">{{ ui.icon('copy') }} Copiar CNPJ</button>
+        <a class="btn btn-ghost" href="/empresa/{{ c.cnpj }}">← Voltar</a>
+    </div>
+</header>
+
+<ol class="steps-inline" aria-label="Como emitir">
+    <li><span class="step-n">1</span><div><strong>Confira o CNPJ</strong><span>Ele já vem preenchido no site da Receita.</span></div></li>
+    <li><span class="step-n">2</span><div><strong>Resolva o captcha</strong><span>Marque o hCaptcha do próprio site oficial e clique em Consultar.</span></div></li>
+    <li><span class="step-n">3</span><div><strong>Imprima ou salve em PDF</strong><span>Use o botão "Imprimir" da Receita e escolha "Salvar como PDF".</span></div></li>
+</ol>
+
+<section class="card official-frame-card" aria-labelledby="titulo-oficial">
+    <div class="official-bar">
+        <span class="official-lock">{{ ui.icon('shield-check') }}<span id="titulo-oficial">Site oficial: <strong class="mono">{{ oficial_origem }}</strong></span></span>
+        <a class="small" href="{{ oficial_url }}" target="_blank" rel="noopener noreferrer">Não carregou? Abrir em nova janela</a>
+    </div>
+    <iframe class="official-frame" src="{{ oficial_url }}" title="Site oficial da Receita Federal: Comprovante de Inscrição e de Situação Cadastral do CNPJ {{ c.cnpj_formatado }}"
+            referrerpolicy="no-referrer" loading="eager"
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads"></iframe>
+</section>
+
+<p class="muted small section">{{ ui.icon('info') }} O documento é emitido pela Receita Federal: o CNPJ Consulta só abre a página oficial, não lê o
+    que você digita nela nem guarda o comprovante. Se o quadro ficar em branco (bloqueio de cookies de terceiros ou instabilidade do site),
+    use <strong>Abrir em nova janela</strong>. Para a inscrição estadual, veja <a href="/empresa/{{ c.cnpj }}/inscricao-estadual">Inscrição estadual</a>.</p>
+{% endblock %}

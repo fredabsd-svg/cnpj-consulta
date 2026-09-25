@@ -50,6 +50,8 @@ Uma consulta comum devolve o que **uma** API respondeu. O CNPJ Consulta pergunta
 - **Pesquisa na internet** *(novo)* — atalhos prontos para buscadores, Jusbrasil, Reclame Aqui, certidões (CND, CRF, CNDT), CEIS/CNEP e mapas; opcionalmente, resultados na própria tela via Tavily, Brave Search ou SearXNG.
 - **Sanções federais** *(novo, opcional)* — confere CEIS, CNEP, CEPIM e CEAF pela API do Portal da Transparência e leva o resultado ao checklist.
 - **Consulta em lote** *(novo)* — cole até 30 CNPJs, veja o quadro-resumo e exporte para o Excel.
+- **Cartão CNPJ oficial dentro do app** *(novo)* — o site da Receita abre numa tela do app com o CNPJ já preenchido; você marca o captcha e imprime ou salva o comprovante em PDF.
+- **Inscrição estadual** *(novo)* — com o certificado A1 do escritório, consulta a IE na SEFAZ (situação, regime de apuração, CNAE, endereço) sem sair do app; sem certificado, abre o portal CCC com o CNPJ pronto para colar.
 - **Status das fontes** *(novo)* — saúde, erros e limites de cada fonte numa página.
 - **Busca reversa por sócio e modo offline** — com a base oficial da Receita Federal importada localmente.
 - **Interface web, CLI e API REST** — a interface é em português, com tema claro e escuro e sem nada carregado de CDN.
@@ -146,6 +148,8 @@ O `setup` cria o ambiente virtual `.venv`, instala as dependências (`pip instal
 - **Pesquisa na internet**: grupos de atalhos (buscadores, reputação e processos, sanções, certidões oficiais, localização e presença digital) que abrem a pesquisa pronta em nova aba. O comprovante de CNPJ da Receita já abre com o número preenchido; para os sites com captcha (CND, CRF, CNDT, Simples), há um botão para copiar o CNPJ. Com um provedor configurado, os resultados aparecem na própria aba.
 - **Consulta em lote** (`/lote`): cole a lista (linhas, vírgulas ou espaços), veja situação, cidade, porte, Simples/MEI, divergências e veredicto de cada empresa e exporte o CSV. CNPJs já consultados vêm do cache, sem gastar o limite das fontes.
 - **Status das fontes** (`/fontes`): consultas, erros, último sucesso e falha de cada fonte, fontes desligadas e recursos opcionais.
+- **Cartão CNPJ** (`/empresa/{cnpj}/cartao-cnpj`): a página oficial de emissão do Comprovante de Inscrição e de Situação Cadastral da Receita, dentro do app e com o CNPJ preenchido. O app não emite nem altera o documento: o captcha e a impressão são feitos no próprio site da Receita. Se o navegador bloquear o quadro, há o botão **Abrir em nova janela**.
+- **Inscrição estadual** (`/empresa/{cnpj}/inscricao-estadual`): com `CERTIFICADO_A1_PATH` e `CERTIFICADO_A1_SENHA`, consulta o web service de consulta cadastral da SEFAZ da UF escolhida (a da sede vem marcada) e mostra IE, situação (habilitado ou não), regime de apuração, CNAE, datas e endereço. Sem certificado, guia a consulta no portal CCC (exige login gov.br).
 - **Buscar sócio**: por nome (palavras em qualquer ordem, sem acento), UF e município da sede. Requer a base local.
 - **Histórico e favoritos**: consultas recentes, favoritos e botão para apagar o histórico.
 
@@ -195,6 +199,7 @@ GET    /api/companies/{cnpj}/research        atalhos de pesquisa na internet (li
 GET    /api/companies/{cnpj}/web-search      ?q=...  resultados na web (requer WEB_SEARCH_PROVIDER)
 GET    /api/companies/{cnpj}/sanctions       CEIS/CNEP/CEPIM/CEAF (requer PORTAL_TRANSPARENCIA_API_KEY)
 GET    /api/companies/{cnpj}/export.relatorio  relatório de diligência em HTML (A4)
+GET    /api/companies/{cnpj}/inscricao-estadual  ?uf=SP  (requer certificado A1)
 GET    /api/batch                            ?cnpjs=A,B,C  consulta em lote (JSON)
 GET    /api/batch/export.csv                 ?cnpjs=A,B,C&excel=true
 GET    /api/partners/search                  ?q=nome&uf=SP&municipio=...&limit=50  (requer a base local)
@@ -263,6 +268,8 @@ Tudo é configurado por variáveis de ambiente (ou pelo arquivo `.env`; veja o `
 | `WEB_SEARCH_API_KEY` / `WEB_SEARCH_URL` | vazio | Chave do Tavily/Brave ou endereço da sua instância SearXNG |
 | `PORTAL_TRANSPARENCIA_API_KEY` | vazio | Liga a checagem de sanções federais ([chave gratuita](https://portaldatransparencia.gov.br/api-de-dados/cadastrar-email)) |
 | `BATCH_MAX_ITEMS` | `30` | Máximo de CNPJs por consulta em lote |
+| `CERTIFICADO_A1_PATH` / `CERTIFICADO_A1_SENHA` | vazio | Certificado digital A1 (`.pfx`) do escritório para consultar a inscrição estadual na SEFAZ |
+| `SEFAZ_CA_BUNDLE` | vazio | Cadeia de CAs extra (ex.: ICP-Brasil), se alguma SEFAZ der erro de TLS |
 | `LOG_LEVEL` | `INFO` | Nível de log |
 
 ## Privacidade e LGPD
