@@ -1,7 +1,7 @@
 # Politica de Privacidade
 
 Aplicativo: **CNPJ Consulta**
-Ultima atualizacao: 2026-09-18
+Ultima atualizacao: 2026-09-25
 
 ## 1. Dados que consultamos
 
@@ -24,7 +24,8 @@ Em respeito a **LGPD (Lei 13.709/2018)** e ao **CTN (Lei 5.172/1966, art. 198)**
 - Busca datas de nascimento ou outros dados privados.
 - Busca e-mails pessoais.
 - Cruza dados para construir perfis.
-- Compartilha dados com terceiros.
+- Pesquisa nomes ou documentos de socios na internet.
+- Compartilha dados com terceiros (exceto o que voce mesmo envia ao usar as integracoes opcionais da secao 4-A).
 - Usa dados para spam, assedio ou prospeccao abusiva.
 
 ## 3. Dados pessoais - o que exibimos
@@ -54,6 +55,16 @@ Esses dados **NAO sao enviados a nenhum servidor externo**. Voce pode apaga-los 
 ```bash
 python -m app.cli limpar-historico
 ```
+
+## 4-A. Pesquisa na internet e sancoes (integracoes opcionais)
+
+| Recurso | O que e enviado | A quem | Quando |
+|---|---|---|---|
+| Atalhos de pesquisa (aba "Pesquisa na internet") | Razao social, nome fantasia, CNPJ ou endereco **da empresa** | Site que voce escolher (Google, Jusbrasil, Portal da Transparencia...) | Somente quando voce clica no link |
+| Resultados na tela (`WEB_SEARCH_PROVIDER`) | O texto da pesquisa que voce confirma (por padrao, razao social + cidade) | Provedor configurado: Tavily, Brave Search ou sua instancia SearXNG | Somente quando voce clica em "Pesquisar" |
+| Sancoes federais (`PORTAL_TRANSPARENCIA_API_KEY`) | O CNPJ consultado | API de dados do Portal da Transparencia (CGU) | Ao abrir a pagina ou o relatorio da empresa |
+
+Ambas as integracoes vem **desligadas** por padrao. Nomes e documentos de socios **nunca** entram nessas consultas. Os resultados ficam em cache apenas na memoria do servidor local.
 
 ## 5. Base legal de tratamento
 

@@ -304,3 +304,34 @@ Os dados consultados são públicos (Lei de Acesso à Informação
 12.527/2011, art. 8º). Este app **não inclui, vende ou revende**
 informações pessoais. O usuário é responsável pelo uso e pelas
 finalidades (LGPD art. 7º). Veja `politica-de-privacidade.md`.
+
+## 12. Versão 0.3 — revisão, pesquisa na internet e lote
+
+### 12.1. Correções
+
+| Problema | Correção |
+|---|---|
+| Endereço acusava divergência só por formato ("AV PAULISTA" × "PAULISTA", tipo de logradouro em campo separado, "S/N" × "SN", "JD" × "JARDIM") ou por complemento ausente em uma fonte | `_address_key` compara o núcleo do logradouro sem o tipo, normaliza abreviações e só as partes que **todas** as fontes informaram (`CACHE_VERSION = 4`) |
+| Export CSV aceitava células iniciadas por `=`, `+`, `-`, `@` (formula injection no Excel) | `formatting.csv_cell` prefixa `'` |
+| `data_br("2024-01-31")` exibia "31/01/2024 00:00" | strings só-data viram `date` |
+| Links com estado "carregando" ficavam travados ao voltar pelo navegador | `app.js` restaura o conteúdo original |
+| `setup.sh`/`start.sh` falhavam quando o `python3` do sistema era anterior ao 3.12 | escolhem o primeiro `python3.1x` ≥ 3.12 disponível |
+| Badge de CI do README apontava para workflow inexistente | `.github/workflows/ci.yml` (ruff + pytest em 3.12 e 3.13) |
+
+### 12.2. Pesquisa na internet (`app/services/web_research.py`)
+
+- **Atalhos** sempre disponíveis, montados só com dados da PJ: buscadores (Google, Google Notícias, Bing, DuckDuckGo), reputação e processos (Jusbrasil, Reclame Aqui), sanções (CEIS, CNEP e visão geral no Portal da Transparência), certidões oficiais (comprovante de CNPJ com número preenchido; CND federal, CRF do FGTS, CNDT, Simples Nacional e Sintegra com botão de copiar o CNPJ, pois exigem captcha) e presença digital (Google Maps, OpenStreetMap, site do domínio do e-mail corporativo, registro do domínio, LinkedIn via Google).
+- **Resultados na tela** (opcional): `WEB_SEARCH_PROVIDER=tavily|brave|searxng`. Só roda quando o usuário clica em Pesquisar; URLs que não sejam http(s) são descartadas, HTML do trecho é removido e o resultado fica 1 h em cache na memória. A Bing Search API foi aposentada (ago/2025) e a Google Custom Search está fechada a novos clientes, por isso não entram.
+- **LGPD:** nomes e documentos de sócios nunca entram em buscas (há teste para isso).
+
+### 12.3. Sanções federais (`app/services/sanctions.py`)
+
+`GET {PORTAL_TRANSPARENCIA_BASE_URL}/pessoa-juridica?cnpj=` com o cabeçalho `chave-api-dados`. Os indicadores `sancionadoCEIS`, `sancionadoCNEP`, `sancionadoCEPIM` e `sancionadoCEAF` viram o item "Sanções federais" do checklist (crítico se constar em algum). Sem chave, o item aparece como informativo, lembrando de conferir na aba de pesquisa.
+
+### 12.4. Consulta em lote (`app/services/batch.py`)
+
+Até `BATCH_MAX_ITEMS` CNPJs por pedido, 4 em paralelo. O limite de entrada por IP só é consumido quando a empresa precisa ir às fontes (cache não conta); ao esgotar, as linhas restantes voltam como "limite". Saída em tela, JSON (`/api/batch`) e CSV (`/api/batch/export.csv`).
+
+### 12.5. Interface
+
+Novo design system em `app/static/css/styles.css` (tokens de cor, tipografia e espaçamento), textos acentuados, página inicial com métricas e atalhos, busca rápida com a tecla `/`, página da empresa com veredicto e checklist integrados, página `/fontes` com o status das fontes e macros compartilhadas em `app/web/templates/_macros.html`.

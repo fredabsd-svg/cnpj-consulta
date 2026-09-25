@@ -38,14 +38,14 @@ class ProviderRegistry:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self._providers: list[Provider] = []
+        self._disabled: list[Provider] = []
         for cls in PROVIDER_CLASSES:
             try:
                 p = cls(settings)
             except Exception:  # pragma: no cover -- defensivo
                 log.exception("Falha ao instanciar %s", cls.__name__)
                 continue
-            if p.enabled:
-                self._providers.append(p)
+            (self._providers if p.enabled else self._disabled).append(p)
 
     async def aclose(self) -> None:
         for p in self._providers:
@@ -53,6 +53,10 @@ class ProviderRegistry:
 
     def all(self) -> list[Provider]:
         return list(self._providers)
+
+    def disabled(self) -> list[Provider]:
+        """Fontes conhecidas mas desligadas no .env (para a pagina de status)."""
+        return list(self._disabled)
 
     def by_name(self, name: str) -> Provider | None:
         return next((p for p in self._providers if p.name == name), None)

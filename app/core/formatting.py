@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import date, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -30,7 +31,8 @@ def data_br(value: Any) -> str:
         return "-"
     if isinstance(value, str):
         try:
-            value = datetime.fromisoformat(value)
+            # "2024-01-31" e "20240131" sao so data: nao podem virar "31/01/2024 00:00"
+            value = date.fromisoformat(value) if len(value) <= 10 else datetime.fromisoformat(value)
         except ValueError:
             try:
                 value = datetime.strptime(value, "%Y%m%d").date()
@@ -87,3 +89,45 @@ NOMES_FONTES = {
 
 def fonte(nome: Any) -> str:
     return ", ".join(NOMES_FONTES.get(p.strip(), p.strip()) for p in str(nome or "").split(","))
+
+
+_FONTE_ID = re.compile(r"\b(" + "|".join(sorted(NOMES_FONTES, key=len, reverse=True)) + r")\b")
+
+
+def fontes_no_texto(texto: Any) -> str:
+    """'receitaws: 100,00; brasilapi: 150,00' -> 'ReceitaWS: 100,00; BrasilAPI: 150,00'."""
+    return _FONTE_ID.sub(lambda m: NOMES_FONTES[m.group(1)], str(texto or ""))
+
+
+def idade(value: Any, hoje: date | None = None) -> str:
+    """Tempo desde a data (abertura da empresa): '12 anos', '1 ano e 3 meses', '5 meses'."""
+    if not isinstance(value, date):
+        return ""
+    if isinstance(value, datetime):
+        value = value.date()
+    hoje = hoje or date.today()
+    meses = (hoje.year - value.year) * 12 + (hoje.month - value.month) - (hoje.day < value.day)
+    if meses < 0:
+        return ""
+    anos, resto = divmod(meses, 12)
+    if anos == 0:
+        return "menos de 1 mês" if resto == 0 else f"{resto} {'mês' if resto == 1 else 'meses'}"
+    txt = f"{anos} {'ano' if anos == 1 else 'anos'}"
+    if anos < 3 and resto:
+        txt += f" e {resto} {'mês' if resto == 1 else 'meses'}"
+    return txt
+
+
+# Celulas que Excel/LibreOffice interpretariam como formula (CSV injection).
+_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def csv_cell(value: Any) -> Any:
+    """Valor pronto para CSV: None vira vazio, datas ISO e formulas neutralizadas."""
+    if value is None:
+        return ""
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    if isinstance(value, str) and value.startswith(_FORMULA_PREFIXES):
+        return "'" + value
+    return value

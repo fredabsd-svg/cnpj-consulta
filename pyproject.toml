@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cnpj-consulta"
-version = "0.2.0"
+version = "0.3.0"
 description = "Aplicativo local para consulta de CNPJ e busca reversa por socios"
 readme = "README.md"
 requires-python = ">=3.12"

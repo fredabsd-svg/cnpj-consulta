@@ -82,6 +82,26 @@ class Settings(BaseSettings):
 
     receita_local_enabled: bool = False
 
+    # Pesquisa na internet (opcional). Vazio = so atalhos de pesquisa (links).
+    # "tavily": Tavily (1.000 buscas/mes gratis; chave em WEB_SEARCH_API_KEY);
+    # "brave": Brave Search API (credito mensal; chave em WEB_SEARCH_API_KEY);
+    # "searxng": instancia SearXNG propria (WEB_SEARCH_URL) com formato json.
+    # A consulta so parte quando o usuario clica em "Pesquisar" e usa apenas
+    # dados da empresa -- nunca nomes de socios (LGPD).
+    web_search_provider: Literal["", "tavily", "brave", "searxng"] = ""
+    web_search_api_key: str = ""
+    web_search_url: str = ""
+    web_search_max_results: int = 8
+    web_search_cache_seconds: int = 3600
+
+    # Portal da Transparencia (CEIS/CNEP: empresas sancionadas). Chave gratuita
+    # em portaldatransparencia.gov.br/api-de-dados/cadastrar-email. Vazio = desligado.
+    portal_transparencia_api_key: str = ""
+    portal_transparencia_base_url: str = "https://api.portaldatransparencia.gov.br/api-de-dados"
+
+    # Consulta em lote: maximo de CNPJs por pedido.
+    batch_max_items: int = 30
+
 
 def assert_bind_allowed(settings: Settings | None = None) -> None:
     """Recusa subir com host nao-loopback em production ou sem debug.

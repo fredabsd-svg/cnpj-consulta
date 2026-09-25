@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+
+{% block title %}Pesquisa na internet · {{ company.razao_social or company.cnpj_formatado }}{% endblock %}
+
+{% block content %}
+{% set c = company %}
+<nav class="breadcrumb" aria-label="Você está em"><a href="/">Início</a><span aria-hidden="true">/</span><a href="/empresa/{{ c.cnpj }}">Empresa</a><span aria-hidden="true">/</span><span>Pesquisa na internet</span></nav>
+<header class="page-header">
+    <div>
+        <div class="eyebrow">{{ ui.icon('globe') }} Pesquisa na internet</div>
+        <h1>{{ c.razao_social or "Empresa não encontrada" }}</h1>
+        <p class="muted"><span class="mono">{{ c.cnpj_formatado }}</span>{% if c.situacao_cadastral %} · {{ ui.situacao_badge(c.situacao_cadastral) }}{% endif %}</p>
+    </div>
+    <a class="btn" href="/empresa/{{ c.cnpj }}">← Voltar para a empresa</a>
+</header>
+{% if c.razao_social %}
+{% include "_pesquisa.html" %}
+{% else %}
+<div class="alert alert-danger" role="alert">{{ ui.icon('falha') }}<div><p>Nenhuma fonte retornou dados para este CNPJ, então não há o que pesquisar. <a href="/empresa/{{ c.cnpj }}?atualizar=1">Tentar de novo</a>.</p></div></div>
+{% endif %}
+{% endblock %}

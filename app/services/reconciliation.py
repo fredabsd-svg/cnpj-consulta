@@ -479,18 +479,90 @@ def _comparable_value(value: Any) -> str | None:
     return comparable(value)
 
 
-def _address_key(addr: Address) -> str:
-    """Chave canonica: ignora diferencas so de formatacao."""
-    parts = [
-        comparable(addr.logradouro),
-        comparable(addr.numero),
-        comparable(addr.complemento),
-        comparable(addr.bairro),
-        comparable(addr.municipio),
-        comparable(addr.uf),
-        addr.cep or None,
-    ]
-    return "|".join(p or "" for p in parts)
+# Tipo de logradouro: umas fontes mandam "AVENIDA PAULISTA", outras "AV PAULISTA"
+# e outras so "PAULISTA" (o tipo vem em campo separado). Abreviacoes viram a
+# forma por extenso; tipo AUSENTE em uma fonte nao e divergencia, tipo
+# DIFERENTE ("RUA 1" x "AVENIDA 1") e.
+_STREET_TYPES = {
+    "AV": "AVENIDA", "AVENIDA": "AVENIDA", "R": "RUA", "RUA": "RUA",
+    "AL": "ALAMEDA", "ALAMEDA": "ALAMEDA", "TV": "TRAVESSA", "TRAV": "TRAVESSA",
+    "TRAVESSA": "TRAVESSA", "ROD": "RODOVIA", "RODOVIA": "RODOVIA", "EST": "ESTRADA",
+    "ESTR": "ESTRADA", "ESTRADA": "ESTRADA", "PC": "PRACA", "PCA": "PRACA", "PRACA": "PRACA",
+    "LGO": "LARGO", "LARGO": "LARGO", "LD": "LADEIRA", "LADEIRA": "LADEIRA", "VIELA": "VIELA",
+    "BECO": "BECO", "SERVIDAO": "SERVIDAO", "PRAIA": "PRAIA", "PQ": "PARQUE", "PARQUE": "PARQUE",
+    "CAM": "CAMINHO", "CAMINHO": "CAMINHO", "VD": "VIADUTO", "VIADUTO": "VIADUTO",
+    "QD": "QUADRA", "QUADRA": "QUADRA",
+}
+# Abreviacoes comuns em bairro/complemento ("JD" = "JARDIM", "SL" = "SALA").
+_ABBREVIATIONS = {
+    "JD": "JARDIM", "VL": "VILA", "PQ": "PARQUE", "STA": "SANTA", "STO": "SANTO",
+    "CJ": "CONJUNTO", "CONJ": "CONJUNTO", "SL": "SALA", "AND": "ANDAR", "BL": "BLOCO",
+    "AP": "APARTAMENTO", "APTO": "APARTAMENTO", "LJ": "LOJA", "RES": "RESIDENCIAL",
+    "DR": "DOUTOR", "PRES": "PRESIDENTE", "PROF": "PROFESSOR",
+}
+_ADDRESS_PARTS = ("logradouro", "numero", "complemento", "bairro", "municipio", "uf", "cep")
+
+
+def _tokens(value: str | None) -> list[str]:
+    return [_ABBREVIATIONS.get(t, t) for t in (comparable(value) or "").split()]
+
+
+def _numero_key(numero: str | None) -> str:
+    """'S/N', 'SN', 'S N' e 'SEM NUMERO' viram a mesma chave."""
+    n = (comparable(numero) or "").replace(" ", "")
+    return "SN" if n in {"SN", "SEMNUMERO", "SNO"} else n
+
+
+def _street(logradouro: str | None, numero: str | None) -> tuple[str | None, str]:
+    """'AV. Paulista 37' (numero 37) -> ('AVENIDA', 'PAULISTA'). So para comparar."""
+    tokens = (comparable(logradouro) or "").split()
+    tipo = None
+    if len(tokens) > 1 and tokens[0] in _STREET_TYPES:
+        tipo, tokens = _STREET_TYPES[tokens[0]], tokens[1:]
+    num = _numero_key(numero)
+    if len(tokens) > 1 and num and tokens[-1] == num:
+        tokens = tokens[:-1]  # algumas fontes repetem o numero no logradouro
+    return tipo, " ".join(_ABBREVIATIONS.get(t, t) for t in tokens)
+
+
+def _address_part_key(addr: Address, part: str) -> Any:
+    value = getattr(addr, part)
+    if part == "logradouro":
+        return _street(value, addr.numero)
+    if part == "numero":
+        return _numero_key(value)
+    if part in ("complemento", "bairro"):
+        return " ".join(_tokens(value))  # ordem importa: "SALA 1 ANDAR 2" != "SALA 2 ANDAR 1"
+    if part == "cep":
+        return value or ""
+    return comparable(value) or ""
+
+
+def _address_differs(entries: list[tuple[str, Address]]) -> bool:
+    """Diverge se QUALQUER parte tem valores diferentes entre as fontes que a informam.
+
+    Cada parte e comparada so entre quem a informou: uma fonte sem complemento
+    apenas tem menos detalhe, mas nao "apaga" a comparacao das demais.
+    """
+    for part in _ADDRESS_PARTS:
+        keys = [_address_part_key(a, part) for _, a in entries if getattr(a, part)]
+        if part == "logradouro":
+            if len({core for _, core in keys}) > 1 or len({t for t, _ in keys if t}) > 1:
+                return True
+        elif len(set(keys)) > 1:
+            return True
+    return False
+
+
+def _address_confirmed(entries: list[tuple[str, Address]]) -> bool:
+    """Confianca alta so quando 2+ fontes independentes informam a rua ou o CEP
+    e mais alguma parte -- concordar so na UF nao confirma o endereco."""
+    shared = {
+        part
+        for part in _ADDRESS_PARTS
+        if len({_SOURCE_GROUP.get(p, p) for p, a in entries if getattr(a, part)}) >= 2
+    }
+    return len(shared) >= 2 and bool(shared & {"logradouro", "cep"})
 
 
 def _address_display(addr: Address) -> str:
@@ -543,23 +615,36 @@ def _record_field(
     conflict_enabled: bool,
     by_provider: dict[str, ProviderResult],
     display_fn: Callable[[Any], str],
-    key_fn: Callable[[Any], str | None],
     provenance: list[FieldProvenance],
     conflitos: list[str],
+    key_fn: Callable[[Any], Any] | None = None,
+    differs_fn: Callable[[list[tuple[str, Any]]], bool] | None = None,
+    confirmed_fn: Callable[[list[tuple[str, Any]]], bool] | None = None,
 ) -> Any | None:
-    """Resolve um campo (escalar ou composto), anexa procedencia e conflitos."""
+    """Resolve um campo (escalar ou composto), anexa procedencia e conflitos.
+
+    Divergencia: por padrao, chaves (`key_fn`) diferentes; campos compostos
+    podem decidir com `differs_fn`. `confirmed_fn` diz se as fontes
+    independentes de fato confirmam o valor (senao, confianca media).
+    """
     if not non_empty:
         return None
     resolved = non_empty[0][1]
-    distinct = {key_fn(v) for _, v in non_empty}
     groups = {_SOURCE_GROUP.get(p, p) for p, _ in non_empty}
-    if len(distinct) > 1:
+    if differs_fn is not None:
+        differs = differs_fn(non_empty)
+    else:
+        assert key_fn is not None
+        differs = len({key_fn(v) for _, v in non_empty}) > 1
+    if differs:
         confianca, obs = "baixa", "valor diverge entre fontes"
         if conflict_enabled:
             detalhes = "; ".join(f"{p}: {display_fn(v)}" for p, v in non_empty)
             conflitos.append(f"{label}: {detalhes}")
-    elif len(groups) >= 2:
+    elif len(groups) >= 2 and (confirmed_fn is None or confirmed_fn(non_empty)):
         confianca, obs = "alta", None
+    elif len(groups) >= 2:
+        confianca, obs = "media", "fontes informam partes diferentes, sem confirmar o valor"
     else:
         confianca = "media"
         obs = (
@@ -641,7 +726,8 @@ def reconcile(cnpj: str, results: list[ProviderResult]) -> CompanyUnified:
         conflict_enabled=True,
         by_provider=by_provider,
         display_fn=_address_display,
-        key_fn=_address_key,
+        differs_fn=_address_differs,
+        confirmed_fn=_address_confirmed,
         provenance=provenance,
         conflitos=conflitos,
     )

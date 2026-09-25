@@ -10,6 +10,7 @@ from dataclasses import asdict, dataclass
 from typing import Any, Literal
 
 from app.schemas.company import CompanyUnified
+from app.services.sanctions import SanctionsCheck
 
 StatusOk = Literal["ok", "alerta", "falha", "info"]
 
@@ -91,7 +92,22 @@ def _fontes_item(company: CompanyUnified) -> DiligenceItem:
     return DiligenceItem("fontes_ok", "Fontes", "ok", f"{ok} fontes responderam.")
 
 
-def build_diligence_checklist(company: CompanyUnified) -> list[DiligenceItem]:
+def _sancoes_item(sanctions: SanctionsCheck | None) -> DiligenceItem:
+    rotulo = "Sanções federais"
+    if sanctions is None:
+        return DiligenceItem(
+            "sancoes", rotulo, "info", "Não verificado. Confira CEIS/CNEP na aba Pesquisa na internet."
+        )
+    if not sanctions.consultado:
+        return DiligenceItem("sancoes", rotulo, "alerta", f"Não foi possível consultar: {sanctions.erro}.")
+    if sanctions.sancionada:
+        return DiligenceItem("sancoes", rotulo, "falha", "Consta em: " + "; ".join(sanctions.cadastros) + ".")
+    return DiligenceItem("sancoes", rotulo, "ok", "Não consta no CEIS, CNEP, CEPIM nem CEAF.")
+
+
+def build_diligence_checklist(
+    company: CompanyUnified, sanctions: SanctionsCheck | None = None
+) -> list[DiligenceItem]:
     return [
         _situacao_item(company),
         _simples_mei_item(company),
@@ -99,6 +115,7 @@ def build_diligence_checklist(company: CompanyUnified) -> list[DiligenceItem]:
         _qsa_item(company),
         _divergencias_item(company),
         _fontes_item(company),
+        _sancoes_item(sanctions),
     ]
 
 

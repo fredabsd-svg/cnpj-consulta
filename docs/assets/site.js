@@ -141,19 +141,27 @@ function analisar(valor) {
             };
             abas.forEach((aba, i) => {
                 aba.addEventListener("click", () => selecionar(i, false));
+                // lista vertical (aria-orientation="vertical"): setas para cima/baixo; horizontal: esquerda/direita
+                const vertical = aba.closest('[role="tablist"]')?.getAttribute("aria-orientation") === "vertical";
+                const teclas = vertical
+                    ? { ArrowDown: i + 1, ArrowUp: i - 1, Home: 0, End: abas.length - 1 }
+                    : { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: abas.length - 1 };
                 aba.addEventListener("keydown", (ev) => {
-                    const destino = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: abas.length - 1 }[ev.key];
+                    const destino = teclas[ev.key];
                     if (destino === undefined) return;
                     ev.preventDefault();
                     selecionar((destino + abas.length) % abas.length, true);
                 });
             });
             let inicial = abas.findIndex((a) => a.getAttribute("aria-selected") === "true");
-            // em celular, a demonstracao abre na captura do celular (a de desktop fica minuscula)
-            if (raiz.dataset.mobileTab && window.matchMedia("(max-width: 640px)").matches) {
-                const idx = abas.findIndex((a) => a.id === raiz.dataset.mobileTab);
+            const abrirEm = (id) => {
+                const idx = abas.findIndex((a) => a.id === id);
                 if (idx >= 0) inicial = idx;
-            }
+            };
+            // no tema claro, a demonstracao abre na captura do tema claro
+            if (raiz.dataset.lightTab && document.documentElement.dataset.theme === "light") abrirEm(raiz.dataset.lightTab);
+            // em celular, a demonstracao abre na captura do celular (a de desktop fica minuscula)
+            if (raiz.dataset.mobileTab && window.matchMedia("(max-width: 640px)").matches) abrirEm(raiz.dataset.mobileTab);
             selecionar(inicial >= 0 ? inicial : 0, false);
         });
     }
@@ -201,7 +209,7 @@ function analisar(valor) {
                     await copiarTexto(texto);
                     btn.dataset.copied = "true";
                     if (rotulo) rotulo.textContent = "Copiado!";
-                    if (aviso) aviso.textContent = "Comando copiado para a area de transferencia.";
+                    if (aviso) aviso.textContent = "Comando copiado para a área de transferência.";
                 } catch (e) {
                     if (rotulo) rotulo.textContent = "Selecione e copie";
                 }

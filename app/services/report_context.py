@@ -12,6 +12,7 @@ from app.services.diligence import (
     build_diligence_verdict,
     diligence_summary,
 )
+from app.services.sanctions import SanctionsCheck
 
 _MAX_META = 80
 
@@ -26,13 +27,14 @@ def clip_meta(value: str | None, limit: int = _MAX_META) -> str:
 def build_report_context(
     company: CompanyUnified,
     *,
+    sanctions: SanctionsCheck | None = None,
     escritorio: str = "",
     responsavel: str = "",
     referencia: str = "",
     cliente: str = "",
 ) -> dict:
     """Monta o contexto Jinja do relatorio A4."""
-    diligence = build_diligence_checklist(company)
+    diligence = build_diligence_checklist(company, sanctions)
     agora = datetime.now().astimezone()
     protocolo = f"DOC-{company.cnpj}-{agora.strftime('%Y%m%d-%H%M')}"
     return {

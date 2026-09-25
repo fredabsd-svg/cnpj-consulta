@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+
+{% block title %}Consulta em lote{% endblock %}
+
+{% block content %}
+<header class="page-header">
+    <div>
+        <div class="eyebrow">{{ ui.icon('table') }} Consulta em lote</div>
+        <h1>Vários CNPJs de uma vez</h1>
+        <p class="lead">Cole a lista da planilha do cliente: o app consulta cada empresa, resume situação, enquadramento e divergências, e exporta tudo para o Excel.</p>
+    </div>
+</header>
+
+<form action="/lote" method="get" class="card" data-loading="Consultando…" novalidate>
+    <label for="cnpjs">CNPJs (um por linha, ou separados por vírgula, espaço ou ponto e vírgula)</label>
+    <textarea class="textarea" id="cnpjs" name="cnpjs" maxlength="4000" rows="8" spellcheck="false"
+              placeholder="19.131.243/0001-97&#10;12.ABC.345/01DE-35&#10;…" data-batch-input data-max="{{ maximo }}"
+              aria-describedby="cnpjs-hint{% if error %} cnpjs-erro{% endif %}" {% if error %}aria-invalid="true"{% endif %}>{{ cnpjs }}</textarea>
+    <span id="cnpjs-hint" class="hint">Até {{ maximo }} CNPJs por vez; repetidos são ignorados. Empresas já consultadas vêm do cache local, sem gastar o limite das fontes.</span>
+    {% if error %}<p id="cnpjs-erro" class="field-error" role="alert">{{ error }}</p>{% endif %}
+    <div class="form-actions">
+        <button type="submit" class="btn btn-primary">{{ ui.icon('search') }} Consultar lote</button>
+        <span class="batch-counter" data-batch-counter aria-live="polite"></span>
+    </div>
+    <p class="loading-note" aria-live="polite">Consultando as fontes; listas longas podem levar alguns segundos.</p>
+</form>
+
+{% if parsed and (parsed.invalidos or parsed.excedentes) %}
+<div class="alert alert-warning section" role="status">
+    {{ ui.icon('alerta') }}
+    <div>
+        {% if parsed.invalidos %}<p><strong>{{ parsed.invalidos | length }} item(ns) ignorado(s) por não ser CNPJ válido:</strong> <span class="mono">{{ parsed.invalidos | join(", ") }}</span></p>{% endif %}
+        {% if parsed.excedentes %}<p><strong>{{ parsed.excedentes }} CNPJ(s) além do limite de {{ maximo }}</strong> ficaram de fora. Consulte-os em outro lote.</p>{% endif %}
+    </div>
+</div>
+{% endif %}
+
+{% if rows %}
+<section class="stats batch-stats" aria-label="Resumo do lote">
+    <div class="card stat"><span class="stat-label">{{ ui.icon('building') }} Consultados</span><span class="stat-value">{{ resumo.total }}</span></div>
+    <div class="card stat"><span class="stat-label">{{ ui.icon('ok') }} Ativas</span><span class="stat-value">{{ resumo.ativas }}</span></div>
+    <div class="card stat"><span class="stat-label">{{ ui.icon('falha') }} Situação irregular</span><span class="stat-value">{{ resumo.irregulares }}</span><span class="stat-sub">baixada, inapta, suspensa ou nula</span></div>
+    <div class="card stat"><span class="stat-label">{{ ui.icon('alerta') }} Com divergência</span><span class="stat-value">{{ resumo.com_conflito }}</span></div>
+    <div class="card stat"><span class="stat-label">{{ ui.icon('info') }} Sem dados</span><span class="stat-value">{{ resumo.nao_encontradas + resumo.pendentes }}</span><span class="stat-sub">não encontradas ou pendentes</span></div>
+</section>
+
+<section class="card section" aria-labelledby="titulo-lote">
+    <div class="card-header">
+        <h2 id="titulo-lote">Resultado ({{ rows | length }})</h2>
+        <div class="actions">
+            <a class="btn btn-primary" href="/api/batch/export.csv?cnpjs={{ cnpjs_normalizados | urlencode }}" download>{{ ui.icon('download') }} Exportar CSV (Excel)</a>
+            <a class="btn" href="/api/batch?cnpjs={{ cnpjs_normalizados | urlencode }}" target="_blank" rel="noopener">JSON</a>
+        </div>
+    </div>
+    <div class="table-wrap">
+        <table class="data-table">
+            <thead><tr>
+                <th scope="col">Empresa</th><th scope="col">CNPJ</th><th scope="col">Situação</th><th scope="col">Município/UF</th>
+                <th scope="col"><abbr title="Porte da empresa">Porte</abbr></th><th scope="col">Simples / MEI</th><th scope="col" class="num"><abbr title="Campos com valor diferente entre as fontes">Diverg.</abbr></th><th scope="col">Veredicto</th>
+            </tr></thead>
+            <tbody>
+            {% for r in rows %}
+            <tr>
+                {% if r.status == "ok" %}
+                <td><a class="cell-title" href="/empresa/{{ r.cnpj }}">{{ r.razao_social }}</a>{% if r.nome_fantasia %}<span class="cell-sub">{{ r.nome_fantasia }}</span>{% endif %}</td>
+                <td class="mono nowrap">{{ r.cnpj_formatado }}</td>
+                <td>{{ ui.situacao_badge(r.situacao) }}</td>
+                <td>{{ r.municipio or "—" }}{% if r.uf %}/{{ r.uf }}{% endif %}{% if r.data_abertura %}<span class="cell-sub">desde {{ r.data_abertura | data_br }}</span>{% endif %}</td>
+                <td class="nowrap"><abbr title="{{ r.porte or 'Não informado' }}">{{ {"MICRO EMPRESA": "ME", "EMPRESA DE PEQUENO PORTE": "EPP", "DEMAIS": "Demais"}.get(r.porte, r.porte or "—") }}</abbr></td>
+                <td class="nowrap">{{ ui.sim_nao(r.opcao_simples) }} / {{ ui.sim_nao(r.opcao_mei) }}</td>
+                <td class="num">{% if r.conflitos %}<span class="badge badge-warning">{{ r.conflitos }}</span>{% else %}0{% endif %}</td>
+                <td>{{ ui.verdict_badge(r.veredicto) }}{% if r.sancoes and r.sancoes != "Nenhuma" %}<span class="cell-sub">Sanção: {{ r.sancoes }}</span>{% endif %}</td>
+                {% else %}
+                <td><span class="cell-title">{{ {"nao_encontrado": "Não encontrada", "limite": "Aguardando limite", "erro": "Falha na consulta"}[r.status] }}</span><span class="cell-sub">{{ r.mensagem }}</span></td>
+                <td class="mono nowrap"><a href="/empresa/{{ r.cnpj }}">{{ r.cnpj_formatado }}</a></td>
+                <td colspan="6" class="muted small">{% if r.status == "limite" %}Rode o lote de novo em instantes: os já consultados vêm do cache.{% else %}{{ r.fontes_ok }} de {{ r.fontes_total }} fontes responderam.{% endif %}</td>
+                {% endif %}
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% elif not cnpjs %}
+<section class="card section">
+    <div class="card-header"><h2>{{ ui.icon('info') }} Como funciona</h2></div>
+    <ol class="list-plain">
+        <li>Cole os CNPJs (do Excel, do e-mail do cliente, com ou sem pontuação).</li>
+        <li>O app consulta até 4 empresas em paralelo, respeitando o limite de cada fonte.</li>
+        <li>Confira o veredicto de cada uma e abra a ficha completa com um clique.</li>
+        <li>Exporte o quadro para o Excel (CSV com <code>;</code> e acentos corretos).</li>
+    </ol>
+</section>
+{% endif %}
+{% endblock %}

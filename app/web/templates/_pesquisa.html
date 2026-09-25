@@ -1,0 +1,83 @@
+{# Pesquisa na internet (aba da empresa e pagina /empresa/{cnpj}/internet).
+   Contexto: company, research_groups, web_query, web_enabled, web_provider e,
+   na pagina dedicada, web (WebSearchResponse ja carregada no servidor).
+   Com JavaScript, o formulario busca em /api/companies/{cnpj}/web-search e
+   preenche [data-web-results] sem recarregar; sem JS, abre a pagina dedicada. #}
+{% import "_macros.html" as ui %}
+{% set c = company %}
+<div class="card web-search">
+    <div class="card-header">
+        <div>
+            <h2>{{ ui.icon('globe') }} Resultados da web sobre a empresa</h2>
+            <p class="card-sub">{% if web_enabled %}Busca feita por {{ web_provider }} só quando você clica em Pesquisar.{% else %}Opcional: mostre resultados aqui mesmo configurando um provedor de busca.{% endif %}</p>
+        </div>
+    </div>
+    {% if web_enabled %}
+    <form action="/empresa/{{ c.cnpj }}/internet" method="get" data-web-search="/api/companies/{{ c.cnpj }}/web-search" novalidate>
+        <label for="web-q">O que pesquisar</label>
+        <div class="search-bar">
+            <input class="input" type="search" id="web-q" name="q" value="{{ web_query }}" maxlength="300" autocomplete="off" spellcheck="false">
+            <button type="submit" class="btn btn-primary">{{ ui.icon('search') }} Pesquisar</button>
+        </div>
+        <span class="hint">Use aspas para o nome exato. Acrescente termos como <em>processo</em>, <em>licitação</em> ou <em>notícia</em>.</span>
+    </form>
+    <div data-web-results aria-live="polite">
+        {% if web is defined and web %}
+            {% if web.erro %}
+            <div class="alert alert-warning section" role="alert">{{ ui.icon('alerta') }}<div><p>{{ web.erro }}</p></div></div>
+            {% elif web.resultados %}
+            <ol class="web-results">
+                {% for r in web.resultados %}
+                <li><a href="{{ r.url }}" target="_blank" rel="noopener noreferrer nofollow">{{ r.titulo }}</a>
+                    <span class="dominio">{{ r.dominio }}</span>
+                    {% if r.trecho %}<p>{{ r.trecho }}</p>{% endif %}</li>
+                {% endfor %}
+            </ol>
+            <p class="web-status">{{ web.resultados | length }} resultado(s) para <strong>{{ web.consulta }}</strong>{% if web.do_cache %} · do cache{% endif %}{% if web.atribuicao %} · {{ web.atribuicao }}{% endif %}</p>
+            {% else %}
+            <p class="empty-state">Nenhum resultado para <strong>{{ web.consulta }}</strong>. Tente sem aspas ou com o nome fantasia.</p>
+            {% endif %}
+        {% endif %}
+    </div>
+    {% else %}
+    <div class="alert alert-info section" role="note">
+        {{ ui.icon('info') }}
+        <div>
+            <span class="alert-title">Como ligar os resultados na tela</span>
+            <p>No arquivo <code>.env</code>, escolha um provedor e reinicie o servidor:</p>
+            <ul>
+                <li><code>WEB_SEARCH_PROVIDER=tavily</code> e <code>WEB_SEARCH_API_KEY=…</code> — 1.000 buscas gratuitas por mês.</li>
+                <li><code>WEB_SEARCH_PROVIDER=brave</code> e <code>WEB_SEARCH_API_KEY=…</code> — crédito mensal da Brave Search API.</li>
+                <li><code>WEB_SEARCH_PROVIDER=searxng</code> e <code>WEB_SEARCH_URL=http://…</code> — sua própria instância SearXNG, sem chave.</li>
+            </ul>
+            <p>Enquanto isso, os atalhos abaixo abrem cada pesquisa pronta em nova aba.</p>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<div class="link-grid">
+    {% for g in research_groups %}
+    <section class="card link-group" aria-labelledby="grupo-{{ g.id }}">
+        <div class="card-header">
+            <div>
+                <h3 id="grupo-{{ g.id }}">{{ g.titulo }}</h3>
+                <p class="card-sub">{{ g.descricao }}</p>
+            </div>
+            {% if g.links | selectattr("manual") | list %}
+            <button type="button" class="btn btn-sm" data-copy="{{ c.cnpj_formatado }}">{{ ui.icon('copy') }} Copiar CNPJ</button>
+            {% endif %}
+        </div>
+        <ul class="link-list">
+            {% for l in g.links %}
+            <li><a href="{{ l.url }}" target="_blank" rel="noopener noreferrer">
+                <span>{{ l.rotulo }}<small>{{ l.dica }}{% if l.manual %} · cole o CNPJ{% endif %}</small></span>
+                {{ ui.icon('external') }}<span class="visually-hidden">(abre em nova aba)</span>
+            </a></li>
+            {% endfor %}
+        </ul>
+    </section>
+    {% endfor %}
+</div>
+<p class="muted small section">{{ ui.icon('shield') }} Os atalhos levam a razão social, o CNPJ ou o endereço da <strong>empresa</strong> ao site escolhido, e só quando você clica.
+    Nomes e documentos de sócios nunca entram nas pesquisas (LGPD). Certidões oficiais não são emitidas por este app: confira a validade no site do órgão.</p>

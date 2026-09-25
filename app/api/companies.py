@@ -5,39 +5,20 @@ from __future__ import annotations
 import csv
 import io
 
-from pathlib import Path
-
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, Response
-from fastapi.templating import Jinja2Templates
 
-from app import __version__
 from app.core import formatting
+from app.core.cnpj_validator import normalize
 from app.core.inbound_limit import check_company_lookup_limit
 from app.schemas.company import CompanyUnified
+from app.services import web_research
 from app.services.company_query import query_company_async
 from app.services.report_context import build_report_context
+from app.services.sanctions import check_sanctions
+from app.web.pages import templates
 
 router = APIRouter(prefix="/api/companies", tags=["companies"])
-
-_TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "web" / "templates"
-_STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
-_templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
-_templates.env.globals["version"] = __version__
-
-
-def _static_url(path: str) -> str:
-    try:
-        stamp = int((_STATIC_DIR / path).stat().st_mtime)
-    except OSError:
-        stamp = 0
-    return f"/static/{path}?v={stamp}"
-
-
-_templates.env.globals["static_url"] = _static_url
-for _name in ("brl", "data_br", "cep", "telefone", "cnae", "cnpj", "fonte"):
-    _templates.env.filters[_name] = getattr(formatting, _name)
-
 
 _REFRESH = Query(False, description="Ignora o cache e consulta as fontes novamente")
 _LOOKUP_DEPS = [Depends(check_company_lookup_limit)]
@@ -135,12 +116,7 @@ async def export_csv(
         ("matriz_filial", company.matriz_filial),
     ]
 
-    def cell(v: object) -> object:
-        if v is None:
-            return ""
-        if hasattr(v, "isoformat"):
-            return v.isoformat()
-        return v
+    cell = formatting.csv_cell  # neutraliza "=..." (formula injection no Excel)
 
     if flatten:
         writer.writerow([k for k, _ in base])
@@ -152,12 +128,12 @@ async def export_csv(
         for c in company.cnaes_secundarios:
             writer.writerow(["cnae_secundario", c.codigo])
         for i, s in enumerate(company.socios, 1):
-            writer.writerow([f"socio_{i}.nome", s.nome or ""])
-            writer.writerow([f"socio_{i}.qualificacao", s.qualificacao or ""])
-            writer.writerow([f"socio_{i}.documento_mascarado", s.documento_mascarado or ""])
-            writer.writerow([f"socio_{i}.fonte", s.fonte])
+            writer.writerow([f"socio_{i}.nome", cell(s.nome)])
+            writer.writerow([f"socio_{i}.qualificacao", cell(s.qualificacao)])
+            writer.writerow([f"socio_{i}.documento_mascarado", cell(s.documento_mascarado)])
+            writer.writerow([f"socio_{i}.fonte", cell(s.fonte)])
         for c in company.conflitos:
-            writer.writerow(["conflito", c])
+            writer.writerow(["conflito", cell(c)])
     text = buf.getvalue()
     content = ("\ufeff" + text).encode("utf-8") if excel else text
     return _download(content, "text/csv; charset=utf-8", f"cnpj_{company.cnpj}.csv")
@@ -176,10 +152,63 @@ async def export_relatorio(
     company = await _load(cnpj)
     ctx = build_report_context(
         company,
+        sanctions=await check_sanctions(company.cnpj) if company.razao_social else None,
         escritorio=escritorio,
         responsavel=responsavel,
         referencia=referencia,
         cliente=cliente,
     )
     status = 200 if company.razao_social else 404
-    return _templates.TemplateResponse(request, "relatorio.html", ctx, status_code=status)
+    return templates.TemplateResponse(request, "relatorio.html", ctx, status_code=status)
+
+
+@router.get("/{cnpj}/research", dependencies=_LOOKUP_DEPS)
+async def get_research_links(cnpj: str) -> dict:
+    """Atalhos de pesquisa na internet (buscadores, reputacao, certidoes, mapas).
+
+    Apenas monta links com dados da empresa; nada e enviado a terceiros.
+    """
+    company = await _load(cnpj)
+    return {
+        "cnpj": company.cnpj,
+        "consulta_padrao": web_research.default_query(company),
+        "busca_na_tela": {
+            "habilitada": web_research.is_enabled(),
+            "provedor": web_research.provider_label(),
+        },
+        "grupos": [g.to_dict() for g in web_research.build_research_links(company)],
+    }
+
+
+@router.get("/{cnpj}/sanctions", dependencies=_LOOKUP_DEPS)
+async def get_sanctions(cnpj: str) -> dict:
+    """Sancoes federais (CEIS/CNEP/CEPIM/CEAF) -- requer PORTAL_TRANSPARENCIA_API_KEY."""
+    try:
+        normalized = normalize(cnpj)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=_CNPJ_INVALID_DETAIL) from None
+    result = await check_sanctions(normalized)
+    if result is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Consulta de sancoes desligada: defina PORTAL_TRANSPARENCIA_API_KEY no .env.",
+        )
+    return {
+        "cnpj": normalized,
+        "consultado": result.consultado,
+        "sancionada": result.sancionada,
+        "cadastros": result.cadastros,
+        "erro": result.erro,
+    }
+
+
+@router.get("/{cnpj}/web-search", dependencies=_LOOKUP_DEPS)
+async def get_web_search(
+    cnpj: str,
+    q: str | None = Query(None, max_length=300, description="Consulta; padrao: razao social + cidade"),
+) -> dict:
+    """Resultados de busca na web sobre a empresa (requer WEB_SEARCH_PROVIDER no .env)."""
+    company = await _load(cnpj)
+    query = (q or "").strip() or web_research.default_query(company)
+    result = await web_research.search_web(query)
+    return {"cnpj": company.cnpj} | result.to_dict()

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 import pytest
@@ -11,7 +11,11 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.schemas.company import CompanyUnified, PartnerPublic, SourceEntry
-from app.services.diligence import build_diligence_checklist, build_diligence_verdict, diligence_summary
+from app.services.diligence import (
+    build_diligence_checklist,
+    build_diligence_verdict,
+    diligence_summary,
+)
 
 CNPJ = "19131243000197"
 
@@ -34,7 +38,7 @@ def _mock_sources(brasilapi_payload, receitaws_payload):
 
 
 def _base_company(**overrides) -> CompanyUnified:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     data = dict(
         cnpj=CNPJ,
         cnpj_formatado="19.131.243/0001-97",
@@ -90,7 +94,7 @@ class TestDiligenceHelpers:
         assert next(i for i in items if i.id == "capital").status == "alerta"
 
     def test_fontes_parciais_alerta(self):
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         company = _base_company(
             fontes=[
                 SourceEntry(fonte="brasilapi", status=200, data_consulta=now),
