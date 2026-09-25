@@ -27,22 +27,26 @@
             <div class="actions no-print">
                 {% if c.razao_social %}
                 <a class="btn btn-primary" href="/empresa/{{ c.cnpj }}/relatorio">{{ ui.icon('file') }} Relatório de diligência</a>
+                {% endif %}
+                <a class="btn" href="/empresa/{{ c.cnpj }}/cartao-cnpj">{{ ui.icon('landmark') }} Cartão CNPJ</a>
+                <a class="btn" href="/empresa/{{ c.cnpj }}/inscricao-estadual">{{ ui.icon('building') }} Inscrição estadual</a>
+                {% if c.razao_social %}
                 <button type="button" class="btn" aria-pressed="{{ 'true' if favorite else 'false' }}"
                         data-favorite-url="/api/favorites/{{ c.cnpj }}" data-label="{{ c.razao_social }}">
                     {{ ui.icon('star') }} <span data-favorite-text>{{ "Favorito" if favorite else "Favoritar" }}</span>
                 </button>
                 {% endif %}
-                <a class="btn" href="/empresa/{{ c.cnpj }}?atualizar=1" data-loading="Atualizando…">{{ ui.icon('refresh') }} Atualizar</a>
-                {% if c.razao_social %}
                 <details class="more-actions">
-                    <summary class="btn">Exportar</summary>
+                    <summary class="btn">Mais</summary>
                     <div class="more-actions-menu">
+                        <a class="btn" href="/empresa/{{ c.cnpj }}?atualizar=1" data-loading="Atualizando…">{{ ui.icon('refresh') }} Atualizar dados</a>
+                        {% if c.razao_social %}
                         <a class="btn" href="/api/companies/{{ c.cnpj }}/export.csv" download>{{ ui.icon('download') }} CSV (Excel)</a>
                         <a class="btn" href="/api/companies/{{ c.cnpj }}/export.json" download>{{ ui.icon('download') }} JSON</a>
                         <button type="button" class="btn" data-print>{{ ui.icon('printer') }} Imprimir esta página</button>
+                        {% endif %}
                     </div>
                 </details>
-                {% endif %}
             </div>
         </div>
 
@@ -152,6 +156,8 @@
             <dt>Telefones</dt>
             <dd>{% for t in c.telefones %}<span class="mono">{{ t.ddd | telefone(t.numero) }}</span>{% if not loop.last %}<br>{% endif %}{% else %}{{ ui.value(none) }}{% endfor %}</dd>
             <dt>E-mail</dt><dd>{{ ui.value(c.email) }}</dd>
+            <dt>Inscrição estadual</dt><dd><a href="/empresa/{{ c.cnpj }}/inscricao-estadual">Consultar no CCC / SEFAZ</a> <span class="muted small">(as fontes do CNPJ não informam a IE)</span></dd>
+            <dt>Cartão CNPJ</dt><dd><a href="/empresa/{{ c.cnpj }}/cartao-cnpj">Emitir no site oficial da Receita</a></dd>
         </dl>
     </section>
 

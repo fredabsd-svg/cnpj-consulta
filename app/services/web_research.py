@@ -29,6 +29,7 @@ import httpx
 from app import __version__
 from app.config import Settings, get_settings
 from app.schemas.company import CompanyUnified
+from app.services.official_docs import CCC_PORTAL_URL, SINTEGRA_URL, comprovante_url
 
 log = logging.getLogger(__name__)
 
@@ -217,7 +218,7 @@ def build_research_links(company: CompanyUnified) -> list[ResearchGroup]:
             [
                 ResearchLink(
                     "Comprovante de CNPJ (Receita)",
-                    f"https://solucoes.receita.fazenda.gov.br/Servicos/cnpjreva/Cnpjreva_Solicitacao.asp?cnpj={cnpj}",
+                    comprovante_url(cnpj),
                     "Cartão CNPJ oficial · CNPJ já preenchido",
                 ),
                 ResearchLink(
@@ -245,8 +246,14 @@ def build_research_links(company: CompanyUnified) -> list[ResearchGroup]:
                     manual=True,
                 ),
                 ResearchLink(
+                    "Inscrição estadual (CCC)",
+                    CCC_PORTAL_URL,
+                    "Todas as UFs · exige login gov.br",
+                    manual=True,
+                ),
+                ResearchLink(
                     "Inscrição estadual (Sintegra)",
-                    "https://www.sintegra.gov.br/",
+                    SINTEGRA_URL,
                     "Escolha a UF da empresa",
                     manual=True,
                 ),

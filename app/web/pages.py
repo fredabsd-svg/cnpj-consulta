@@ -19,7 +19,7 @@ from app.core import formatting
 from app.core.cnpj_validator import normalize_or_none, strip
 from app.core.inbound_limit import check_company_lookup_limit, reserver_for
 from app.providers.registry import get_registry
-from app.services import web_research
+from app.services import inscricao_estadual, official_docs, web_research
 from app.services.batch import parse_cnpj_list, run_batch, summarize
 from app.services.company_query import query_company_async
 from app.services.diligence import STATUS_LABELS, build_diligence_checklist, build_diligence_verdict
@@ -211,6 +211,78 @@ async def empresa_relatorio(
         "relatorio.html",
         ctx,
         200 if company.razao_social else 404,
+    )
+
+
+@router.get(
+    "/empresa/{cnpj}/cartao-cnpj",
+    response_class=HTMLResponse,
+    dependencies=[Depends(check_company_lookup_limit)],
+)
+async def empresa_cartao_cnpj(request: Request, cnpj: str) -> HTMLResponse:
+    """Cartao CNPJ oficial: o site da Receita dentro do app, com o CNPJ preenchido.
+
+    O app nao emite o documento: o usuario resolve o captcha e imprime no
+    proprio site da Receita (exibido num quadro, ou em nova janela).
+    """
+    normalized = normalize_or_none(cnpj)
+    if normalized is None:
+        return await _index(
+            request, error="CNPJ inválido. Confira os dígitos.", value=cnpj[:18], status=400
+        )
+    # So para o cabecalho (quase sempre vem do cache); a pagina funciona mesmo
+    # se nenhuma fonte responder, pois quem emite o cartao e a Receita.
+    company = await query_company_async(normalized)
+    return _render(
+        request,
+        "cartao_cnpj.html",
+        {
+            "active": "inicio",
+            "company": company,
+            "oficial_url": official_docs.comprovante_url(normalized),
+            "oficial_origem": official_docs.RECEITA_ORIGIN.removeprefix("https://"),
+        },
+    )
+
+
+@router.get(
+    "/empresa/{cnpj}/inscricao-estadual",
+    response_class=HTMLResponse,
+    dependencies=[Depends(check_company_lookup_limit)],
+)
+async def empresa_inscricao_estadual(
+    request: Request,
+    cnpj: str,
+    uf: str = Query("", max_length=2),
+    atualizar: bool = False,
+) -> HTMLResponse:
+    """Inscricao estadual: consulta automatica na SEFAZ (certificado A1) ou portal CCC."""
+    normalized = normalize_or_none(cnpj)
+    if normalized is None:
+        return await _index(
+            request, error="CNPJ inválido. Confira os dígitos.", value=cnpj[:18], status=400
+        )
+    company = await query_company_async(normalized)
+    uf_empresa = (company.endereco.uf or "").upper() if company.endereco else ""
+    uf_sel = uf.strip().upper() or uf_empresa
+    consulta = None
+    if inscricao_estadual.is_enabled() and uf_sel:
+        consulta = await inscricao_estadual.consultar_ie(normalized, uf_sel, force_refresh=atualizar)
+    return _render(
+        request,
+        "inscricao_estadual.html",
+        {
+            "active": "inicio",
+            "company": company,
+            "ufs": UFS,
+            "uf_sel": uf_sel,
+            "uf_empresa": uf_empresa,
+            "ws_enabled": inscricao_estadual.is_enabled(),
+            "ws_ufs": sorted(inscricao_estadual.ENDPOINTS),
+            "consulta": consulta,
+            "ccc_url": official_docs.CCC_PORTAL_URL,
+            "sintegra_url": official_docs.SINTEGRA_URL,
+        },
     )
 
 

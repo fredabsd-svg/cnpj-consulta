@@ -12,7 +12,7 @@ from app.core import formatting
 from app.core.cnpj_validator import normalize
 from app.core.inbound_limit import check_company_lookup_limit
 from app.schemas.company import CompanyUnified
-from app.services import web_research
+from app.services import inscricao_estadual, web_research
 from app.services.company_query import query_company_async
 from app.services.report_context import build_report_context
 from app.services.sanctions import check_sanctions
@@ -212,3 +212,24 @@ async def get_web_search(
     query = (q or "").strip() or web_research.default_query(company)
     result = await web_research.search_web(query)
     return {"cnpj": company.cnpj} | result.to_dict()
+
+
+@router.get("/{cnpj}/inscricao-estadual", dependencies=_LOOKUP_DEPS)
+async def get_inscricao_estadual(
+    cnpj: str,
+    uf: str = Query(..., min_length=2, max_length=2, description="UF da SEFAZ a consultar"),
+    atualizar: bool = _REFRESH,
+) -> dict:
+    """Inscricao estadual na SEFAZ da UF (requer CERTIFICADO_A1_PATH e CERTIFICADO_A1_SENHA)."""
+    try:
+        normalized = normalize(cnpj)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=_CNPJ_INVALID_DETAIL) from None
+    if not inscricao_estadual.is_enabled():
+        raise HTTPException(
+            status_code=503,
+            detail="Consulta de inscricao estadual desligada: configure o certificado A1 no .env "
+            "(CERTIFICADO_A1_PATH e CERTIFICADO_A1_SENHA) ou use o portal CCC.",
+        )
+    result = await inscricao_estadual.consultar_ie(normalized, uf, force_refresh=atualizar)
+    return {"cnpj": normalized} | result.to_dict()

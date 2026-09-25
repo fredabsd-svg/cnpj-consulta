@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+
+{% block title %}Inscrição estadual · {{ company.razao_social or company.cnpj_formatado }}{% endblock %}
+
+{% block content %}
+{% set c = company %}
+<nav class="breadcrumb no-print" aria-label="Você está em"><a href="/">Início</a><span aria-hidden="true">/</span><a href="/empresa/{{ c.cnpj }}">Empresa</a><span aria-hidden="true">/</span><span>Inscrição estadual</span></nav>
+
+<header class="page-header">
+    <div>
+        <div class="eyebrow">{{ ui.icon('landmark') }} Cadastro de contribuintes do ICMS</div>
+        <h1>Inscrição estadual</h1>
+        <p class="muted"><strong>{{ c.razao_social or "Empresa não identificada nas fontes" }}</strong> ·
+            <span class="mono">{{ c.cnpj_formatado }}</span>{% if uf_empresa %} · sede em {{ uf_empresa }}{% endif %}</p>
+    </div>
+    <div class="actions">
+        <button type="button" class="btn" data-copy="{{ c.cnpj_formatado }}">{{ ui.icon('copy') }} Copiar CNPJ</button>
+        <a class="btn btn-ghost" href="/empresa/{{ c.cnpj }}">← Voltar</a>
+    </div>
+</header>
+
+{% if ws_enabled %}
+<section class="card" aria-labelledby="titulo-sefaz">
+    <div class="card-header">
+        <div>
+            <h2 id="titulo-sefaz">{{ ui.icon('shield-check') }} Consulta na SEFAZ <span class="tag tag-novo">Certificado A1</span></h2>
+            <p class="card-sub">Web service oficial de consulta cadastral (o mesmo cadastro do CCC), com o certificado digital do escritório. Disponível em {{ ws_ufs | length }} UFs; exige certificado de empresa emissora de NF-e.</p>
+        </div>
+    </div>
+    <form action="/empresa/{{ c.cnpj }}/inscricao-estadual" method="get" class="form-actions" data-loading="Consultando a SEFAZ…">
+        <div class="field">
+            <label for="uf">UF</label>
+            <select class="select" id="uf" name="uf">
+                {% for sigla in ufs %}<option value="{{ sigla }}" {% if sigla == uf_sel %}selected{% endif %}>{{ sigla }}{% if sigla not in ws_ufs %} (só pelo CCC){% endif %}{% if sigla == uf_empresa %} · sede{% endif %}</option>{% endfor %}
+            </select>
+        </div>
+        <button type="submit" class="btn btn-primary">{{ ui.icon('search') }} Consultar</button>
+        {% if consulta and consulta.consultada %}<a class="btn btn-ghost" href="/empresa/{{ c.cnpj }}/inscricao-estadual?uf={{ uf_sel }}&amp;atualizar=1">{{ ui.icon('refresh') }} Consultar de novo</a>{% endif %}
+    </form>
+    <p class="loading-note" aria-live="polite">Consultando o cadastro de contribuintes da SEFAZ…</p>
+
+    {% if consulta %}
+        {% if not consulta.consultada %}
+        <div class="alert alert-warning section" role="alert">{{ ui.icon('alerta') }}<div><p>{{ consulta.erro }}</p></div></div>
+        {% elif consulta.inscricoes %}
+        <div class="ie-grid section">
+            {% for i in consulta.inscricoes %}
+            <article class="card ie-card">
+                <div class="card-header">
+                    <div>
+                        <p class="small muted">Inscrição estadual · {{ i.uf }}</p>
+                        <h3 class="mono">{{ i.ie }}</h3>
+                    </div>
+                    <div class="actions">
+                        <span class="badge {{ 'badge-success' if i.habilitada else 'badge-danger' }}"><span class="dot" aria-hidden="true"></span>{{ i.situacao }}</span>
+                        <button type="button" class="icon-btn" data-copy="{{ i.ie }}" aria-label="Copiar inscrição estadual {{ i.ie }}" title="Copiar IE">{{ ui.icon('copy') }}</button>
+                    </div>
+                </div>
+                <dl class="kv">
+                    <dt>Nome</dt><dd>{{ ui.value(i.nome) }}{% if i.fantasia %}<br><span class="muted small">{{ i.fantasia }}</span>{% endif %}</dd>
+                    <dt>Regime de apuração</dt><dd>{{ ui.value(i.regime_apuracao) }}</dd>
+                    <dt>CNAE</dt><dd>{% if i.cnae %}<span class="mono">{{ i.cnae | cnae }}</span>{% else %}{{ ui.value(none) }}{% endif %}</dd>
+                    <dt>Início da atividade</dt><dd>{{ i.inicio_atividade | data_br }}</dd>
+                    <dt>Última situação</dt><dd>{{ i.ultima_situacao | data_br }}{% if i.baixa %} · baixa em {{ i.baixa | data_br }}{% endif %}</dd>
+                    <dt>NF-e / CT-e</dt><dd>{{ i.credenciamento_nfe or "—" }} / {{ i.credenciamento_cte or "—" }}</dd>
+                    <dt>Endereço</dt><dd>{{ ui.value(i.endereco) }}{% if i.municipio %}<br><span class="muted small">{{ i.municipio }}</span>{% endif %}</dd>
+                    {% if i.ie_atual and i.ie_atual != i.ie %}<dt>IE atual</dt><dd class="mono">{{ i.ie_atual }}</dd>{% endif %}
+                </dl>
+            </article>
+            {% endfor %}
+        </div>
+        <p class="muted small section">{{ consulta.inscricoes | length }} inscrição(ões) em {{ consulta.uf }} · SEFAZ: {{ consulta.motivo or consulta.cstat }}{% if consulta.do_cache %} · consulta guardada nas últimas horas{% endif %}</p>
+        {% else %}
+        <div class="alert alert-info section" role="status">{{ ui.icon('info') }}<div>
+            <span class="alert-title">Nenhuma inscrição estadual em {{ consulta.uf }}.</span>
+            <p>SEFAZ-{{ consulta.uf }}: {{ consulta.motivo or "sem inscrição para este CNPJ" }}{% if consulta.cstat %} (código {{ consulta.cstat }}){% endif %}. Empresas só de serviços costumam não ter IE; confira outra UF se houver filial.</p>
+        </div></div>
+        {% endif %}
+    {% endif %}
+</section>
+{% endif %}
+
+<section class="card section" aria-labelledby="titulo-ccc">
+    <div class="card-header">
+        <div>
+            <h2 id="titulo-ccc">{{ ui.icon('globe') }} Portal CCC — Cadastro Centralizado de Contribuintes</h2>
+            <p class="card-sub">Consulta oficial de inscrição estadual de todas as UFs (SVRS). Exige login gov.br e abre fora do app, por regra do próprio portal.</p>
+        </div>
+        <a class="btn {{ 'btn-primary' if not ws_enabled else '' }}" href="{{ ccc_url }}" target="_blank" rel="noopener noreferrer">{{ ui.icon('external') }} Abrir portal CCC</a>
+    </div>
+    <ol class="steps-inline" aria-label="Como consultar no CCC">
+        <li><span class="step-n">1</span><div><strong>Abra o portal e entre com o gov.br</strong><span>Conta prata ou ouro; o login é feito no site do governo.</span></div></li>
+        <li><span class="step-n">2</span><div><strong>Escolha a UF{% if uf_sel %} ({{ uf_sel }}){% endif %}</strong><span>A IE é por estado: repita para cada UF onde houver filial.</span></div></li>
+        <li><span class="step-n">3</span><div><strong>Cole o CNPJ e consulte</strong><span><button type="button" class="btn btn-sm" data-copy="{{ c.cnpj }}">{{ ui.icon('copy') }} Copiar {{ c.cnpj }}</button></span></div></li>
+    </ol>
+    <p class="muted small">Sem login gov.br? Consulte no <a href="{{ sintegra_url }}" target="_blank" rel="noopener noreferrer">Sintegra</a>, que leva ao site de cada SEFAZ.</p>
+</section>
+
+{% if not ws_enabled %}
+<div class="alert alert-info section" role="note">
+    {{ ui.icon('info') }}
+    <div>
+        <span class="alert-title">Quer a inscrição estadual direto aqui, sem login?</span>
+        <p>Configure o certificado digital A1 (e-CNPJ, arquivo <code>.pfx</code>) do escritório no <code>.env</code> e reinicie o servidor:</p>
+        <pre>CERTIFICADO_A1_PATH=C:\certificados\escritorio.pfx
+CERTIFICADO_A1_SENHA=********</pre>
+        <p>O app passa a consultar o web service oficial de consulta cadastral da SEFAZ (o mesmo cadastro do CCC). A senha fica só no seu computador e o certificado nunca é exibido nem registrado em log.</p>
+        <p class="small">Regras da SEFAZ: o serviço só atende certificados de <strong>empresas emissoras de NF-e</strong> e existe em {{ ws_ufs | length }} UFs ({{ ws_ufs | join(", ") }}). Nas demais, a consulta é só pelo CCC.</p>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

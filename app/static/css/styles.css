@@ -436,6 +436,20 @@ a.stat:hover { border-color: var(--color-primary-border); color: var(--color-tex
 .link-list small { display: block; font-weight: 500; font-size: var(--text-xs); color: var(--color-text-faint); }
 .link-list svg.i { width: 16px; height: 16px; color: var(--color-text-faint); }
 
+/* ---------- Documentos oficiais (Cartao CNPJ, inscricao estadual) ---------- */
+.steps-inline { list-style: none; margin: 0 0 var(--space-5); padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); }
+.steps-inline li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-3); align-items: start; padding: var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); }
+.steps-inline strong { display: block; font-size: var(--text-sm); }
+.steps-inline span:not(.step-n) { font-size: var(--text-xs); color: var(--color-text-muted); }
+.step-n { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--color-primary-100); color: var(--color-primary); border: 1px solid var(--color-primary-border); font: 700 var(--text-sm) var(--font-heading); }
+.official-frame-card { padding: 0; overflow: hidden; }
+.official-bar { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); flex-wrap: wrap; padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--color-border); font-size: var(--text-sm); }
+.official-lock { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--color-success-text); }
+.official-lock strong { color: var(--color-text); }
+.official-frame { display: block; width: 100%; height: min(78vh, 900px); min-height: 560px; border: 0; background: #fff; }
+.ie-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
+.ie-card h3 { margin: 0; font-size: var(--text-md); }
+
 /* ---------- Status das fontes ---------- */
 .source-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--space-4); }
 .source-card { padding: var(--space-5); display: grid; gap: var(--space-3); }
@@ -543,6 +557,7 @@ a.stat:hover { border-color: var(--color-primary-border); color: var(--color-tex
     .form-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .form-row .btn { grid-column: 1 / -1; }
     .verdict { grid-template-columns: auto minmax(0, 1fr); }
+    .steps-inline, .ie-grid { grid-template-columns: minmax(0, 1fr); }
     .verdict .btn { grid-column: 1 / -1; justify-self: start; }
 }
 @media (min-width: 1024px) {
