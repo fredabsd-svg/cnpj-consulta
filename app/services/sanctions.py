@@ -29,6 +29,10 @@ CADASTROS = {
     "sancionadoCEAF": "CEAF (expulsões da administração federal)",
 }
 _TTL = 6 * 3600
+# Falhas tambem ficam em cache por pouco tempo: com o Portal fora do ar, cada
+# pagina de empresa esperaria o timeout de novo.
+_TTL_FALHA = 300
+_TIMEOUT_MAX = 5.0
 
 
 @dataclass(slots=True)
@@ -57,11 +61,18 @@ async def check_sanctions(
     if not is_enabled(cfg):
         return None
     hit = _cache.get(cnpj)
-    if hit and time.monotonic() - hit[0] < _TTL:
+    if hit and time.monotonic() - hit[0] < (_TTL if hit[1].consultado else _TTL_FALHA):
         return hit[1]
+    result = await _fetch(cnpj, cfg, client)
+    if len(_cache) > 512:
+        _cache.clear()
+    _cache[cnpj] = (time.monotonic(), result)
+    return result
 
+
+async def _fetch(cnpj: str, cfg: Settings, client: httpx.AsyncClient | None) -> SanctionsCheck:
     owned = client is None
-    client = client or httpx.AsyncClient(timeout=float(cfg.request_timeout_seconds))
+    client = client or httpx.AsyncClient(timeout=min(float(cfg.request_timeout_seconds), _TIMEOUT_MAX))
     try:
         resp = await client.get(
             cfg.portal_transparencia_base_url.rstrip("/") + "/pessoa-juridica",
@@ -83,11 +94,7 @@ async def check_sanctions(
         if owned:
             await client.aclose()
 
-    result = SanctionsCheck(True, [nome for chave, nome in CADASTROS.items() if data.get(chave) is True])
-    if len(_cache) > 512:
-        _cache.clear()
-    _cache[cnpj] = (time.monotonic(), result)
-    return result
+    return SanctionsCheck(True, [nome for chave, nome in CADASTROS.items() if data.get(chave) is True])
 
 
 def clear_sanctions_cache() -> None:

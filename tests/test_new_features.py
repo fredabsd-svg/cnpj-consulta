@@ -427,3 +427,18 @@ class TestBatchCli:
         lista = tmp_path / "vazia.txt"
         lista.write_text("abc", encoding="utf-8")
         assert CliRunner().invoke(cli_app, ["lote", str(lista)]).exit_code == 2
+
+
+class TestSanctionsFailureCache:
+    @respx.mock
+    async def test_falha_fica_em_cache_curto(self, monkeypatch):
+        """Com o Portal fora do ar, a pagina nao espera o timeout a cada abertura."""
+        monkeypatch.setenv("PORTAL_TRANSPARENCIA_API_KEY", "chave")
+        get_settings.cache_clear()
+        route = respx.get("https://api.portaldatransparencia.gov.br/api-de-dados/pessoa-juridica").mock(
+            return_value=httpx.Response(503)
+        )
+        first = await sanctions.check_sanctions(CNPJ)
+        second = await sanctions.check_sanctions(CNPJ)
+        assert first.consultado is False and second is first
+        assert route.call_count == 1
