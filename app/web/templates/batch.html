@@ -70,7 +70,7 @@
                 <td class="nowrap"><abbr title="{{ r.porte or 'Não informado' }}">{{ {"MICRO EMPRESA": "ME", "EMPRESA DE PEQUENO PORTE": "EPP", "DEMAIS": "Demais"}.get(r.porte, r.porte or "—") }}</abbr></td>
                 <td class="nowrap">{{ ui.sim_nao(r.opcao_simples) }} / {{ ui.sim_nao(r.opcao_mei) }}</td>
                 <td class="num">{% if r.conflitos %}<span class="badge badge-warning">{{ r.conflitos }}</span>{% else %}0{% endif %}</td>
-                <td>{{ ui.verdict_badge(r.veredicto) }}</td>
+                <td>{{ ui.verdict_badge(r.veredicto) }}{% if r.sancoes and r.sancoes != "Nenhuma" %}<span class="cell-sub">Sanção: {{ r.sancoes }}</span>{% endif %}</td>
                 {% else %}
                 <td><span class="cell-title">{{ {"nao_encontrado": "Não encontrada", "limite": "Aguardando limite", "erro": "Falha na consulta"}[r.status] }}</span><span class="cell-sub">{{ r.mensagem }}</span></td>
                 <td class="mono nowrap"><a href="/empresa/{{ r.cnpj }}">{{ r.cnpj_formatado }}</a></td>

@@ -19,7 +19,8 @@ log = logging.getLogger(__name__)
 # v2: correcao de capital social, conflitos e socios (app 0.2.0).
 # v3: procedencia/conflitos para endereco, telefones e CNAEs.
 # v4: endereco sem falso conflito (tipo de logradouro, abreviacoes, campo ausente).
-CACHE_VERSION = 4
+# v5: endereco comparado parte a parte so entre as fontes que informam cada parte.
+CACHE_VERSION = 5
 _UNIFIED = f"unified-v{CACHE_VERSION}"
 
 

@@ -125,7 +125,7 @@ async def empresa(request: Request, cnpj: str, atualizar: bool = False) -> HTMLR
     company = await query_company_async(normalized, force_refresh=atualizar)
     favorite, sanctions = await asyncio.gather(
         asyncio.to_thread(is_favorite, normalized),
-        check_sanctions(normalized) if company.razao_social else _none(),
+        check_sanctions(normalized, force_refresh=atualizar) if company.razao_social else _none(),
     )
     diligence = build_diligence_checklist(company, sanctions) if company.razao_social else []
     return _render(
@@ -169,7 +169,8 @@ async def empresa_internet(
         )
     company = await query_company_async(normalized)
     ctx = {"active": "inicio", "company": company, **_research_ctx(company, q.strip() or None)}
-    ctx["web"] = await web_research.search_web(ctx["web_query"]) if ctx["web_enabled"] else None
+    busca = ctx["web_enabled"] and company.razao_social
+    ctx["web"] = await web_research.search_web(ctx["web_query"]) if busca else None
     return _render(request, "internet.html", ctx, 200 if company.razao_social else 404)
 
 
@@ -196,7 +197,9 @@ async def empresa_relatorio(
     company = await query_company_async(normalized, force_refresh=atualizar)
     ctx = build_report_context(
         company,
-        sanctions=await check_sanctions(normalized) if company.razao_social else None,
+        sanctions=(
+            await check_sanctions(normalized, force_refresh=atualizar) if company.razao_social else None
+        ),
         escritorio=escritorio,
         responsavel=responsavel,
         referencia=referencia,

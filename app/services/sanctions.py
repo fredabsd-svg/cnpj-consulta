@@ -54,13 +54,17 @@ def is_enabled(settings: Settings | None = None) -> bool:
 
 
 async def check_sanctions(
-    cnpj: str, *, settings: Settings | None = None, client: httpx.AsyncClient | None = None
+    cnpj: str,
+    *,
+    force_refresh: bool = False,
+    settings: Settings | None = None,
+    client: httpx.AsyncClient | None = None,
 ) -> SanctionsCheck | None:
     """None quando a integracao esta desligada; nunca levanta excecao."""
     cfg = settings or get_settings()
     if not is_enabled(cfg):
         return None
-    hit = _cache.get(cnpj)
+    hit = None if force_refresh else _cache.get(cnpj)
     if hit and time.monotonic() - hit[0] < (_TTL if hit[1].consultado else _TTL_FALHA):
         return hit[1]
     result = await _fetch(cnpj, cfg, client)
@@ -85,7 +89,8 @@ async def _fetch(cnpj: str, cfg: Settings, client: httpx.AsyncClient | None) -> 
             return SanctionsCheck(False, erro="limite de consultas do Portal da Transparência atingido")
         resp.raise_for_status()
         data = resp.json() or {}
-        if not isinstance(data, dict):
+        # Sem nenhum indicador conhecido nao da para afirmar "nao consta".
+        if not isinstance(data, dict) or not any(isinstance(data.get(k), bool) for k in CADASTROS):
             raise ValueError("resposta inesperada")
     except Exception as e:  # noqa: BLE001 -- vira aviso na diligencia
         log.warning("consulta de sancoes falhou: %s", type(e).__name__)

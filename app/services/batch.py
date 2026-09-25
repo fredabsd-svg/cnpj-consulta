@@ -22,6 +22,7 @@ from app.core.cnpj_validator import normalize_or_none, strip
 from app.core.formatting import csv_cell
 from app.services.company_query import query_company_async
 from app.services.diligence import build_diligence_checklist, build_diligence_verdict
+from app.services.sanctions import check_sanctions
 
 _SPLIT = re.compile(r"[\s,;|]+")
 CONCURRENCY = 4
@@ -55,6 +56,7 @@ class BatchRow:
     fontes_total: int = 0
     conflitos: int = 0
     veredicto: str | None = None  # regular | ressalvas | critico
+    sancoes: str | None = None  # None = nao verificado (sem PORTAL_TRANSPARENCIA_API_KEY)
     do_cache: bool = False
 
     def to_dict(self) -> dict[str, Any]:
@@ -121,8 +123,17 @@ async def run_batch(
         row.fontes_ok = sum(1 for f in c.fontes if f.status == 200)
         row.do_cache = c.origem_cache
         if not c.razao_social:
-            row.status = "nao_encontrado"
-            row.mensagem = "Nenhuma fonte retornou dados."
+            # "Nao encontrada" so quando as fontes RESPONDERAM que nao existe; limite
+            # (429) ou fonte fora do ar/sem resposta (0, 5xx) nao provam nada.
+            codigos = {f.status for f in c.fontes}
+            if 429 in codigos:
+                row.status = "limite"
+                row.mensagem = "Fontes no limite de consultas por minuto; tente de novo em instantes."
+            elif not codigos or codigos & {0} or any(code >= 500 for code in codigos):
+                row.mensagem = "Fontes indisponíveis no momento; tente de novo."
+            else:
+                row.status = "nao_encontrado"
+                row.mensagem = "Nenhuma fonte encontrou este CNPJ."
             return row
         e = c.endereco
         row.status = "ok"
@@ -137,7 +148,11 @@ async def run_batch(
         row.opcao_mei = c.opcao_mei
         row.cnae_principal = c.cnae_principal.codigo if c.cnae_principal else None
         row.conflitos = len(c.conflitos)
-        row.veredicto = build_diligence_verdict(build_diligence_checklist(c)).nivel
+        # Mesmo veredicto da pagina da empresa, inclusive sancoes (se ligadas).
+        sanctions = await check_sanctions(cnpj)
+        row.veredicto = build_diligence_verdict(build_diligence_checklist(c, sanctions)).nivel
+        if sanctions is not None and sanctions.consultado:
+            row.sancoes = "; ".join(sanctions.cadastros) or "Nenhuma"
         return row
 
     return list(await asyncio.gather(*(one(c) for c in cnpjs)))
@@ -158,7 +173,9 @@ def summarize(rows: list[BatchRow]) -> dict[str, int]:
 
 
 CSV_COLUMNS = (
-    ("cnpj", "CNPJ"),
+    # Formatado: o Excel mantem como texto (sem perder zeros a esquerda nem
+    # virar notacao cientifica, como acontece com os 14 digitos puros).
+    ("cnpj_formatado", "CNPJ"),
     ("razao_social", "Razão social"),
     ("nome_fantasia", "Nome fantasia"),
     ("situacao", "Situação"),
@@ -172,6 +189,7 @@ CSV_COLUMNS = (
     ("conflitos", "Divergências"),
     ("fontes_ok", "Fontes OK"),
     ("veredicto", "Veredicto"),
+    ("sancoes", "Sanções (CEIS/CNEP)"),
     ("status", "Status da consulta"),
     ("mensagem", "Observação"),
 )

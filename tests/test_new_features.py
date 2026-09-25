@@ -281,6 +281,7 @@ class TestBatchApi:
         assert "attachment" in csv_resp.headers["content-disposition"]
         rows = list(csv.reader(io.StringIO(csv_resp.content.decode("utf-8-sig")), delimiter=";"))
         assert rows[0][:2] == ["CNPJ", "Razão social"]
+        assert rows[1][0] == "19.131.243/0001-97"  # formatado: Excel nao come os zeros
         assert rows[1][1] == "OPEN KNOWLEDGE BRASIL"
         assert "Não" in rows[1]  # booleanos em portugues
 
@@ -417,7 +418,7 @@ class TestBatchCli:
         assert result.exit_code == 0, result.output
         assert "1 consultados" in result.output
         linhas = saida.read_bytes().decode("utf-8-sig").splitlines()
-        assert linhas[1].startswith(f"{CNPJ};OPEN KNOWLEDGE BRASIL")
+        assert linhas[1].startswith("19.131.243/0001-97;OPEN KNOWLEDGE BRASIL")
 
     def test_lote_sem_cnpj_valido(self, tmp_path):
         from typer.testing import CliRunner
@@ -442,3 +443,100 @@ class TestSanctionsFailureCache:
         second = await sanctions.check_sanctions(CNPJ)
         assert first.consultado is False and second is first
         assert route.call_count == 1
+
+
+
+# ---------------------------------------------------------------------------
+# Achados da revisao independente
+# ---------------------------------------------------------------------------
+
+
+class TestReviewFindings:
+    @respx.mock
+    def test_lote_fonte_limitada_nao_vira_nao_encontrada(self, client):
+        for url in (
+            f"https://minhareceita.org/{CNPJ}",
+            f"https://brasilapi.com.br/api/cnpj/v1/{CNPJ}",
+            f"https://www.receitaws.com.br/v1/cnpj/{CNPJ}",
+        ):
+            respx.get(url).mock(return_value=httpx.Response(429))
+        row = client.get("/api/batch", params={"cnpjs": CNPJ}).json()["resultados"][0]
+        assert row["status"] == "limite"
+
+    @respx.mock
+    def test_lote_404_em_todas_e_nao_encontrada(self, client):
+        for url in (
+            f"https://minhareceita.org/{CNPJ}",
+            f"https://brasilapi.com.br/api/cnpj/v1/{CNPJ}",
+            f"https://www.receitaws.com.br/v1/cnpj/{CNPJ}",
+        ):
+            respx.get(url).mock(return_value=httpx.Response(404))
+        row = client.get("/api/batch", params={"cnpjs": CNPJ}).json()["resultados"][0]
+        assert row["status"] == "nao_encontrado"
+
+    @respx.mock
+    def test_veredicto_do_lote_considera_sancoes(self, client, monkeypatch, brasilapi_payload):
+        monkeypatch.setenv("PORTAL_TRANSPARENCIA_API_KEY", "chave")
+        get_settings.cache_clear()
+        _mock_sources(brasilapi_payload)
+        respx.get("https://api.portaldatransparencia.gov.br/api-de-dados/pessoa-juridica").mock(
+            return_value=httpx.Response(200, json={"sancionadoCEIS": True})
+        )
+        row = client.get("/api/batch", params={"cnpjs": CNPJ}).json()["resultados"][0]
+        assert row["veredicto"] == "critico"
+        assert row["sancoes"].startswith("CEIS")
+
+    @respx.mock
+    async def test_sancoes_resposta_sem_indicadores_nao_e_limpa(self, monkeypatch):
+        monkeypatch.setenv("PORTAL_TRANSPARENCIA_API_KEY", "chave")
+        get_settings.cache_clear()
+        respx.get("https://api.portaldatransparencia.gov.br/api-de-dados/pessoa-juridica").mock(
+            return_value=httpx.Response(200, json={"mensagem": "CNPJ nao encontrado"})
+        )
+        r = await sanctions.check_sanctions(CNPJ)
+        assert r.consultado is False
+
+    @respx.mock
+    async def test_atualizar_ignora_cache_de_sancoes(self, monkeypatch):
+        monkeypatch.setenv("PORTAL_TRANSPARENCIA_API_KEY", "chave")
+        get_settings.cache_clear()
+        route = respx.get("https://api.portaldatransparencia.gov.br/api-de-dados/pessoa-juridica").mock(
+            return_value=httpx.Response(200, json={"sancionadoCEIS": False})
+        )
+        await sanctions.check_sanctions(CNPJ)
+        await sanctions.check_sanctions(CNPJ, force_refresh=True)
+        assert route.call_count == 2
+
+    def test_dominio_exibido_ignora_usuario_na_url(self):
+        r = web_research._safe_result("x", "https://www.google.com@evil.example/p", "")
+        assert r.dominio == "evil.example"
+
+    @respx.mock
+    def test_pagina_internet_nao_pesquisa_empresa_inexistente(self, client, monkeypatch):
+        monkeypatch.setenv("WEB_SEARCH_PROVIDER", "searxng")
+        monkeypatch.setenv("WEB_SEARCH_URL", "http://127.0.0.1:8888")
+        get_settings.cache_clear()
+        for url in (
+            f"https://minhareceita.org/{CNPJ}",
+            f"https://brasilapi.com.br/api/cnpj/v1/{CNPJ}",
+            f"https://www.receitaws.com.br/v1/cnpj/{CNPJ}",
+        ):
+            respx.get(url).mock(return_value=httpx.Response(404))
+        busca = respx.get("http://127.0.0.1:8888/search").mock(return_value=httpx.Response(200, json={}))
+        r = client.get(f"/empresa/{CNPJ}/internet")
+        assert r.status_code == 404
+        assert not busca.called
+
+    @respx.mock
+    def test_cli_lote_arquivo_ansi_e_markup(self, tmp_path, db_initialized, brasilapi_payload):
+        from typer.testing import CliRunner
+
+        from app.cli import app as cli_app
+
+        _mock_sources(brasilapi_payload)
+        lista = tmp_path / "ansi.csv"
+        lista.write_bytes(f"CNPJ;Razão\n{CNPJ};Cliente [/b]\n".encode("cp1252"))
+        saida = tmp_path / "saida.csv"
+        result = CliRunner().invoke(cli_app, ["lote", str(lista), "--csv", str(saida)])
+        assert result.exit_code == 0, result.output
+        assert saida.exists()

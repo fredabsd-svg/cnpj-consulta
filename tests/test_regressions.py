@@ -67,10 +67,10 @@ class TestAddressNormalization:
             {"logradouro": "AV PAULISTA", "numero": "37"},
         )
 
-    def test_abreviacao_no_bairro_e_ordem_do_complemento(self):
+    def test_abreviacao_no_bairro_e_complemento(self):
         assert not _address_conflicts(
             {"logradouro": "UM", "numero": "1", "bairro": "JARDIM AMERICA", "complemento": "SALA 2"},
-            {"logradouro": "RUA UM", "numero": "1", "bairro": "JD AMERICA", "complemento": "2 SL"},
+            {"logradouro": "RUA UM", "numero": "1", "bairro": "JD AMERICA", "complemento": "SL 2"},
         )
 
     def test_numero_diferente_continua_conflito(self):
@@ -84,6 +84,38 @@ class TestAddressNormalization:
             {"logradouro": "RUA UM", "numero": "10"},
             {"logradouro": "RUA DOIS", "numero": "10"},
         )
+
+    def test_tipo_de_logradouro_diferente_e_conflito(self):
+        assert _address_conflicts(
+            {"logradouro": "RUA 1", "numero": "10"},
+            {"logradouro": "AVENIDA 1", "numero": "10"},
+        )
+
+    def test_ordem_do_complemento_importa(self):
+        assert _address_conflicts(
+            {"logradouro": "UM", "numero": "1", "complemento": "SALA 1 ANDAR 2"},
+            {"logradouro": "RUA UM", "numero": "1", "complemento": "SALA 2 ANDAR 1"},
+        )
+
+    def test_terceira_fonte_sem_numero_nao_esconde_divergencia(self):
+        """Regressao da revisao: parte ausente em UMA fonte apagava a comparacao das demais."""
+        base = {"razao_social": "X", "municipio": "SAO PAULO", "uf": "SP", "cep": "01311902"}
+        mr = _mk("minha_receita", base | {"logradouro": "PAULISTA", "numero": "100"})
+        ws = _mk(
+            "cnpjws",
+            {"razao_social": "X", "estabelecimento": {"logradouro": "PAULISTA", "numero": "200",
+             "cep": "01311902", "cidade": {"nome": "SAO PAULO"}, "estado": {"sigla": "SP"}}},
+        )
+        rws = _mk("receitaws", {"nome": "X", "logradouro": "AV PAULISTA", "uf": "SP", "cep": "01311902"})
+        c = reconcile(CNPJ, [mr, ws, rws])
+        assert any(x.startswith("Endereco:") for x in c.conflitos)
+
+    def test_fontes_sem_partes_em_comum_nao_ganham_confianca_alta(self):
+        mr = _mk("minha_receita", {"razao_social": "X", "logradouro": "RUA A", "numero": "1", "cep": "01311902"})
+        rws = _mk("receitaws", {"nome": "X", "uf": "SP"})
+        c = reconcile(CNPJ, [mr, rws])
+        assert not c.conflitos
+        assert {p.confianca for p in c.campos_procedencia if p.campo == "endereco"} == {"media"}
 
     def test_fixtures_reais_sem_nenhum_conflito(self, brasilapi_payload, receitaws_payload):
         c = reconcile(

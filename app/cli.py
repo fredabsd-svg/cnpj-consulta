@@ -105,18 +105,24 @@ def lote(
     """Consulta varios CNPJs de uma vez (mesma regra da pagina /lote)."""
     import asyncio
 
+    from rich.markup import escape
+
     from app.db import init_database
     from app.providers.registry import get_registry
     from app.services.batch import batch_csv, parse_cnpj_list, run_batch, summarize
 
     try:
-        texto = arquivo.read_text(encoding="utf-8-sig")
+        dados = arquivo.read_bytes()
     except OSError as e:
-        err_console.print(f"[red]Erro:[/red] nao foi possivel ler {arquivo}: {e}")
+        err_console.print(f"[red]Erro:[/red] nao foi possivel ler {escape(str(arquivo))}: {escape(str(e))}")
         raise typer.Exit(code=2) from e
+    try:
+        texto = dados.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        texto = dados.decode("cp1252", errors="replace")  # CSV "ANSI" salvo pelo Excel pt-BR
     parsed = parse_cnpj_list(texto, max_items=10_000)  # CLI local: sem teto da web
     if parsed.invalidos:
-        err_console.print(f"[yellow]Ignorados (invalidos):[/yellow] {', '.join(parsed.invalidos)}")
+        err_console.print(f"[yellow]Ignorados (invalidos):[/yellow] {escape(', '.join(parsed.invalidos))}")
     if not parsed.validos:
         err_console.print("[red]Erro:[/red] nenhum CNPJ valido no arquivo.")
         raise typer.Exit(code=2)
@@ -129,6 +135,8 @@ def lote(
             await get_registry().aclose()
 
     rows = asyncio.run(_run())
+    if saida:  # grava antes de imprimir: o arquivo nao depende da exibicao
+        saida.write_bytes(batch_csv(rows, excel=True))
     from rich.table import Table
 
     table = Table(show_header=True, header_style="bold")
@@ -136,8 +144,12 @@ def lote(
         table.add_column(col)
     for r in rows:
         table.add_row(
-            r.cnpj_formatado, r.razao_social or (r.mensagem or "-"), r.situacao or "-",
-            r.uf or "-", str(r.conflitos), r.veredicto or "-",
+            r.cnpj_formatado,
+            escape(r.razao_social or r.mensagem or "-"),
+            escape(r.situacao or "-"),
+            escape(r.uf or "-"),
+            str(r.conflitos),
+            r.veredicto or "-",
         )
     console.print(table)
     resumo = summarize(rows)
@@ -145,9 +157,14 @@ def lote(
         f"{resumo['total']} consultados · {resumo['ativas']} ativas · "
         f"{resumo['irregulares']} irregulares · {resumo['com_conflito']} com divergencia"
     )
+    pendentes = resumo["pendentes"]
+    if pendentes:
+        console.print(
+            f"[yellow]{pendentes} CNPJ(s) sem resposta (limite ou fonte fora do ar).[/yellow] "
+            "Rode de novo em 1 minuto: os ja consultados vem do cache."
+        )
     if saida:
-        saida.write_bytes(batch_csv(rows, excel=True))
-        console.print(f"[green]CSV gravado em[/green] {saida}")
+        console.print(f"[green]CSV gravado em[/green] {escape(str(saida))}")
 
 
 @providers_app.command("list")

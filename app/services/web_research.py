@@ -320,7 +320,10 @@ def _safe_result(title: Any, url: Any, snippet: Any) -> WebResult | None:
     parts = urlsplit(url)
     if parts.scheme not in {"http", "https"} or not parts.netloc:
         return None
-    domain = parts.netloc.lower().removeprefix("www.")
+    if not parts.hostname:
+        return None
+    # hostname, nao netloc: "https://google.com@evil.example" mostra evil.example
+    domain = parts.hostname.lower().removeprefix("www.")
     return WebResult(
         titulo=_clean(title, 160) or domain, url=url, trecho=_clean(snippet, 320), dominio=domain
     )
@@ -392,8 +395,8 @@ def _error_message(exc: Exception, provider: str) -> str:
             return f"{label} recusou a chave (HTTP {code}). Confira WEB_SEARCH_API_KEY no .env."
         if code == 403:
             return f"{label} recusou o formato JSON (HTTP 403). Habilite 'json' em search.formats."
-        if code == 429:
-            return f"{label}: limite de buscas do plano atingido (HTTP 429). Tente mais tarde."
+        if code in (429, 432, 433):  # 432/433: cota do plano Tavily esgotada
+            return f"{label}: limite de buscas do plano atingido (HTTP {code}). Tente mais tarde."
         return f"{label} indisponível (HTTP {code})."
     if isinstance(exc, httpx.TimeoutException):
         return f"{label} não respondeu a tempo."
