@@ -93,6 +93,7 @@
     --paper-ink-2: #475569;
     --paper-line: #e2e8f0;
     --paper-soft: #f1f5f9;
+    --paper-link: #1d6fb8;
     --paper-ok-bg: #ecfdf5;
     --paper-ok: #047857;
     --paper-ok-line: #6ee7b7;
@@ -815,6 +816,30 @@ html:not(.js) .verdict-panels > .tabpanel + .tabpanel { margin-top: var(--sp-4);
 .rg-provider { display: flex; gap: var(--sp-2); margin-top: var(--sp-5); }
 .rg-input { flex: 1; min-width: 0; display: block; min-height: 36px; padding: 0 var(--sp-3); border-radius: var(--r-sm); border: 1px solid var(--border-strong); background: var(--surface); font: 500 var(--fs-2xs)/34px var(--font-mono); color: var(--text-2); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .rg-btn { display: inline-flex; align-items: center; min-height: 36px; padding: 0 var(--sp-3); border-radius: var(--r-sm); background: var(--btn-bg); color: var(--btn-text); font-size: var(--fs-xs); font-weight: 700; }
+
+/* Documentos oficiais: ilustração do Cartão CNPJ e da inscrição estadual */
+.dm-steps { list-style: none; margin: 0 0 var(--sp-4); padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-2); }
+.dm-steps li { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface); font-size: var(--fs-2xs); font-weight: 600; color: var(--text-2); }
+.dm-steps b { display: inline-grid; place-items: center; flex: none; width: 20px; height: 20px; border-radius: 50%; background: var(--primary-soft); border: 1px solid var(--primary-border); color: var(--primary-text); font-size: var(--fs-2xs); }
+.dm-official { border: 1px solid var(--border-strong); border-radius: var(--r-md); overflow: hidden; }
+.dm-bar { display: flex; align-items: center; gap: var(--sp-2); margin: 0; padding: var(--sp-2) var(--sp-3); border-bottom: 1px solid var(--border); font-size: var(--fs-2xs); color: var(--success-text); }
+.dm-bar .i { width: 14px; height: 14px; }
+.dm-bar .mono { color: var(--text); }
+.dm-form { display: grid; gap: var(--sp-3); padding: var(--sp-4); background: var(--paper); color: var(--paper-ink); justify-items: start; }
+.dm-title { margin: 0; font-size: var(--fs-sm); font-weight: 600; color: var(--paper-link); }
+.dm-row { display: flex; flex-wrap: wrap; gap: var(--sp-2); width: 100%; }
+.dm-input { flex: 1 1 160px; min-height: 34px; padding: 0 var(--sp-3); border: 1px solid var(--paper-line); border-radius: var(--r-xs); background: var(--paper-soft); font-size: var(--fs-2xs); line-height: 32px; }
+.dm-captcha { display: inline-flex; align-items: center; gap: var(--sp-2); min-height: 34px; padding: 0 var(--sp-3); border: 1px solid var(--paper-line); border-radius: var(--r-xs); background: var(--paper-soft); font-size: var(--fs-2xs); color: var(--paper-ink-2); }
+.dm-captcha i { width: 16px; height: 16px; border: 2px solid var(--paper-ink-2); border-radius: 3px; background: var(--paper); }
+.dm-ie { margin-top: var(--sp-4); padding: var(--sp-4); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); }
+.dm-ie-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--sp-3); }
+.dm-label { margin: 0; font-size: var(--fs-2xs); color: var(--text-3); }
+.dm-ie-num { margin: 2px 0 0; font-size: var(--fs-md); font-weight: 700; }
+.dm-kv { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-2); margin: var(--sp-3) 0 0; }
+.dm-kv div { padding: var(--sp-2); border-radius: var(--r-xs); background: var(--surface-2); }
+.dm-kv dt { font-size: var(--fs-2xs); color: var(--text-3); }
+.dm-kv dd { margin: 0; font-size: var(--fs-xs); font-weight: 600; }
+@media (max-width: 420px) { .dm-steps { grid-template-columns: minmax(0, 1fr); } }
 
 /* =============================================================================
    Como funciona
