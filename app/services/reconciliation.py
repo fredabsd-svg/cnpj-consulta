@@ -479,18 +479,81 @@ def _comparable_value(value: Any) -> str | None:
     return comparable(value)
 
 
-def _address_key(addr: Address) -> str:
-    """Chave canonica: ignora diferencas so de formatacao."""
-    parts = [
-        comparable(addr.logradouro),
-        comparable(addr.numero),
-        comparable(addr.complemento),
-        comparable(addr.bairro),
-        comparable(addr.municipio),
-        comparable(addr.uf),
-        addr.cep or None,
-    ]
-    return "|".join(p or "" for p in parts)
+# Tipo de logradouro: umas fontes mandam "AVENIDA PAULISTA", outras "AV PAULISTA"
+# e outras so "PAULISTA" (o tipo vem em campo separado). Nao e divergencia.
+_STREET_TYPES = frozenset(
+    {
+        "AV", "AVENIDA", "R", "RUA", "AL", "ALAMEDA", "TV", "TRAV", "TRAVESSA",
+        "ROD", "RODOVIA", "EST", "ESTR", "ESTRADA", "PC", "PCA", "PRACA", "LGO",
+        "LARGO", "LD", "LADEIRA", "VIELA", "BECO", "SERVIDAO", "PRAIA", "PQ",
+        "PARQUE", "CAM", "CAMINHO", "VD", "VIADUTO", "QD", "QUADRA",
+    }
+)
+# Abreviacoes comuns em bairro/complemento ("JD" = "JARDIM", "SL" = "SALA").
+_ABBREVIATIONS = {
+    "JD": "JARDIM", "VL": "VILA", "PQ": "PARQUE", "STA": "SANTA", "STO": "SANTO",
+    "CJ": "CONJUNTO", "CONJ": "CONJUNTO", "SL": "SALA", "AND": "ANDAR", "BL": "BLOCO",
+    "AP": "APARTAMENTO", "APTO": "APARTAMENTO", "LJ": "LOJA", "RES": "RESIDENCIAL",
+    "DR": "DOUTOR", "PRES": "PRESIDENTE", "PROF": "PROFESSOR",
+}
+
+
+def _tokens(value: str | None) -> list[str]:
+    return [_ABBREVIATIONS.get(t, t) for t in (comparable(value) or "").split()]
+
+
+def _street_core(logradouro: str | None, numero: str | None) -> str:
+    """'AV. Paulista 37' (numero 37) -> 'PAULISTA'. Usado so para comparar."""
+    tokens = (comparable(logradouro) or "").split()
+    if len(tokens) > 1 and tokens[0] in _STREET_TYPES:
+        tokens = tokens[1:]
+    num = _numero_key(numero)
+    if len(tokens) > 1 and num and tokens[-1] == num:
+        tokens = tokens[:-1]  # algumas fontes repetem o numero no logradouro
+    return " ".join(_ABBREVIATIONS.get(t, t) for t in tokens)
+
+
+def _numero_key(numero: str | None) -> str:
+    """'S/N', 'SN', 'S N' e 'SEM NUMERO' viram a mesma chave."""
+    n = (comparable(numero) or "").replace(" ", "")
+    return "SN" if n in {"SN", "SEMNUMERO", "SNO"} else n
+
+
+_ADDRESS_PARTS = ("logradouro", "numero", "complemento", "bairro", "municipio", "uf", "cep")
+
+
+def _address_part_key(addr: Address, part: str) -> str:
+    value = getattr(addr, part)
+    if part == "logradouro":
+        return _street_core(value, addr.numero)
+    if part == "numero":
+        return _numero_key(value)
+    if part == "complemento":
+        return " ".join(sorted(_tokens(value)))
+    if part == "bairro":
+        return " ".join(_tokens(value))
+    if part == "cep":
+        return value or ""
+    return comparable(value) or ""
+
+
+def _address_key(addr: Address, parts: tuple[str, ...] = _ADDRESS_PARTS) -> str:
+    """Chave canonica: ignora diferencas so de formatacao.
+
+    Tipo de logradouro, abreviacoes, ordem das palavras do complemento e
+    acentos nao contam como divergencia; CEP, numero, rua e cidade contam.
+    """
+    return "|".join(_address_part_key(addr, p) for p in parts)
+
+
+def _address_key_fn(entries: list[tuple[str, Address]]) -> Callable[[Address], str]:
+    """Compara so as partes que TODAS as fontes informaram.
+
+    Uma fonte sem complemento nao "diverge" de outra que o informa: apenas
+    tem menos detalhe. Divergencia e valor diferente, nao valor ausente.
+    """
+    shared = tuple(p for p in _ADDRESS_PARTS if all(getattr(a, p) for _, a in entries))
+    return lambda addr: _address_key(addr, shared)
 
 
 def _address_display(addr: Address) -> str:
@@ -641,7 +704,7 @@ def reconcile(cnpj: str, results: list[ProviderResult]) -> CompanyUnified:
         conflict_enabled=True,
         by_provider=by_provider,
         display_fn=_address_display,
-        key_fn=_address_key,
+        key_fn=_address_key_fn(addr_entries),
         provenance=provenance,
         conflitos=conflitos,
     )

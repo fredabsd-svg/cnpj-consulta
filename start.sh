@@ -23,16 +23,18 @@ pause_on_error() {
 }
 
 # ---------- 0. Verifica Python ----------
+# Primeiro Python 3.12+ disponivel (o "python3" do sistema pode ser antigo).
 PY=""
-for cand in python3 python py; do
-    if command -v "$cand" >/dev/null 2>&1; then
+for cand in python3.14 python3.13 python3.12 python3 python py; do
+    if command -v "$cand" >/dev/null 2>&1 \
+        && "$cand" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 12) else 1)' 2>/dev/null; then
         PY="$cand"
         break
     fi
 done
 if [ -z "$PY" ]; then
     echo
-    echo "  [ERRO] Python nao encontrado no PATH."
+    echo "  [ERRO] Python 3.12+ nao encontrado no PATH."
     echo
     echo "  Instale Python 3.12 ou superior."
     echo "  No Windows: https://www.python.org/downloads/"

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import csv
 import io
-
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -41,6 +40,9 @@ for _name in ("brl", "data_br", "cep", "telefone", "cnae", "cnpj", "fonte"):
 
 _REFRESH = Query(False, description="Ignora o cache e consulta as fontes novamente")
 _LOOKUP_DEPS = [Depends(check_company_lookup_limit)]
+
+# Celulas que o Excel/LibreOffice interpretariam como formula.
+_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
 
 _CNPJ_INVALID_DETAIL = (
     "CNPJ invalido: informe 14 caracteres (numeros ou letras A-Z) "
@@ -140,6 +142,9 @@ async def export_csv(
             return ""
         if hasattr(v, "isoformat"):
             return v.isoformat()
+        if isinstance(v, str) and v.startswith(_FORMULA_PREFIXES):
+            # CSV/formula injection: Excel executaria "=..." vindo de uma fonte.
+            return "'" + v
         return v
 
     if flatten:
@@ -152,12 +157,12 @@ async def export_csv(
         for c in company.cnaes_secundarios:
             writer.writerow(["cnae_secundario", c.codigo])
         for i, s in enumerate(company.socios, 1):
-            writer.writerow([f"socio_{i}.nome", s.nome or ""])
-            writer.writerow([f"socio_{i}.qualificacao", s.qualificacao or ""])
-            writer.writerow([f"socio_{i}.documento_mascarado", s.documento_mascarado or ""])
-            writer.writerow([f"socio_{i}.fonte", s.fonte])
+            writer.writerow([f"socio_{i}.nome", cell(s.nome)])
+            writer.writerow([f"socio_{i}.qualificacao", cell(s.qualificacao)])
+            writer.writerow([f"socio_{i}.documento_mascarado", cell(s.documento_mascarado)])
+            writer.writerow([f"socio_{i}.fonte", cell(s.fonte)])
         for c in company.conflitos:
-            writer.writerow(["conflito", c])
+            writer.writerow(["conflito", cell(c)])
     text = buf.getvalue()
     content = ("\ufeff" + text).encode("utf-8") if excel else text
     return _download(content, "text/csv; charset=utf-8", f"cnpj_{company.cnpj}.csv")

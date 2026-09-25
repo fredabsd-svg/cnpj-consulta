@@ -30,7 +30,8 @@ def data_br(value: Any) -> str:
         return "-"
     if isinstance(value, str):
         try:
-            value = datetime.fromisoformat(value)
+            # "2024-01-31" e "20240131" sao so data: nao podem virar "31/01/2024 00:00"
+            value = date.fromisoformat(value) if len(value) <= 10 else datetime.fromisoformat(value)
         except ValueError:
             try:
                 value = datetime.strptime(value, "%Y%m%d").date()

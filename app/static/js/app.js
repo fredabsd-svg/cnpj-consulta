@@ -62,23 +62,27 @@ document.documentElement.classList.add("js");
                 const btn = form.querySelector("button[type=submit]");
                 if (btn) {
                     btn.setAttribute("aria-busy", "true");
-                    btn.dataset.label = btn.textContent;
+                    btn.dataset.html = btn.innerHTML;
                     btn.innerHTML = '<span class="spinner" aria-hidden="true"></span> ' + form.dataset.loading;
                 }
             });
         });
         document.querySelectorAll("a[data-loading]").forEach((a) => {
-            a.addEventListener("click", () => {
+            a.addEventListener("click", (ev) => {
+                // Ctrl/Cmd+clique abre em outra aba: esta pagina nao fica "carregando"
+                if (ev.ctrlKey || ev.metaKey || ev.shiftKey || ev.button !== 0) return;
                 a.setAttribute("aria-busy", "true");
+                a.dataset.html = a.innerHTML;
                 a.innerHTML = '<span class="spinner" aria-hidden="true"></span> ' + a.dataset.loading;
             });
         });
-        // Ao voltar pelo historico do navegador, restaura os botoes
+        // Ao voltar pelo historico do navegador, restaura botoes e links
         window.addEventListener("pageshow", (ev) => {
             if (!ev.persisted) return;
             document.querySelectorAll("[aria-busy=true]").forEach((el) => {
                 el.removeAttribute("aria-busy");
-                if (el.dataset.label) el.textContent = el.dataset.label;
+                if (el.dataset.html) el.innerHTML = el.dataset.html;
+                else if (el.dataset.label) el.textContent = el.dataset.label;
             });
         });
     }

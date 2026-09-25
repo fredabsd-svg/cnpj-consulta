@@ -20,9 +20,9 @@ from app.core.cnpj_validator import normalize_or_none, strip
 from app.core.inbound_limit import check_company_lookup_limit
 from app.services.company_query import query_company_async
 from app.services.diligence import build_diligence_checklist
-from app.services.report_context import build_report_context
 from app.services.history_service import is_favorite, list_favorites, recent_queries
 from app.services.partner_search import MAX_LIMIT, search_partners
+from app.services.report_context import build_report_context
 
 router = APIRouter(tags=["web"], include_in_schema=False)
 

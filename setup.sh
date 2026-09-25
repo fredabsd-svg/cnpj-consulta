@@ -4,27 +4,24 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-# Detecta python disponivel
+# Detecta o primeiro Python 3.12+ disponivel. O "python3" do sistema pode ser
+# mais antigo mesmo com python3.12/3.13 instalados lado a lado.
+echo ">> Procurando Python 3.12+..."
 PYTHON=""
-for cand in python3 python py; do
-    if command -v "$cand" >/dev/null 2>&1; then
+for cand in python3.14 python3.13 python3.12 python3 python py; do
+    if command -v "$cand" >/dev/null 2>&1 \
+        && "$cand" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 12) else 1)' 2>/dev/null; then
         PYTHON="$cand"
         break
     fi
 done
 if [ -z "$PYTHON" ]; then
-    echo "ERRO: Python nao encontrado. Instale Python 3.12 ou superior." >&2
+    echo "ERRO: Python 3.12 ou superior nao encontrado no PATH." >&2
     exit 1
 fi
+echo "   Usando $PYTHON ($("$PYTHON" --version 2>&1))"
 
 VENV_DIR=".venv"
-
-echo ">> Verificando Python 3.12+..."
-PY_VERSION="$("$PYTHON" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
-if [ "$(printf '%s\n' "3.12" "$PY_VERSION" | sort -V | head -n1)" != "3.12" ]; then
-    echo "ERRO: Python 3.12+ necessario. Encontrado: $PY_VERSION" >&2
-    exit 1
-fi
 
 echo ">> Criando ambiente virtual em $VENV_DIR..."
 "$PYTHON" -m venv "$VENV_DIR"
