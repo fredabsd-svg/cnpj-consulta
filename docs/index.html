@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CNPJ Consulta — consulta de CNPJ com fontes cruzadas e relatório de diligência</title>
-<meta name="description" content="Aplicativo gratuito, open source e 100% local para consultar CNPJ (numérico e alfanumérico). Cruza fontes públicas, aponta conflitos, mostra a procedência de cada dado e gera relatório de diligência em A4.">
+<meta name="description" content="Aplicativo gratuito, open source e 100% local para consultar CNPJ (numérico e alfanumérico). Cruza fontes públicas, aponta conflitos, mostra a procedência de cada dado, gera relatório de diligência em A4 e abre o Cartão CNPJ oficial e a inscrição estadual no próprio app.">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' data:; style-src 'self'; script-src 'self'; font-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0a0d16">
@@ -18,7 +18,7 @@
 <meta property="og:locale" content="pt_BR">
 <meta property="og:site_name" content="CNPJ Consulta">
 <meta property="og:title" content="CNPJ Consulta — consulta de CNPJ que mostra de onde veio cada dado">
-<meta property="og:description" content="Cruza fontes públicas, aponta conflitos, mede a confiança de cada campo e gera relatório de diligência em A4. Open source, MIT, 100% local.">
+<meta property="og:description" content="Cruza fontes públicas, aponta conflitos, mede a confiança de cada campo, gera relatório de diligência em A4 e traz Cartão CNPJ e inscrição estadual. Open source, MIT, 100% local.">
 <meta property="og:url" content="https://fredabsd-svg.github.io/cnpj-consulta/">
 <meta property="og:image" content="https://fredabsd-svg.github.io/cnpj-consulta/assets/brand/social-preview.png">
 <meta property="og:image:width" content="1280">
@@ -92,14 +92,16 @@
   <symbol id="i-map-pin" viewBox="0 0 24 24"><path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/></symbol>
   <symbol id="i-server" viewBox="0 0 24 24"><rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/></symbol>
   <symbol id="i-message" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></symbol>
+  <symbol id="i-landmark" viewBox="0 0 24 24"><line x1="3" x2="21" y1="22" y2="22"/><line x1="6" x2="6" y1="18" y2="11"/><line x1="10" x2="10" y1="18" y2="11"/><line x1="14" x2="14" y1="18" y2="11"/><line x1="18" x2="18" y1="18" y2="11"/><polygon points="12 2 20 7 4 7"/></symbol>
+  <symbol id="i-building" viewBox="0 0 24 24"><rect width="16" height="20" x="4" y="2" rx="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01"/><path d="M16 6h.01"/><path d="M12 6h.01"/><path d="M12 10h.01"/><path d="M12 14h.01"/><path d="M16 10h.01"/><path d="M16 14h.01"/><path d="M8 10h.01"/><path d="M8 14h.01"/></symbol>
   <symbol id="i-github" viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></symbol>
 </svg>
 
 <!-- ============================== ANÚNCIO ============================== -->
-<a class="announce" href="#novidades">
+<a class="announce" href="#documentos">
   <span class="container announce-inner">
     <span class="badge badge-new">Novo</span>
-    <span class="announce-text">Pesquisa na internet, consulta em lote e relatório de diligência</span>
+    <span class="announce-text">Cartão CNPJ oficial e inscrição estadual sem sair do app</span>
     <span class="announce-cta">Conhecer<svg class="i" aria-hidden="true"><use href="#i-arrow"/></svg></span>
   </span>
 </a>
@@ -113,6 +115,7 @@
     <nav class="nav" aria-label="Seções da página">
       <a href="#recursos">Recursos</a>
       <a href="#diligencia">Diligência</a>
+      <a href="#documentos">Documentos</a>
       <a href="#como-funciona">Como funciona</a>
       <a href="#instalacao">Instalação</a>
       <a href="#uso">API</a>
@@ -134,6 +137,7 @@
             <a href="#recursos">Recursos</a>
             <a href="#diligencia">Diligência</a>
             <a href="#pesquisa">Pesquisa na internet</a>
+            <a href="#documentos">Cartão CNPJ e IE</a>
             <a href="#como-funciona">Como funciona</a>
             <a href="#preco">Preço</a>
             <a href="#instalacao">Instalação</a>
@@ -238,7 +242,7 @@
       <div class="metric"><dt>fontes públicas cruzadas</dt><dd>5</dd></div>
       <div class="metric"><dt>chaves de API necessárias</dt><dd>0</dd></div>
       <div class="metric"><dt>no seu computador</dt><dd>100%</dd></div>
-      <div class="metric"><dt>testes automatizados</dt><dd>200+</dd></div>
+      <div class="metric"><dt>testes automatizados</dt><dd>250+</dd></div>
     </dl>
     <div class="sources reveal">
       <span class="sources-label">Fontes gratuitas, lado a lado</span>
@@ -271,6 +275,7 @@
           <li><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Situação, natureza jurídica, CNAEs e QSA conferidos</li>
           <li><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Simples Nacional e MEI à vista</li>
           <li><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Relatório A4 com a capa do escritório</li>
+          <li><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Cartão CNPJ e inscrição estadual sem trocar de janela</li>
         </ul>
       </article>
       <article class="card aud reveal d1">
@@ -318,6 +323,36 @@
 
     <p class="group-label" id="novidades">Novo nesta versão</p>
     <div class="bento bento-new">
+      <article class="card feature f-wide reveal">
+        <div class="feature-head">
+          <span class="ico"><svg class="i" aria-hidden="true"><use href="#i-landmark"/></svg></span>
+          <span class="badge badge-new">Novo</span>
+        </div>
+        <h3>Cartão CNPJ oficial, dentro do app</h3>
+        <p>O site da Receita abre numa tela do app com o CNPJ já preenchido. Você marca o captcha e imprime ou salva o comprovante em PDF, sem copiar e colar nada.</p>
+        <div class="viz" aria-hidden="true">
+          <span class="tag">1 · CNPJ preenchido</span>
+          <span class="tag">2 · Captcha</span>
+          <span class="tag">3 · Imprimir / PDF</span>
+        </div>
+        <a class="more-link" href="#documentos">Ver como funciona<svg class="i" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+      </article>
+
+      <article class="card feature f-wide reveal d1">
+        <div class="feature-head">
+          <span class="ico violet"><svg class="i" aria-hidden="true"><use href="#i-building"/></svg></span>
+          <span class="badge badge-new">Novo</span>
+        </div>
+        <h3>Inscrição estadual (CCC e SEFAZ)</h3>
+        <p>Com o certificado A1 do escritório, a IE vem direto da SEFAZ: situação, regime de apuração, CNAE e endereço. Sem certificado, o app abre o portal CCC com o CNPJ pronto.</p>
+        <div class="viz" aria-hidden="true">
+          <span class="badge badge-success">Habilitado</span>
+          <span class="tag">15 UFs pelo web service</span>
+          <span class="tag">Demais pelo CCC</span>
+        </div>
+        <a class="more-link" href="#documentos">Ver a consulta<svg class="i" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+      </article>
+
       <article class="card feature f-wide reveal">
         <div class="feature-head">
           <span class="ico"><svg class="i" aria-hidden="true"><use href="#i-file-text"/></svg></span>
@@ -664,8 +699,73 @@
   </div>
 </section>
 
+<!-- ============================== DOCUMENTOS OFICIAIS ============================== -->
+<section class="section section-alt" id="documentos" aria-labelledby="t-docs">
+  <div class="container split">
+    <div class="split-copy reveal">
+      <span class="eyebrow">Documentos oficiais <span class="badge badge-new">Novo</span></span>
+      <h2 id="t-docs">Cartão CNPJ e inscrição estadual, sem trocar de janela</h2>
+      <p class="lead">Da página da empresa, um clique leva ao comprovante oficial da Receita e à inscrição estadual. O app só abre e preenche os sites oficiais: quem emite é o órgão.</p>
+      <ul class="points">
+        <li>
+          <span class="ico ico-sm"><svg class="i" aria-hidden="true"><use href="#i-landmark"/></svg></span>
+          <div><h3>Cartão CNPJ no site da Receita, dentro do app</h3><p>A página oficial abre numa tela do app com o CNPJ já preenchido. Você marca o captcha e usa o “Imprimir” da Receita para salvar em PDF. Se o navegador bloquear o quadro, um botão abre em nova janela.</p></div>
+        </li>
+        <li>
+          <span class="ico ico-sm success"><svg class="i" aria-hidden="true"><use href="#i-building"/></svg></span>
+          <div><h3>Inscrição estadual direto da SEFAZ</h3><p>Com o certificado A1 (e-CNPJ) do escritório, o app consulta o web service oficial de consulta cadastral em 15 UFs: IE, situação, regime de apuração, CNAE, datas e endereço. A SEFAZ só atende certificados de empresas emissoras de NF-e.</p></div>
+        </li>
+        <li>
+          <span class="ico ico-sm violet"><svg class="i" aria-hidden="true"><use href="#i-globe"/></svg></span>
+          <div><h3>Portal CCC para o resto</h3><p>Sem certificado ou nas UFs sem web service, o app abre o Cadastro Centralizado de Contribuintes (login gov.br) com o passo a passo e o CNPJ pronto para colar.</p></div>
+        </li>
+      </ul>
+    </div>
+
+    <figure class="research docs-mock reveal d1">
+      <div class="window">
+        <div class="frame-bar">
+          <div class="frame-dots" aria-hidden="true"><i></i><i></i><i></i></div>
+          <div class="frame-url" aria-hidden="true">127.0.0.1:8000/empresa/…/cartao-cnpj</div>
+          <div class="frame-spacer" aria-hidden="true"></div>
+        </div>
+        <div class="window-body" aria-hidden="true">
+          <ol class="dm-steps">
+            <li><b>1</b>CNPJ preenchido</li>
+            <li><b>2</b>Marque o captcha</li>
+            <li><b>3</b>Imprimir ou PDF</li>
+          </ol>
+          <div class="dm-official">
+            <p class="dm-bar"><svg class="i"><use href="#i-shield-check"/></svg>Site oficial: <span class="mono">solucoes.receita.fazenda.gov.br</span></p>
+            <div class="dm-form">
+              <p class="dm-title">Comprovante de Inscrição e de Situação Cadastral</p>
+              <div class="dm-row">
+                <span class="dm-input mono">12.ABC.345/01DE-35</span>
+                <span class="dm-captcha"><i></i>Sou humano</span>
+              </div>
+              <span class="rg-btn">Consultar</span>
+            </div>
+          </div>
+          <div class="dm-ie">
+            <div class="dm-ie-head">
+              <div><p class="dm-label">Inscrição estadual · SP</p><p class="dm-ie-num mono">123.456.789.110</p></div>
+              <span class="badge badge-success">Habilitado</span>
+            </div>
+            <dl class="dm-kv">
+              <div><dt>Regime</dt><dd>Normal</dd></div>
+              <div><dt>CNAE</dt><dd class="mono">6201-5/01</dd></div>
+              <div><dt>Início</dt><dd>18/03/2019</dd></div>
+            </dl>
+          </div>
+        </div>
+      </div>
+      <figcaption class="caption">Ilustração com dados fictícios. O comprovante é emitido pela Receita Federal e a inscrição estadual vem da SEFAZ.</figcaption>
+    </figure>
+  </div>
+</section>
+
 <!-- ============================== COMO FUNCIONA ============================== -->
-<section class="section section-alt" id="como-funciona" aria-labelledby="t-como">
+<section class="section" id="como-funciona" aria-labelledby="t-como">
   <div class="container">
     <div class="section-head reveal">
       <span class="eyebrow">Como funciona</span>
@@ -742,7 +842,7 @@
 </section>
 
 <!-- ============================== VALIDADOR ============================== -->
-<section class="section" id="experimente" aria-labelledby="t-exp">
+<section class="section section-alt" id="experimente" aria-labelledby="t-exp">
   <div class="container try">
     <div class="try-copy reveal">
       <span class="eyebrow">Experimente</span>
@@ -800,7 +900,7 @@
 </section>
 
 <!-- ============================== COMPARATIVO ============================== -->
-<section class="section section-alt" id="comparativo" aria-labelledby="t-comp">
+<section class="section" id="comparativo" aria-labelledby="t-comp">
   <div class="container">
     <div class="section-head reveal">
       <span class="eyebrow">Comparativo</span>
@@ -821,6 +921,7 @@
             <tr role="row"><th scope="row" role="rowheader">Conflitos entre fontes</th><td role="cell" class="col-us" data-label="CNPJ Consulta"><span class="cmp cmp-yes"><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Sinalizados, com o valor de cada fonte</span></td><td role="cell" data-label="Site avulso"><span class="cmp cmp-no"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg>Não se aplica com uma fonte só</span></td></tr>
             <tr role="row"><th scope="row" role="rowheader">Confiança por campo</th><td role="cell" class="col-us" data-label="CNPJ Consulta"><span class="cmp cmp-yes"><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Alta, média ou baixa</span></td><td role="cell" data-label="Site avulso"><span class="cmp cmp-no"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg>Em geral, não</span></td></tr>
             <tr role="row"><th scope="row" role="rowheader">Relatório de diligência em A4</th><td role="cell" class="col-us" data-label="CNPJ Consulta"><span class="cmp cmp-yes"><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Veredicto e capa do escritório</span></td><td role="cell" data-label="Site avulso"><span class="cmp cmp-no"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg>Em geral, não</span></td></tr>
+            <tr role="row"><th scope="row" role="rowheader">Cartão CNPJ e inscrição estadual</th><td role="cell" class="col-us" data-label="CNPJ Consulta"><span class="cmp cmp-yes"><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Sites oficiais abertos e preenchidos no app</span></td><td role="cell" data-label="Site avulso"><span class="cmp cmp-part"><svg class="i" aria-hidden="true"><use href="#i-minus"/></svg>Em geral, só um link</span></td></tr>
             <tr role="row"><th scope="row" role="rowheader">Consulta em lote</th><td role="cell" class="col-us" data-label="CNPJ Consulta"><span class="cmp cmp-yes"><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Até 30 CNPJs, com CSV</span></td><td role="cell" data-label="Site avulso"><span class="cmp cmp-part"><svg class="i" aria-hidden="true"><use href="#i-minus"/></svg>Em geral, um por vez</span></td></tr>
             <tr role="row"><th scope="row" role="rowheader">API REST e CLI</th><td role="cell" class="col-us" data-label="CNPJ Consulta"><span class="cmp cmp-yes"><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Locais, com OpenAPI</span></td><td role="cell" data-label="Site avulso"><span class="cmp cmp-part"><svg class="i" aria-hidden="true"><use href="#i-minus"/></svg>Varia; às vezes paga</span></td></tr>
             <tr role="row"><th scope="row" role="rowheader">Onde ficam suas consultas</th><td role="cell" class="col-us" data-label="CNPJ Consulta"><span class="cmp cmp-yes"><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Só no seu computador</span></td><td role="cell" data-label="Site avulso"><span class="cmp cmp-part"><svg class="i" aria-hidden="true"><use href="#i-minus"/></svg>Passam pelo servidor do site</span></td></tr>
@@ -834,7 +935,7 @@
 </section>
 
 <!-- ============================== PREÇO ============================== -->
-<section class="section" id="preco" aria-labelledby="t-preco">
+<section class="section section-alt" id="preco" aria-labelledby="t-preco">
   <div class="container">
     <div class="section-head center reveal">
       <span class="eyebrow">Preço</span>
@@ -854,6 +955,7 @@
           <li><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Fontes cruzadas, procedência e confiança por campo</li>
           <li><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Checklist e relatório de diligência em A4</li>
           <li><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Pesquisa na internet, consulta em lote e status das fontes</li>
+          <li><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Cartão CNPJ oficial e inscrição estadual (CCC/SEFAZ)</li>
           <li><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Interface web, CLI e API REST</li>
           <li><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Modo offline com a base da Receita Federal</li>
           <li><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Código aberto: use, adapte e distribua</li>
@@ -890,7 +992,7 @@
 </section>
 
 <!-- ============================== INSTALAÇÃO ============================== -->
-<section class="section section-alt" id="instalacao" aria-labelledby="t-inst">
+<section class="section" id="instalacao" aria-labelledby="t-inst">
   <div class="container">
     <div class="section-head reveal">
       <span class="eyebrow">Instalação</span>
@@ -949,7 +1051,7 @@
 </section>
 
 <!-- ============================== CLI E API ============================== -->
-<section class="section" id="uso" aria-labelledby="t-uso">
+<section class="section section-alt" id="uso" aria-labelledby="t-uso">
   <div class="container">
     <div class="section-head reveal">
       <span class="eyebrow">CLI e API</span>
@@ -1042,7 +1144,7 @@
 </section>
 
 <!-- ============================== MODOS E FONTES ============================== -->
-<section class="section section-alt" id="fontes" aria-labelledby="t-modos">
+<section class="section" id="fontes" aria-labelledby="t-modos">
   <div class="container">
     <div class="section-head reveal">
       <span class="eyebrow">Modos de operação</span>
@@ -1091,7 +1193,7 @@
 </section>
 
 <!-- ============================== PRIVACIDADE ============================== -->
-<section class="section" id="privacidade" aria-labelledby="t-priv">
+<section class="section section-alt" id="privacidade" aria-labelledby="t-priv">
   <div class="container">
     <div class="section-head reveal">
       <span class="eyebrow">Privacidade e LGPD</span>
@@ -1106,6 +1208,7 @@
           <li><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Guarda histórico, cache e favoritos apenas no seu computador (SQLite)</li>
           <li><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Mostra o CPF de sócios sempre mascarado, como a Receita publica</li>
           <li><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Abre a pesquisa na internet só quando você clica, com dados da empresa</li>
+          <li><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Guarda o certificado A1 e a senha só no seu <span class="mono">.env</span>, sem exibir nem registrar em log</li>
           <li><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Permite apagar histórico e cache a qualquer momento</li>
           <li><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Escuta só em 127.0.0.1, com CSP estrita e bloqueio de POST/DELETE de outra origem</li>
         </ul>
@@ -1126,7 +1229,7 @@
 </section>
 
 <!-- ============================== FAQ ============================== -->
-<section class="section section-alt" id="faq" aria-labelledby="t-faq">
+<section class="section" id="faq" aria-labelledby="t-faq">
   <div class="container faq-layout">
     <div class="section-head faq-head reveal">
       <span class="eyebrow">Perguntas frequentes</span>
@@ -1136,7 +1239,9 @@
     <div class="faq reveal">
       <details><summary>Preciso de chave de API?</summary><div class="answer"><p>Não. Todas as fontes de dados são gratuitas e funcionam sem chave. As exceções são opcionais: mostrar resultados de busca dentro do app pelo Tavily ou pela Brave Search API exige a sua própria chave (com uma instância SearXNG sua, não há chave), e a checagem automática de sanções usa a chave gratuita da API do Portal da Transparência.</p></div></details>
       <details><summary>Como gero o relatório de diligência em PDF?</summary><div class="answer"><p>Na página da empresa, abra o relatório, preencha se quiser o escritório, o responsável, o destinatário e a referência, e clique em <em>Salvar PDF</em>: o próprio navegador gera o arquivo em A4. O relatório traz o veredicto, as pendências, as divergências entre fontes, o cadastro, o quadro societário (com CPF mascarado) e as atividades.</p></div></details>
-      <details><summary>O relatório substitui certidões oficiais?</summary><div class="answer"><p>Não. Ele resume o que as fontes públicas informam e deixa claro de onde veio cada dado. Para certidões (CND federal, CNDT, CRF do FGTS), use os atalhos da aba Pesquisa na internet, que levam aos sites oficiais.</p></div></details>
+      <details><summary>O relatório substitui certidões oficiais?</summary><div class="answer"><p>Não. Ele resume o que as fontes públicas informam e deixa claro de onde veio cada dado. Para o Cartão CNPJ, use o botão da página da empresa; para certidões (CND federal, CNDT, CRF do FGTS), use os atalhos da aba Pesquisa na internet, que levam aos sites oficiais.</p></div></details>
+      <details><summary>O app emite o Cartão CNPJ?</summary><div class="answer"><p>Quem emite é a Receita Federal. O app abre a página oficial do Comprovante de Inscrição e de Situação Cadastral dentro de uma tela própria, com o CNPJ já preenchido; você marca o captcha e usa o “Imprimir” da Receita para salvar em PDF. O app não lê o que é digitado ali nem guarda o comprovante. Se o navegador bloquear o quadro, o botão <em>Abrir em nova janela</em> leva ao mesmo site.</p></div></details>
+      <details><summary>Como consulto a inscrição estadual?</summary><div class="answer"><p>Pelo botão <em>Inscrição estadual</em> da página da empresa. Com o certificado A1 do escritório configurado (<span class="mono">CERTIFICADO_A1_PATH</span> e <span class="mono">CERTIFICADO_A1_SENHA</span>), o app consulta o web service de consulta cadastral da SEFAZ em 15 UFs (AC, AM, BA, ES, GO, MG, MS, MT, PB, PE, PR, RN, RS, SC e SP) e mostra IE, situação e regime de apuração. A SEFAZ só atende certificados de empresas emissoras de NF-e. Sem certificado, ou nas outras UFs, o app abre o portal CCC, que exige login gov.br.</p></div></details>
       <details><summary>O que a pesquisa na internet envia, e para quem?</summary><div class="answer"><p>Nada, até você clicar. Cada atalho abre o site escolhido em uma nova aba, com a razão social, o nome fantasia, o CNPJ ou o endereço da sede na busca, nunca o nome ou o documento de um sócio. Os resultados dentro do app são opcionais e usam o provedor que você configurar (Tavily, Brave Search API ou SearXNG). Se você ligar a checagem de sanções, o CNPJ (e só ele) vai à API do Portal da Transparência quando você abre a empresa.</p></div></details>
       <details><summary>Como funciona a consulta em lote?</summary><div class="answer"><p>Cole até 30 CNPJs, com ou sem pontuação, separados por linha, espaço, vírgula ou ponto e vírgula; duplicados são ignorados. O app consulta cada um respeitando os limites das fontes (o que já está no cache não gasta consulta) e monta uma tabela com situação, UF, porte, Simples/MEI e conflitos, que você exporta em CSV.</p></div></details>
       <details><summary>Funciona sem internet?</summary><div class="answer"><p>As consultas online precisam de internet. Com a base local da Receita Federal ativada (<span class="mono">RECEITA_LOCAL_ENABLED=true</span>), a consulta por CNPJ e a busca por sócio funcionam offline, inclusive com as APIs fora do ar. A importação exige cerca de 40 GB livres durante o processo.</p></div></details>
