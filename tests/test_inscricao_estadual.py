@@ -204,3 +204,49 @@ class TestPaginaEApi:
         respx.post(URL_SP).mock(return_value=httpx.Response(200, text=RESPOSTA_SEM_IE))
         r = client.get(f"/empresa/{CNPJ}/inscricao-estadual", params={"uf": "SP"})
         assert "Nenhuma inscrição estadual em SP" in r.text
+
+
+RESPOSTA_257 = """<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope"><soap:Body>
+<nfeResultMsg xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/CadConsultaCadastro4">
+<retConsCad versao="2.00" xmlns="http://www.portalfiscal.inf.br/nfe"><infCons>
+<cStat>257</cStat><xMotivo>Rejeicao: Solicitante nao habilitado para emissao da NF-e</xMotivo>
+<UF>SP</UF></infCons></retConsCad></nfeResultMsg></soap:Body></soap:Envelope>"""
+
+
+class TestTabelaOficial:
+    def test_ufs_com_e_sem_web_service(self, monkeypatch):
+        monkeypatch.undo()  # tabela real, sem o ENDPOINTS de teste
+        tabela = ie.ENDPOINTS
+        assert len(tabela) == 15
+        assert tabela["SC"] == tabela["RS"]  # SC atendida pela SVRS
+        for uf in ("RJ", "CE", "DF", "MA"):
+            assert uf not in tabela
+        assert all(u.startswith("https://") for u in tabela.values())
+
+    def test_envelope_mt_tem_wrapper(self):
+        xml = ie.build_envelope(CNPJ, "MT")
+        assert "<consultaCadastro xmlns=" in xml and "<nfeDadosMsg><ConsCad" in xml
+        assert "<consultaCadastro" not in ie.build_envelope(CNPJ, "SP")
+
+    def test_raiz_icp_brasil_empacotada(self):
+        texto = ie.ICP_BRASIL_CA.read_text()
+        assert texto.count("BEGIN CERTIFICATE") == 2
+        import ssl
+
+        ssl.create_default_context().load_verify_locations(cafile=str(ie.ICP_BRASIL_CA))
+
+    def test_cnpj_alfanumerico_no_envelope(self):
+        assert "<CNPJ>12ABC34501DE35</CNPJ>" in ie.build_envelope("12ABC34501DE35", "SP")
+
+
+class TestRejeicoes:
+    @respx.mock
+    async def test_257_emissor_nao_habilitado(self, certificado):
+        respx.post(URL_SP).mock(return_value=httpx.Response(200, text=RESPOSTA_257))
+        r = await ie.consultar_ie(CNPJ, "SP")
+        assert not r.consultada and r.cstat == "257"
+        assert "emissoras de NF-e" in r.erro and "CCC" in r.erro
+
+    def test_259_nao_e_rejeicao(self):
+        r = ie.parse_response(RESPOSTA_SEM_IE, "SP")
+        assert r.consultada and r.erro is None

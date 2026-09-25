@@ -25,7 +25,7 @@
     <div class="card-header">
         <div>
             <h2 id="titulo-sefaz">{{ ui.icon('shield-check') }} Consulta na SEFAZ <span class="tag tag-novo">Certificado A1</span></h2>
-            <p class="card-sub">Web service oficial de consulta cadastral (o mesmo cadastro do CCC), com o certificado digital do escritório.</p>
+            <p class="card-sub">Web service oficial de consulta cadastral (o mesmo cadastro do CCC), com o certificado digital do escritório. Disponível em {{ ws_ufs | length }} UFs; exige certificado de empresa emissora de NF-e.</p>
         </div>
     </div>
     <form action="/empresa/{{ c.cnpj }}/inscricao-estadual" method="get" class="form-actions" data-loading="Consultando a SEFAZ…">
@@ -106,6 +106,7 @@
         <pre>CERTIFICADO_A1_PATH=C:\certificados\escritorio.pfx
 CERTIFICADO_A1_SENHA=********</pre>
         <p>O app passa a consultar o web service oficial de consulta cadastral da SEFAZ (o mesmo cadastro do CCC). A senha fica só no seu computador e o certificado nunca é exibido nem registrado em log.</p>
+        <p class="small">Regras da SEFAZ: o serviço só atende certificados de <strong>empresas emissoras de NF-e</strong> e existe em {{ ws_ufs | length }} UFs ({{ ws_ufs | join(", ") }}). Nas demais, a consulta é só pelo CCC.</p>
     </div>
 </div>
 {% endif %}

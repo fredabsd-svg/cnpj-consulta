@@ -43,9 +43,46 @@ UFS = (
     "AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO".split()
 )
 
-# Endpoints de producao do CadConsultaCadastro4 (preenchido a partir da relacao
-# oficial de servicos web da NF-e). UF ausente = nao oferece o servico.
-ENDPOINTS: dict[str, str] = {}
+# Endpoints de producao do CadConsultaCadastro4, conforme a "Relacao de Servicos
+# Web" do Portal Nacional da NF-e (conferida em 2026-09). UF ausente = a SEFAZ
+# nao oferece o servico (AL, AP, CE, DF, MA, PA, PI, RJ, RO, RR, SE, TO): so CCC.
+_SVRS = "https://cad.svrs.rs.gov.br/ws/cadconsultacadastro/cadconsultacadastro4.asmx"
+ENDPOINTS: dict[str, str] = {
+    "AM": "https://nfe.sefaz.am.gov.br/services2/services/CadConsultaCadastro4",
+    "BA": "https://nfe.sefaz.ba.gov.br/webservices/CadConsultaCadastro4/CadConsultaCadastro4.asmx",
+    "GO": "https://nfe.sefaz.go.gov.br/nfe/services/CadConsultaCadastro4",
+    "MG": "https://nfe.fazenda.mg.gov.br/nfe2/services/CadConsultaCadastro4",
+    "MS": "https://nfe.sefaz.ms.gov.br/ws/CadConsultaCadastro4",
+    "MT": "https://nfe.sefaz.mt.gov.br/nfews/v2/services/CadConsultaCadastro4",
+    "PE": "https://nfe.sefaz.pe.gov.br/nfe-service/services/CadConsultaCadastro4",
+    "PR": "https://nfe.sefa.pr.gov.br/nfe/CadConsultaCadastro4",
+    "SP": "https://nfe.fazenda.sp.gov.br/ws/cadconsultacadastro4.asmx",
+    "RS": _SVRS,
+    # Atendidas pela SVRS
+    "AC": _SVRS, "ES": _SVRS, "PB": _SVRS, "RN": _SVRS, "SC": _SVRS,
+}
+# Raizes ICP-Brasil (v5 e v10): varias SEFAZ usam certificado de servidor da
+# ICP-Brasil, ausente do repositorio de CAs do Python fora do Windows.
+ICP_BRASIL_CA = Path(__file__).resolve().parent.parent / "certs" / "icp-brasil-raiz.pem"
+
+# Retornos comuns (cStat) com orientacao ao usuario.
+CSTAT_AJUDA = {
+    "257": "A SEFAZ só atende certificados de empresas emissoras de NF-e, e o certificado configurado não é de "
+    "emissor. Use um certificado de empresa emissora ou consulte pelo portal CCC.",
+    "258": "A SEFAZ considerou o CNPJ inválido.",
+    "265": "A UF da consulta difere da UF atendida por este web service.",
+    "280": "Certificado do escritório inválido.",
+    "281": "Certificado do escritório vencido: renove o A1.",
+    "282": "O certificado não traz CNPJ.",
+    "283": "Cadeia do certificado com problema.",
+    "284": "Certificado revogado.",
+    "285": "O certificado não é ICP-Brasil.",
+    "286": "A SEFAZ não conseguiu verificar a revogação do certificado; tente mais tarde.",
+    "108": "Serviço da SEFAZ paralisado momentaneamente; tente mais tarde.",
+    "109": "Serviço da SEFAZ paralisado sem previsão; use o portal CCC.",
+    "656": "A SEFAZ bloqueou por consumo indevido (consultas repetidas); aguarde antes de tentar de novo.",
+}
+_CSTAT_SEM_CADASTRO = {"259", "261", "264"}
 
 SITUACAO = {"0": "Não habilitado", "1": "Habilitado"}
 CREDENCIAMENTO = {
@@ -137,6 +174,8 @@ def _build_ssl_context(cfg: Settings) -> ssl.SSLContext:
         raise CertificadoError("o arquivo .pfx não contém chave privada e certificado")
 
     ctx = ssl.create_default_context()
+    if ICP_BRASIL_CA.exists():
+        ctx.load_verify_locations(cafile=str(ICP_BRASIL_CA))
     if cfg.sefaz_ca_bundle:
         ctx.load_verify_locations(cafile=str(Path(cfg.sefaz_ca_bundle).expanduser()))
     chain = cert.public_bytes(Encoding.PEM) + b"".join(c.public_bytes(Encoding.PEM) for c in extras or [])
@@ -177,16 +216,19 @@ def reset_ssl_context() -> None:
 
 
 def build_envelope(cnpj: str, uf: str) -> str:
-    return (
-        '<?xml version="1.0" encoding="utf-8"?>'
-        '<soap12:Envelope xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">'
-        "<soap12:Body>"
-        f'<nfeDadosMsg xmlns="{WSDL_NS}">'
+    cons = (
         f'<ConsCad xmlns="{NFE_NS}" versao="2.00">'
         f"<infCons><xServ>CONS-CAD</xServ><UF>{uf}</UF><CNPJ>{cnpj}</CNPJ></infCons>"
         "</ConsCad>"
-        "</nfeDadosMsg>"
-        "</soap12:Body>"
+    )
+    if uf == "MT":  # MT exige o wrapper consultaCadastro em volta do nfeDadosMsg
+        body = f'<consultaCadastro xmlns="{WSDL_NS}"><nfeDadosMsg>{cons}</nfeDadosMsg></consultaCadastro>'
+    else:
+        body = f'<nfeDadosMsg xmlns="{WSDL_NS}">{cons}</nfeDadosMsg>'
+    return (
+        '<?xml version="1.0" encoding="utf-8"?>'
+        '<soap12:Envelope xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">'
+        f"<soap12:Body>{body}</soap12:Body>"
         "</soap12:Envelope>"
     )
 
@@ -215,6 +257,16 @@ def parse_response(xml_text: str, uf: str) -> ConsultaIE:
         raise ValueError("resposta sem retConsCad")
     inf = ret.find("{*}infCons")
     cstat, motivo = _text(inf, "cStat"), _text(inf, "xMotivo")
+    if cstat not in ("111", "112") and cstat not in _CSTAT_SEM_CADASTRO:
+        # Rejeicao (certificado, emissor, servico parado...): nao e "sem IE".
+        ajuda = CSTAT_AJUDA.get(cstat or "", "")
+        return ConsultaIE(
+            uf=uf,
+            consultada=False,
+            cstat=cstat,
+            motivo=motivo,
+            erro=f"SEFAZ-{uf} recusou a consulta ({cstat}: {motivo or 'sem motivo'}). {ajuda}".strip(),
+        )
     result = ConsultaIE(uf=uf, consultada=True, cstat=cstat, motivo=motivo)
     for cad in inf.findall("{*}infCad") if inf is not None else []:
         ender = cad.find("{*}ender")
@@ -293,7 +345,8 @@ async def _call(url: str, cnpj: str, uf: str, cfg: Settings) -> ConsultaIE:
         "User-Agent": f"cnpj-consulta/{__version__}",
     }
     try:
-        async with httpx.AsyncClient(verify=ctx, timeout=float(cfg.request_timeout_seconds) * 2) as client:
+        # A consulta cadastral "nao tem a mesma disponibilidade dos demais" servicos (MOC): 30 s.
+        async with httpx.AsyncClient(verify=ctx, timeout=max(30.0, float(cfg.request_timeout_seconds))) as client:
             resp = await client.post(url, content=build_envelope(cnpj, uf).encode(), headers=headers)
         if resp.status_code >= 400 and "retConsCad" not in resp.text:
             return ConsultaIE(uf=uf, consultada=False, erro=f"SEFAZ-{uf} indisponível (HTTP {resp.status_code}).")
