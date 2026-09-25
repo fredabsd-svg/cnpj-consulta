@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import time
 from collections import defaultdict, deque
+from collections.abc import Callable
 
 from fastapi import HTTPException, Request
 
@@ -55,11 +56,20 @@ def reset_inbound_limiter() -> None:
     _limiter = None
 
 
+def _client_key(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
+def reserver_for(request: Request) -> Callable[[], float]:
+    """Funcao que consome 1 vaga do IP a cada chamada (usada no lote, por CNPJ)."""
+    limiter, key = get_inbound_limiter(), _client_key(request)
+    return lambda: limiter.reserve(key)
+
+
 def check_company_lookup_limit(request: Request) -> None:
     """Dependencia FastAPI: 429 se o IP excedeu o limite de consultas."""
-    client = request.client.host if request.client else "unknown"
     limiter = get_inbound_limiter()
-    wait = limiter.reserve(client)
+    wait = limiter.reserve(_client_key(request))
     if wait > 0:
         raise HTTPException(
             status_code=429,

@@ -19,6 +19,7 @@ from typing import Any
 
 import httpx
 
+from app import __version__
 from app.config import Settings
 
 log = logging.getLogger(__name__)
@@ -177,7 +178,7 @@ class Provider(abc.ABC):
             self._client = httpx.AsyncClient(
                 timeout=self.timeout,
                 follow_redirects=True,
-                headers={"Accept": "application/json", "User-Agent": "cnpj-consulta/0.2"},
+                headers={"Accept": "application/json", "User-Agent": f"cnpj-consulta/{__version__}"},
             )
         return self._client
 

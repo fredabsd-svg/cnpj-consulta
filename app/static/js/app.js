@@ -150,7 +150,7 @@ document.documentElement.classList.add("js");
                     await navigator.clipboard.writeText(btn.dataset.copy);
                     toast("Copiado: " + btn.dataset.copy);
                 } catch (e) {
-                    toast("Nao foi possivel copiar automaticamente.");
+                    toast("Não foi possível copiar automaticamente.");
                 }
             });
         });
@@ -256,7 +256,115 @@ document.documentElement.classList.add("js");
         }
     }
 
+    // Atalho "/": foca a busca de CNPJ (como em apps SaaS), exceto ao digitar
+    function initShortcut() {
+        document.addEventListener("keydown", (ev) => {
+            if (ev.key !== "/" || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+            const t = ev.target;
+            if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+            const alvo = document.querySelector("[data-atalho-busca]");
+            if (!alvo) return;
+            ev.preventDefault();
+            alvo.focus();
+            alvo.select();
+        });
+    }
+
+    // Pesquisa na internet sem recarregar a pagina (sem JS, o form abre /empresa/{cnpj}/internet).
+    // Resultados montados com textContent: nada vindo do provedor vira HTML.
+    function el(tag, cls, text) {
+        const e = document.createElement(tag);
+        if (cls) e.className = cls;
+        if (text) e.textContent = text;
+        return e;
+    }
+
+    function renderWeb(box, data) {
+        box.replaceChildren();
+        if (data.erro) {
+            const alerta = el("div", "alert alert-warning section");
+            alerta.setAttribute("role", "alert");
+            const wrap = el("div");
+            wrap.appendChild(el("p", "", data.erro));
+            alerta.appendChild(wrap);
+            box.appendChild(alerta);
+            return;
+        }
+        const itens = data.resultados || [];
+        if (!itens.length) {
+            box.appendChild(el("p", "empty-state", "Nenhum resultado para " + data.consulta + ". Tente sem aspas ou com o nome fantasia."));
+            return;
+        }
+        const lista = el("ol", "web-results");
+        itens.forEach((r) => {
+            if (!/^https?:\/\//i.test(r.url)) return;
+            const li = el("li");
+            const a = el("a", "", r.titulo);
+            a.href = r.url;
+            a.target = "_blank";
+            a.rel = "noopener noreferrer nofollow";
+            li.append(a, el("span", "dominio", r.dominio));
+            if (r.trecho) li.appendChild(el("p", "", r.trecho));
+            lista.appendChild(li);
+        });
+        const extra = [data.do_cache ? "do cache" : "", data.atribuicao || ""].filter(Boolean).join(" · ");
+        box.append(lista, el("p", "web-status", itens.length + " resultado(s) para " + data.consulta + (extra ? " · " + extra : "")));
+    }
+
+    function initWebSearch() {
+        document.querySelectorAll("form[data-web-search]").forEach((form) => {
+            const box = form.parentElement.querySelector("[data-web-results]");
+            const btn = form.querySelector("button[type=submit]");
+            if (!box || !btn) return;
+            form.addEventListener("submit", async (ev) => {
+                ev.preventDefault();
+                const q = form.querySelector("input[name=q]").value.trim();
+                const html = btn.innerHTML;
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner" aria-hidden="true"></span> Pesquisando…';
+                box.replaceChildren(el("p", "web-status", "Pesquisando na web…"));
+                try {
+                    const resp = await fetch(form.dataset.webSearch + "?q=" + encodeURIComponent(q), { headers: { Accept: "application/json" } });
+                    if (resp.status === 429) throw new Error("limite de consultas por minuto atingido; aguarde um pouco");
+                    if (!resp.ok) throw new Error("HTTP " + resp.status);
+                    renderWeb(box, await resp.json());
+                } catch (e) {
+                    renderWeb(box, { erro: "Não foi possível pesquisar (" + e.message + ")." });
+                } finally {
+                    btn.disabled = false;
+                    btn.innerHTML = html;
+                }
+            });
+        });
+    }
+
+    // Lote: conta os CNPJs colados (estimativa por tamanho; a validacao real e no servidor)
+    function initBatchCounter() {
+        const input = document.querySelector("[data-batch-input]");
+        const out = document.querySelector("[data-batch-counter]");
+        if (!input || !out) return;
+        const max = Number(input.dataset.max || 30);
+        const atualizar = () => {
+            const vistos = new Set();
+            input.value.split(/[\s,;|]+/).forEach((t) => {
+                const v = t.toUpperCase().replace(/[^A-Z0-9]/g, "");
+                if (v.length === 14) vistos.add(v);
+            });
+            const n = vistos.size;
+            out.textContent = "";
+            if (!n) return;
+            const forte = el("strong", "", String(n));
+            out.append(forte, document.createTextNode(n === 1 ? " CNPJ detectado" : " CNPJs detectados"));
+            if (n > max) out.appendChild(document.createTextNode(" · só os " + max + " primeiros serão consultados"));
+        };
+        input.addEventListener("input", atualizar);
+        atualizar();
+    }
+
     document.addEventListener("DOMContentLoaded", () => {
+        initShortcut();
+        initWebSearch();
+        initBatchCounter();
         initShell();
         initMask();
         initLoading();

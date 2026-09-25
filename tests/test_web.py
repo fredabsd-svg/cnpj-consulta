@@ -52,7 +52,7 @@ class TestConsultaFlow:
     def test_invalid_cnpj_shows_inline_error(self, client):
         r = client.get("/consulta", params={"cnpj": "11.111.111/1111-11"})
         assert r.status_code == 400
-        assert "CNPJ invalido" in r.text
+        assert "CNPJ inválido" in r.text
         assert 'aria-invalid="true"' in r.text
 
     def test_input_is_escaped(self, client):

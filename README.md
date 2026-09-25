@@ -46,6 +46,11 @@ Uma consulta comum devolve o que **uma** API respondeu. O CNPJ Consulta pergunta
 - **Conflitos explícitos** — quando as fontes divergem, o app avisa e mostra o valor de cada uma. Nunca escolhe em silêncio. Diferenças só de formato (acentos, código antes da descrição, `1000.00` × `1.000,00`) não contam como conflito.
 - **Confiança por campo** — alta, média ou baixa (veja [como funciona](#como-funciona)).
 - **CNPJ numérico e alfanumérico** — valida os dígitos verificadores dos dois formatos (o novo, com letras, vale desde julho de 2026).
+- **Diligência cadastral em um clique** — veredicto (regular, com ressalvas, crítico), checklist e relatório A4 em PDF com o nome do escritório.
+- **Pesquisa na internet** *(novo)* — atalhos prontos para buscadores, Jusbrasil, Reclame Aqui, certidões (CND, CRF, CNDT), CEIS/CNEP e mapas; opcionalmente, resultados na própria tela via Tavily, Brave Search ou SearXNG.
+- **Sanções federais** *(novo, opcional)* — confere CEIS, CNEP, CEPIM e CEAF pela API do Portal da Transparência e leva o resultado ao checklist.
+- **Consulta em lote** *(novo)* — cole até 30 CNPJs, veja o quadro-resumo e exporte para o Excel.
+- **Status das fontes** *(novo)* — saúde, erros e limites de cada fonte numa página.
 - **Busca reversa por sócio e modo offline** — com a base oficial da Receita Federal importada localmente.
 - **Interface web, CLI e API REST** — a interface é em português, com tema claro e escuro e sem nada carregado de CDN.
 - **LGPD por padrão** — CPF de sócio sempre mascarado; histórico, cache e favoritos ficam só no seu computador.
@@ -128,8 +133,11 @@ O `setup` cria o ambiente virtual `.venv`, instala as dependências (`pip instal
 
 ### Interface web
 
-- **Consultar CNPJ**: digite com ou sem pontuação (numérico ou alfanumérico) e pressione Enter. Consultas recentes e favoritos ficam logo abaixo.
-- **Página da empresa**: resumo (situação, abertura, porte, capital, Simples/MEI) e abas **Dados cadastrais**, **Sócios**, **Atividades**, **Estabelecimentos** e **Fontes**. Há botões para copiar o CNPJ, favoritar, atualizar (ignora o cache), exportar CSV/JSON e imprimir.
+- **Consultar CNPJ**: digite com ou sem pontuação (numérico ou alfanumérico) e pressione Enter. Em qualquer tela, a tecla <kbd>/</kbd> leva à busca rápida no topo. A página inicial mostra consultas do dia, favoritos, fontes ativas e atalhos.
+- **Página da empresa**: resumo (situação, abertura e idade da empresa, porte, capital, Simples/MEI, CNAE, cidade), veredicto de diligência com checklist e abas **Dados cadastrais**, **Sócios**, **Atividades**, **Estabelecimentos**, **Pesquisa na internet** e **Fontes**. Há botões para o relatório de diligência, favoritar, atualizar (ignora o cache), copiar o CNPJ e exportar CSV/JSON.
+- **Pesquisa na internet**: grupos de atalhos (buscadores, reputação e processos, sanções, certidões oficiais, localização e presença digital) que abrem a pesquisa pronta em nova aba. O comprovante de CNPJ da Receita já abre com o número preenchido; para os sites com captcha (CND, CRF, CNDT, Simples), há um botão para copiar o CNPJ. Com um provedor configurado, os resultados aparecem na própria aba.
+- **Consulta em lote** (`/lote`): cole a lista (linhas, vírgulas ou espaços), veja situação, cidade, porte, Simples/MEI, divergências e veredicto de cada empresa e exporte o CSV. CNPJs já consultados vêm do cache, sem gastar o limite das fontes.
+- **Status das fontes** (`/fontes`): consultas, erros, último sucesso e falha de cada fonte, fontes desligadas e recursos opcionais.
 - **Buscar sócio**: por nome (palavras em qualquer ordem, sem acento), UF e município da sede. Requer a base local.
 - **Histórico e favoritos**: consultas recentes, favoritos e botão para apagar o histórico.
 
@@ -175,6 +183,12 @@ GET    /api/companies/{cnpj}/sources
 GET    /api/companies/{cnpj}/partners
 GET    /api/companies/{cnpj}/export.json
 GET    /api/companies/{cnpj}/export.csv      ?flatten=false&excel=true  (excel: ';' + BOM UTF-8)
+GET    /api/companies/{cnpj}/research        atalhos de pesquisa na internet (links)
+GET    /api/companies/{cnpj}/web-search      ?q=...  resultados na web (requer WEB_SEARCH_PROVIDER)
+GET    /api/companies/{cnpj}/sanctions       CEIS/CNEP/CEPIM/CEAF (requer PORTAL_TRANSPARENCIA_API_KEY)
+GET    /api/companies/{cnpj}/export.relatorio  relatório de diligência em HTML (A4)
+GET    /api/batch                            ?cnpjs=A,B,C  consulta em lote (JSON)
+GET    /api/batch/export.csv                 ?cnpjs=A,B,C&excel=true
 GET    /api/partners/search                  ?q=nome&uf=SP&municipio=...&limit=50  (requer a base local)
 GET    /api/partners/{cnpj}/companies        empresas em que um CNPJ (PJ) é sócio
 GET    /api/health
@@ -236,6 +250,10 @@ Tudo é configurado por variáveis de ambiente (ou pelo arquivo `.env`; veja o `
 | `RECEITA_BASE_URL` | dados abertos da RFB | Endereço dos arquivos mensais (ajuste se a Receita mudar) |
 | `APP_HOST` / `APP_PORT` | `127.0.0.1` / `8000` | Onde o servidor escuta |
 | `APP_CONTACT_EMAIL` | vazio | Contato exibido na página de privacidade |
+| `WEB_SEARCH_PROVIDER` | vazio | `tavily`, `brave` ou `searxng`: mostra resultados da web na aba Pesquisa na internet |
+| `WEB_SEARCH_API_KEY` / `WEB_SEARCH_URL` | vazio | Chave do Tavily/Brave ou endereço da sua instância SearXNG |
+| `PORTAL_TRANSPARENCIA_API_KEY` | vazio | Liga a checagem de sanções federais ([chave gratuita](https://portaldatransparencia.gov.br/api-de-dados/cadastrar-email)) |
+| `BATCH_MAX_ITEMS` | `30` | Máximo de CNPJs por consulta em lote |
 | `LOG_LEVEL` | `INFO` | Nível de log |
 
 ## Privacidade e LGPD
@@ -243,6 +261,7 @@ Tudo é configurado por variáveis de ambiente (ou pelo arquivo `.env`; veja o `
 - Usa apenas **dados públicos** das fontes oficiais.
 - O CPF de sócio, quando a fonte informa, vem **mascarado**, e o app não tenta revertê-lo.
 - O app **não** busca telefones pessoais, endereços residenciais, datas de nascimento nem e-mails pessoais, e não cruza dados para montar perfis.
+- A **pesquisa na internet** usa só dados da empresa (razão social, CNPJ, endereço) e só sai do seu computador quando você clica; nomes e documentos de sócios nunca entram nas buscas.
 - Histórico, cache e favoritos ficam **só no seu computador** e podem ser apagados a qualquer momento (`python -m app.cli limpar-historico`).
 - Transparência: nas consultas online, o CNPJ consultado é enviado às fontes habilitadas, porque é assim que a consulta funciona. Com a base local, nada sai do seu computador.
 
@@ -268,6 +287,8 @@ A lista completa, com o que cada fonte fornece, está no [relatório técnico](R
 | `python` não é reconhecido | Instale o Python 3.12+ e marque "Add to PATH" |
 | O PowerShell bloqueia o `setup.ps1` | `powershell -ExecutionPolicy Bypass -File .\setup.ps1` (vale só para essa execução) |
 | Uma fonte aparece como "limite atingido" | Normal na ReceitaWS (3/min): a consulta segue com as demais |
+| No lote, algumas linhas ficam "Aguardando limite" | O limite de consultas por minuto acabou: rode o lote de novo em instantes (os já consultados vêm do cache) |
+| Pesquisa na internet: "recusou o formato JSON" | Na sua instância SearXNG, inclua `json` em `search.formats` no `settings.yml` |
 | A API responde 429 | Aguarde alguns minutos ou desabilite a fonte no `.env` |
 | `sync-receita` retorna 404 | O mês ainda não foi publicado ou a Receita mudou o endereço: ajuste `RECEITA_BASE_URL` |
 | `sync-receita`: "arquivo em uso" | Pare o servidor e rode de novo com `--only-import` (não baixa de novo) |
@@ -280,7 +301,8 @@ app/
 ├── api/         rotas REST (empresas, sócios, provedores, histórico, saúde)
 ├── core/        validação de CNPJ, normalização e formatação
 ├── providers/   adaptadores das fontes (Minha Receita, BrasilAPI, ReceitaWS, CNPJ.ws, base local)
-├── services/    consulta, conciliação, cache, histórico e busca por sócio
+├── services/    consulta, conciliação, cache, histórico, busca por sócio,
+│                diligência, pesquisa na internet, sanções e consulta em lote
 ├── sync/        download e importação da base da Receita Federal
 ├── web/         páginas e templates (Jinja2, renderizados no servidor)
 ├── static/      CSS e JS próprios (sem CDN)

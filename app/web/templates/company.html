@@ -1,56 +1,45 @@
 {% extends "base.html" %}
+{% import "_macros.html" as ui %}
 
 {% block title %}{{ company.razao_social or company.cnpj_formatado }}{% endblock %}
 
 {% block content %}
-{% macro situacao_badge(s) -%}
-{%- set cls = {"ATIVA": "badge-success", "SUSPENSA": "badge-warning", "INAPTA": "badge-warning",
-               "BAIXADA": "badge-danger", "NULA": "badge-danger"}.get(s, "") -%}
-<span class="badge {{ cls }}">{{ s or "Situacao nao informada" }}</span>
-{%- endmacro %}
-
-{% macro value(v) -%}
-{%- if v is none or v == "" -%}<span class="not-informed">Nao informado</span>{%- else -%}{{ v }}{%- endif -%}
-{%- endmacro %}
-
-{% macro sim_nao(v) -%}
-{%- if v is none -%}<span class="not-informed">Nao informado</span>{%- elif v -%}Sim{%- else -%}Nao{%- endif -%}
-{%- endmacro %}
-
 {% set c = company %}
 {% set ok_sources = c.fontes | selectattr("status", "equalto", 200) | list %}
-<nav class="breadcrumb no-print" aria-label="Navegacao"><a href="/">&larr; Nova consulta</a></nav>
+<nav class="breadcrumb no-print" aria-label="Você está em"><a href="/">Início</a><span aria-hidden="true">/</span><span>Empresa</span></nav>
 
 <article>
     <header class="card">
         <div class="company-header">
             <div>
-                {% if c.matriz_filial %}<div class="eyebrow">{{ "Matriz" if c.matriz_filial == "MATRIZ" else "Filial" }}</div>{% endif %}
-                <h1>{{ c.razao_social or "Empresa nao encontrada" }}</h1>
+                <div class="eyebrow">{{ ui.icon('building') }}
+                    {%- if c.matriz_filial %} {{ "Matriz" if c.matriz_filial == "MATRIZ" else "Filial" }}{% else %} Empresa{% endif %}
+                    {%- if c.natureza_juridica %} · {{ c.natureza_juridica }}{% endif %}</div>
+                <h1>{{ c.razao_social or "Empresa não encontrada" }}</h1>
+                {% if c.nome_fantasia and c.nome_fantasia != c.razao_social %}<p class="company-fantasia">{{ c.nome_fantasia }}</p>{% endif %}
                 <div class="company-id">
                     <span class="mono">{{ c.cnpj_formatado }}</span>
-                    {% if c.razao_social %}{{ situacao_badge(c.situacao_cadastral) }}{% endif %}
-                    {% if c.nome_fantasia %}<span>{{ c.nome_fantasia }}</span>{% endif %}
+                    <button type="button" class="icon-btn" data-copy="{{ c.cnpj_formatado }}" aria-label="Copiar CNPJ" title="Copiar CNPJ">{{ ui.icon('copy') }}</button>
+                    {% if c.razao_social %}{{ ui.situacao_badge(c.situacao_cadastral) }}{% endif %}
+                    {% if c.data_situacao_cadastral %}<span>desde {{ c.data_situacao_cadastral | data_br }}</span>{% endif %}
                 </div>
             </div>
             <div class="actions no-print">
-                <button type="button" class="btn" data-copy="{{ c.cnpj_formatado }}">Copiar CNPJ</button>
                 {% if c.razao_social %}
+                <a class="btn btn-primary" href="/empresa/{{ c.cnpj }}/relatorio">{{ ui.icon('file') }} Relatório de diligência</a>
                 <button type="button" class="btn" aria-pressed="{{ 'true' if favorite else 'false' }}"
                         data-favorite-url="/api/favorites/{{ c.cnpj }}" data-label="{{ c.razao_social }}">
-                    <span aria-hidden="true">&#9733;</span> <span data-favorite-text>{{ "Favorito" if favorite else "Favoritar" }}</span>
+                    {{ ui.icon('star') }} <span data-favorite-text>{{ "Favorito" if favorite else "Favoritar" }}</span>
                 </button>
                 {% endif %}
-                <a class="btn" href="/empresa/{{ c.cnpj }}?atualizar=1" data-loading="Atualizando...">Atualizar dados</a>
+                <a class="btn" href="/empresa/{{ c.cnpj }}?atualizar=1" data-loading="Atualizando…">{{ ui.icon('refresh') }} Atualizar</a>
                 {% if c.razao_social %}
-                <a class="btn btn-primary" href="/empresa/{{ c.cnpj }}/relatorio">Relatorio personalizado</a>
                 <details class="more-actions">
-                    <summary class="btn">Mais acoes</summary>
+                    <summary class="btn">Exportar</summary>
                     <div class="more-actions-menu">
-                        <a class="btn" href="/empresa/{{ c.cnpj }}/relatorio">Relatorio personalizado</a>
-                        <a class="btn" href="/api/companies/{{ c.cnpj }}/export.csv" download>Exportar CSV (Excel)</a>
-                        <a class="btn" href="/api/companies/{{ c.cnpj }}/export.json" download>Exportar JSON</a>
-                        <button type="button" class="btn" data-print>Imprimir pagina</button>
+                        <a class="btn" href="/api/companies/{{ c.cnpj }}/export.csv" download>{{ ui.icon('download') }} CSV (Excel)</a>
+                        <a class="btn" href="/api/companies/{{ c.cnpj }}/export.json" download>{{ ui.icon('download') }} JSON</a>
+                        <button type="button" class="btn" data-print>{{ ui.icon('printer') }} Imprimir esta página</button>
                     </div>
                 </details>
                 {% endif %}
@@ -58,12 +47,14 @@
         </div>
 
         {% if c.razao_social %}
+        {% set e = c.endereco %}
         <dl class="summary">
-            <div class="summary-item"><dt>Abertura</dt><dd>{{ c.data_abertura | data_br }}</dd></div>
-            <div class="summary-item"><dt>Porte</dt><dd>{{ value(c.porte) }}</dd></div>
+            <div class="summary-item"><dt>Abertura</dt><dd>{{ c.data_abertura | data_br }}{% if c.data_abertura %}<small>{{ c.data_abertura | idade }}</small>{% endif %}</dd></div>
+            <div class="summary-item"><dt>Porte</dt><dd>{{ ui.value(c.porte) }}</dd></div>
             <div class="summary-item"><dt>Capital social</dt><dd>{{ c.capital_social | brl }}</dd></div>
-            <div class="summary-item"><dt>Simples / MEI</dt><dd>{{ sim_nao(c.opcao_simples) }} / {{ sim_nao(c.opcao_mei) }}</dd></div>
-            <div class="summary-item"><dt>Atividade principal</dt><dd>{% if c.cnae_principal %}<span class="mono">{{ c.cnae_principal.codigo | cnae }}</span>{% else %}{{ value(none) }}{% endif %}</dd></div>
+            <div class="summary-item"><dt>Simples / MEI</dt><dd>{{ ui.sim_nao(c.opcao_simples) }} / {{ ui.sim_nao(c.opcao_mei) }}</dd></div>
+            <div class="summary-item"><dt>Atividade principal</dt><dd>{% if c.cnae_principal %}<span class="mono">{{ c.cnae_principal.codigo | cnae }}</span>{% if c.cnae_principal.descricao %}<small>{{ c.cnae_principal.descricao | truncate(48) }}</small>{% endif %}{% else %}{{ ui.value(none) }}{% endif %}</dd></div>
+            <div class="summary-item"><dt>Localização</dt><dd>{% if e and (e.municipio or e.uf) %}{{ e.municipio or "" }}{% if e.uf %}/{{ e.uf }}{% endif %}{% else %}{{ ui.value(none) }}{% endif %}</dd></div>
         </dl>
         {% endif %}
     </header>
@@ -71,68 +62,66 @@
     <div class="section">
         {% if not c.razao_social %}
         <div class="alert alert-danger" role="alert">
-            <span class="alert-title">Nenhuma fonte retornou dados para este CNPJ.</span>
-            <p>O CNPJ e valido, mas pode nao existir, ser muito recente ou as fontes podem estar fora do ar ou limitando consultas.</p>
-            <ul>
-                {% for f in c.fontes %}<li><strong>{{ f.fonte | fonte }}:</strong> {{ f.erro or "sem dados" }}</li>{% endfor %}
-                {% if not c.fontes %}<li>Nenhuma fonte habilitada no <code>.env</code>.</li>{% endif %}
-            </ul>
-            <p><a href="/empresa/{{ c.cnpj }}?atualizar=1">Tentar novamente</a></p>
+            {{ ui.icon('falha') }}
+            <div>
+                <span class="alert-title">Nenhuma fonte retornou dados para este CNPJ.</span>
+                <p>O CNPJ é válido, mas pode não existir, ser muito recente ou as fontes podem estar fora do ar ou limitando consultas.</p>
+                <ul>
+                    {% for f in c.fontes %}<li><strong>{{ f.fonte | fonte }}:</strong> {{ f.erro or "sem dados" }}</li>{% endfor %}
+                    {% if not c.fontes %}<li>Nenhuma fonte habilitada no <code>.env</code>.</li>{% endif %}
+                </ul>
+                <p><a href="/empresa/{{ c.cnpj }}?atualizar=1">Tentar novamente</a> · <a href="/fontes">Ver status das fontes</a></p>
+            </div>
         </div>
         {% endif %}
 
         {% if c.conflitos %}
         <div class="alert alert-warning" role="status">
-            <span class="alert-title">As fontes divergem em {{ c.conflitos | length }} campo(s). Confira na fonte oficial antes de usar.</span>
-            <ul>{% for item in c.conflitos %}<li>{{ item | replace("minha_receita", "Minha Receita") | replace("receitaws", "ReceitaWS") | replace("brasilapi", "BrasilAPI") | replace("receita_local", "Receita (local)") | replace("cnpjws", "CNPJ.ws") }}</li>{% endfor %}</ul>
-            <p><a href="#fontes" data-open-tab="fontes">Ver procedencia campo a campo</a></p>
+            {{ ui.icon('alerta') }}
+            <div>
+                <span class="alert-title">As fontes divergem em {{ c.conflitos | length }} campo(s). Confira na fonte oficial antes de usar.</span>
+                <ul>{% for item in c.conflitos %}<li>{{ item | fontes_no_texto }}</li>{% endfor %}</ul>
+                <p><a href="#fontes" data-open-tab="fontes">Ver procedência campo a campo</a></p>
+            </div>
         </div>
         {% endif %}
 
         {% if c.razao_social and ok_sources | length < c.fontes | length %}
         <div class="alert alert-info" role="status">
-            {{ ok_sources | length }} de {{ c.fontes | length }} fontes responderam. Detalhes na aba <a href="#fontes" data-open-tab="fontes">Fontes</a>.
+            {{ ui.icon('info') }}
+            <div><p>{{ ok_sources | length }} de {{ c.fontes | length }} fontes responderam. Detalhes na aba <a href="#fontes" data-open-tab="fontes">Fontes</a>.</p></div>
         </div>
         {% endif %}
 
         {% if c.origem_cache and c.fontes %}
-        <p class="muted small">Dados do cache local, consultados em {{ c.fontes[0].data_consulta | data_br }}.
-            <a href="/empresa/{{ c.cnpj }}?atualizar=1" data-loading="Atualizando...">Atualizar agora</a></p>
+        <p class="muted small">{{ ui.icon('clock') }} Dados do cache local, consultados em {{ c.fontes[0].data_consulta | data_br }}.
+            <a href="/empresa/{{ c.cnpj }}?atualizar=1" data-loading="Atualizando…">Atualizar agora</a></p>
         {% endif %}
     </div>
 
-
     {% if diligence %}
-    <section class="card section" id="diligencia" aria-labelledby="diligencia-title">
-        <div class="section-header">
-            <h2 id="diligencia-title">Checklist de diligencia</h2>
-            <a class="btn" href="/empresa/{{ c.cnpj }}/relatorio">Abrir relatorio</a>
+    <section class="card verdict {{ verdict.nivel }}" id="diligencia" aria-labelledby="diligencia-title">
+        <span class="ico {{ {'regular': 'success', 'ressalvas': 'warning', 'critico': 'danger'}[verdict.nivel] }}">{{ ui.icon({'regular': 'ok', 'ressalvas': 'alerta', 'critico': 'falha'}[verdict.nivel]) }}</span>
+        <div>
+            <h2 id="diligencia-title">{{ verdict.titulo }}</h2>
+            <p>{{ verdict.detalhe }}</p>
         </div>
-        <ul class="list-plain diligence-list">
+        <a class="btn no-print" href="/empresa/{{ c.cnpj }}/relatorio">{{ ui.icon('file') }} Emitir relatório</a>
+        <ul class="checklist" aria-label="Checklist de diligência">
             {% for item in diligence %}
-            <li>
-                {% set cls = {"ok": "badge-success", "alerta": "badge-warning", "falha": "badge-danger", "info": "badge-info"}[item.status] %}
-                <span class="badge {{ cls }}">{{ item.status }}</span>
-                <strong>{{ item.rotulo }}</strong>
-                <span class="muted small"> — {{ item.detalhe }}</span>
-            </li>
+            <li>{{ ui.icon(item.status, 'st-' ~ item.status) }}<div><strong>{{ item.rotulo }} <span class="visually-hidden">— {{ status_labels[item.status] }}</span></strong><span>{{ item.detalhe }}</span></div></li>
             {% endfor %}
         </ul>
-        {% if c.conflitos %}
-        <div class="alert alert-warning section" role="status">
-            <span class="alert-title">Divergencias em destaque ({{ c.conflitos | length }})</span>
-            <ul>{% for item in c.conflitos %}<li>{{ item | replace("minha_receita", "Minha Receita") | replace("receitaws", "ReceitaWS") | replace("brasilapi", "BrasilAPI") | replace("receita_local", "Receita (local)") | replace("cnpjws", "CNPJ.ws") }}</li>{% endfor %}</ul>
-        </div>
-        {% endif %}
     </section>
     {% endif %}
 
     {% if c.razao_social %}
     <div class="tabs" role="tablist" aria-label="Detalhes da empresa">
         <a class="tab" role="tab" id="tab-dados" href="#dados" aria-controls="dados" aria-selected="true">Dados cadastrais</a>
-        <a class="tab" role="tab" id="tab-socios" href="#socios" aria-controls="socios" aria-selected="false">Socios <span class="count">{{ c.socios | length }}</span></a>
+        <a class="tab" role="tab" id="tab-socios" href="#socios" aria-controls="socios" aria-selected="false">Sócios <span class="count">{{ c.socios | length }}</span></a>
         <a class="tab" role="tab" id="tab-cnaes" href="#cnaes" aria-controls="cnaes" aria-selected="false">Atividades <span class="count">{{ (c.cnaes_secundarios | length) + (1 if c.cnae_principal else 0) }}</span></a>
         <a class="tab" role="tab" id="tab-estab" href="#estabelecimentos" aria-controls="estabelecimentos" aria-selected="false">Estabelecimentos {% if c.filiais %}<span class="count">{{ c.filiais | length }}</span>{% endif %}</a>
+        <a class="tab" role="tab" id="tab-internet" href="#internet" aria-controls="internet" aria-selected="false">{{ ui.icon('globe') }} Pesquisa na internet</a>
         <a class="tab" role="tab" id="tab-fontes" href="#fontes" aria-controls="fontes" aria-selected="false">Fontes <span class="count">{{ ok_sources | length }}/{{ c.fontes | length }}</span></a>
     </div>
 
@@ -140,43 +129,43 @@
         <h2 class="visually-hidden">Dados cadastrais</h2>
         <dl class="kv">
             <dt>CNPJ</dt><dd class="mono">{{ c.cnpj_formatado }}</dd>
-            <dt>Razao social</dt><dd>{{ c.razao_social }}</dd>
-            <dt>Nome fantasia</dt><dd>{{ value(c.nome_fantasia) }}</dd>
-            <dt>Situacao cadastral</dt><dd>{{ situacao_badge(c.situacao_cadastral) }}{% if c.data_situacao_cadastral %} desde {{ c.data_situacao_cadastral | data_br }}{% endif %}</dd>
-            <dt>Motivo da situacao</dt><dd>{{ value(c.motivo_situacao) }}</dd>
-            <dt>Data de abertura</dt><dd>{{ c.data_abertura | data_br }}</dd>
-            <dt>Natureza juridica</dt><dd>{{ value(c.natureza_juridica) }}</dd>
-            <dt>Porte</dt><dd>{{ value(c.porte) }}</dd>
+            <dt>Razão social</dt><dd>{{ c.razao_social }}</dd>
+            <dt>Nome fantasia</dt><dd>{{ ui.value(c.nome_fantasia) }}</dd>
+            <dt>Situação cadastral</dt><dd>{{ ui.situacao_badge(c.situacao_cadastral) }}{% if c.data_situacao_cadastral %} desde {{ c.data_situacao_cadastral | data_br }}{% endif %}</dd>
+            <dt>Motivo da situação</dt><dd>{{ ui.value(c.motivo_situacao) }}</dd>
+            <dt>Data de abertura</dt><dd>{{ c.data_abertura | data_br }}{% if c.data_abertura %} <span class="muted">({{ c.data_abertura | idade }})</span>{% endif %}</dd>
+            <dt>Natureza jurídica</dt><dd>{{ ui.value(c.natureza_juridica) }}</dd>
+            <dt>Porte</dt><dd>{{ ui.value(c.porte) }}</dd>
             <dt>Capital social</dt><dd>{{ c.capital_social | brl }}</dd>
-            <dt>Simples Nacional</dt><dd>{{ sim_nao(c.opcao_simples) }}</dd>
-            <dt>MEI</dt><dd>{{ sim_nao(c.opcao_mei) }}</dd>
-            <dt>Tipo</dt><dd>{{ value(c.matriz_filial) }}</dd>
-            <dt>Endereco</dt>
+            <dt>Simples Nacional</dt><dd>{{ ui.sim_nao(c.opcao_simples) }}</dd>
+            <dt>MEI</dt><dd>{{ ui.sim_nao(c.opcao_mei) }}</dd>
+            <dt>Tipo</dt><dd>{{ ui.value(c.matriz_filial | capitalize if c.matriz_filial else none) }}</dd>
+            <dt>Endereço</dt>
             <dd>
                 {% if c.endereco %}
                 {% set e = c.endereco %}
-                {{ e.logradouro or "" }}{% if e.numero %}, {{ e.numero }}{% endif %}{% if e.complemento %} &middot; {{ e.complemento }}{% endif %}<br>
-                {% if e.bairro %}{{ e.bairro }} &middot; {% endif %}{{ e.municipio or "" }}{% if e.uf %}/{{ e.uf }}{% endif %}
-                {% if e.cep %}&middot; CEP <span class="mono">{{ e.cep | cep }}</span>{% endif %}
-                {% else %}{{ value(none) }}{% endif %}
+                {{ e.logradouro or "" }}{% if e.numero %}, {{ e.numero }}{% endif %}{% if e.complemento %} · {{ e.complemento }}{% endif %}<br>
+                {% if e.bairro %}{{ e.bairro }} · {% endif %}{{ e.municipio or "" }}{% if e.uf %}/{{ e.uf }}{% endif %}
+                {% if e.cep %}· CEP <span class="mono">{{ e.cep | cep }}</span>{% endif %}
+                {% else %}{{ ui.value(none) }}{% endif %}
             </dd>
             <dt>Telefones</dt>
-            <dd>{% for t in c.telefones %}<span class="mono">{{ t.ddd | telefone(t.numero) }}</span>{% if not loop.last %}<br>{% endif %}{% else %}{{ value(none) }}{% endfor %}</dd>
-            <dt>E-mail</dt><dd>{{ value(c.email) }}</dd>
+            <dd>{% for t in c.telefones %}<span class="mono">{{ t.ddd | telefone(t.numero) }}</span>{% if not loop.last %}<br>{% endif %}{% else %}{{ ui.value(none) }}{% endfor %}</dd>
+            <dt>E-mail</dt><dd>{{ ui.value(c.email) }}</dd>
         </dl>
     </section>
 
     <section id="socios" class="tab-panel card" role="tabpanel" aria-labelledby="tab-socios">
-        <h2 class="visually-hidden">Quadro societario</h2>
+        <h2 class="visually-hidden">Quadro societário</h2>
         {% if c.socios %}
         <div class="table-wrap">
             <table class="data-table">
-                <thead><tr><th scope="col">Nome</th><th scope="col">Qualificacao</th><th scope="col">Entrada</th><th scope="col">Documento</th><th scope="col">Fonte</th></tr></thead>
+                <thead><tr><th scope="col">Nome</th><th scope="col">Qualificação</th><th scope="col">Entrada</th><th scope="col">Documento</th><th scope="col">Fonte</th></tr></thead>
                 <tbody>
                     {% for s in c.socios %}
                     <tr>
                         <td>{{ s.nome }}{% if s.tipo == "PESSOA_JURIDICA" %} <span class="badge badge-plain">PJ</span>{% elif s.tipo == "ESTRANGEIRO" %} <span class="badge badge-plain">Estrangeiro</span>{% endif %}</td>
-                        <td>{{ value(s.qualificacao) }}</td>
+                        <td>{{ ui.value(s.qualificacao) }}</td>
                         <td class="nowrap">{{ s.data_entrada | data_br }}</td>
                         <td class="mono nowrap">{{ s.documento_mascarado or "-" }}</td>
                         <td class="small muted">{{ s.fonte | fonte }}</td>
@@ -185,23 +174,23 @@
                 </tbody>
             </table>
         </div>
-        <p class="muted small">CPFs aparecem mascarados, como publicados pela Receita Federal. Este aplicativo nao tenta revela-los.</p>
+        <p class="muted small">CPFs aparecem mascarados, como publicados pela Receita Federal. Este aplicativo não tenta revelá-los.</p>
         {% else %}
-        <p class="empty-state">Nenhum socio informado pelas fontes (comum em empresario individual e MEI).</p>
+        <p class="empty-state">Nenhum sócio informado pelas fontes (comum em empresário individual e MEI).</p>
         {% endif %}
     </section>
 
     <section id="cnaes" class="tab-panel card" role="tabpanel" aria-labelledby="tab-cnaes">
         <h2>Atividade principal</h2>
         {% if c.cnae_principal %}
-        <p><span class="mono">{{ c.cnae_principal.codigo | cnae }}</span> &middot; {{ value(c.cnae_principal.descricao) }}</p>
-        {% else %}<p class="empty-state">Nao informada.</p>{% endif %}
-        <h2 class="section">Atividades secundarias ({{ c.cnaes_secundarios | length }})</h2>
+        <p><span class="mono">{{ c.cnae_principal.codigo | cnae }}</span> · {{ ui.value(c.cnae_principal.descricao) }}</p>
+        {% else %}<p class="empty-state">Não informada.</p>{% endif %}
+        <h2 class="section">Atividades secundárias ({{ c.cnaes_secundarios | length }})</h2>
         {% if c.cnaes_secundarios %}
         <ul class="list-plain">
-            {% for a in c.cnaes_secundarios %}<li><span class="mono">{{ a.codigo | cnae }}</span> &middot; {{ value(a.descricao) }}</li>{% endfor %}
+            {% for a in c.cnaes_secundarios %}<li><span class="mono">{{ a.codigo | cnae }}</span> · {{ ui.value(a.descricao) }}</li>{% endfor %}
         </ul>
-        {% else %}<p class="empty-state">Nenhuma atividade secundaria.</p>{% endif %}
+        {% else %}<p class="empty-state">Nenhuma atividade secundária.</p>{% endif %}
     </section>
 
     <section id="estabelecimentos" class="tab-panel card" role="tabpanel" aria-labelledby="tab-estab">
@@ -211,14 +200,22 @@
             {% for f in c.filiais %}<li><a class="mono" href="/empresa/{{ f }}">{{ f | cnpj }}</a></li>{% endfor %}
         </ul>
         {% else %}
-        <p class="empty-state">As APIs publicas nao listam filiais. Esta lista vem da base local da Receita Federal
+        <p class="empty-state">As APIs públicas não listam filiais. Esta lista vem da base local da Receita Federal
             (<code>python -m app.cli sync-receita --mes AAAA-MM</code> e <code>RECEITA_LOCAL_ENABLED=true</code>).</p>
         {% endif %}
     </section>
+
+    <section id="internet" class="tab-panel" role="tabpanel" aria-labelledby="tab-internet">
+        <h2 class="visually-hidden">Pesquisa na internet</h2>
+        {% include "_pesquisa.html" %}
+    </section>
     {% endif %}
 
-    <section id="fontes" class="tab-panel card" role="tabpanel" aria-labelledby="tab-fontes">
-        <h2>Fontes consultadas</h2>
+    <section id="fontes" class="tab-panel card" role="tabpanel" {% if c.razao_social %}aria-labelledby="tab-fontes"{% else %}aria-label="Fontes consultadas"{% endif %}>
+        <div class="card-header">
+            <h2>Fontes consultadas</h2>
+            <a class="small" href="/fontes">Status das fontes</a>
+        </div>
         <div class="table-wrap">
             <table class="data-table">
                 <thead><tr><th scope="col">Fonte</th><th scope="col">Tipo</th><th scope="col">Resultado</th><th scope="col">Consultada em</th><th scope="col">Base atualizada em</th></tr></thead>
@@ -226,7 +223,7 @@
                     {% for f in c.fontes %}
                     <tr>
                         <td>{% if f.url and f.url.startswith("http") %}<a href="{{ f.url }}" target="_blank" rel="noopener noreferrer">{{ f.fonte | fonte }}</a>{% else %}{{ f.fonte | fonte }}{% endif %}</td>
-                        <td>{% if f.espelho_rfb %}<span class="badge badge-violet" title="Fonte derivada/proxy da base da Receita Federal">Espelho</span>{% else %}<span class="badge badge-info">Primaria</span>{% endif %}</td>
+                        <td>{% if f.espelho_rfb %}<span class="badge badge-violet" title="Fonte derivada/proxy da base da Receita Federal">Espelho</span>{% else %}<span class="badge badge-info">Primária</span>{% endif %}</td>
                         <td>{% if f.status == 200 %}<span class="badge badge-success">OK</span>{% else %}<span class="badge badge-danger">Falhou</span><br><span class="small">{{ f.erro or ("HTTP " ~ f.status) }}</span>{% endif %}</td>
                         <td class="nowrap">{{ f.data_consulta | data_br }}</td>
                         <td class="nowrap">{{ f.data_atualizacao | data_br }}</td>
@@ -237,19 +234,19 @@
         </div>
 
         {% if c.campos_procedencia %}
-        <h2 class="section">Procedencia campo a campo</h2>
-        <p class="muted small"><strong>Alta</strong>: confirmado por 2+ fontes independentes. <strong>Media</strong>: uma unica base
-            (BrasilAPI repassa a Minha Receita, entao as duas contam como uma). <strong>Baixa</strong>: fontes divergem.</p>
+        <h2 class="section">Procedência campo a campo</h2>
+        <p class="muted small"><strong>Alta</strong>: confirmado por 2+ fontes independentes. <strong>Média</strong>: uma única base
+            (a BrasilAPI repassa a Minha Receita, então as duas contam como uma). <strong>Baixa</strong>: as fontes divergem.</p>
         <div class="table-wrap">
             <table class="data-table">
-                <thead><tr><th scope="col">Campo</th><th scope="col">Fonte</th><th scope="col">Valor</th><th scope="col">Confianca</th></tr></thead>
+                <thead><tr><th scope="col">Campo</th><th scope="col">Fonte</th><th scope="col">Valor</th><th scope="col">Confiança</th></tr></thead>
                 <tbody>
                     {% for p in c.campos_procedencia %}
                     <tr>
                         <td class="nowrap">{{ p.campo | replace("_", " ") | capitalize }}</td>
                         <td class="nowrap">{{ p.fonte | fonte }}</td>
                         <td>{{ p.valor }}</td>
-                        <td>{% set cls = {"alta": "badge-success", "media": "badge-info", "baixa": "badge-danger"}[p.confianca] %}<span class="badge {{ cls }}" title="{{ p.observacao or '' }}">{{ p.confianca }}</span></td>
+                        <td>{% set cls = {"alta": "badge-success", "media": "badge-info", "baixa": "badge-danger"}[p.confianca] %}<span class="badge {{ cls }}" title="{{ p.observacao or '' }}">{{ {"alta": "Alta", "media": "Média", "baixa": "Baixa"}[p.confianca] }}</span></td>
                     </tr>
                     {% endfor %}
                 </tbody>

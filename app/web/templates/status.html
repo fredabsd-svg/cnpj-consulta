@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+
+{% block title %}Status das fontes{% endblock %}
+
+{% block content %}
+{% set com_falha = ativas | selectattr("status.consecutive_failures") | list %}
+<header class="page-header">
+    <div>
+        <div class="eyebrow">{{ ui.icon('activity') }} Sistema</div>
+        <h1>Status das fontes</h1>
+        <p class="lead">Saúde de cada fonte desde que o servidor foi iniciado, limites de consulta e o que está ligado no <code>.env</code>.</p>
+    </div>
+    <a class="btn" href="/api/providers/status" target="_blank" rel="noopener">{{ ui.icon('code') }} JSON</a>
+</header>
+
+{% if not ativas %}
+<div class="alert alert-danger" role="alert">{{ ui.icon('falha') }}<div><span class="alert-title">Nenhuma fonte habilitada.</span><p>Ligue ao menos uma no <code>.env</code> (por exemplo <code>MINHA_RECEITA_ENABLED=true</code>) e reinicie o servidor.</p></div></div>
+{% elif com_falha %}
+<div class="alert alert-warning" role="status">{{ ui.icon('alerta') }}<div><span class="alert-title">{{ com_falha | length }} fonte(s) falharam na última tentativa.</span><p>As consultas continuam com as demais; a procedência mostra quem respondeu.</p></div></div>
+{% else %}
+<div class="alert alert-success" role="status">{{ ui.icon('ok') }}<div><span class="alert-title">Nenhuma falha recente nas fontes ativas.</span></div></div>
+{% endif %}
+
+<section class="source-grid" aria-label="Fontes ativas">
+    {% for p in ativas %}
+    {% set s = p.status %}
+    {% if s.total_queries == 0 %}{% set estado = ("badge-plain", "Sem consultas ainda") %}
+    {% elif s.consecutive_failures == 0 %}{% set estado = ("badge-success", "Operando") %}
+    {% elif s.last_success %}{% set estado = ("badge-warning", "Instável") %}
+    {% else %}{% set estado = ("badge-danger", "Com falha") %}{% endif %}
+    <article class="card source-card">
+        <header>
+            <div>
+                <h3>{{ p.name | fonte }}</h3>
+                {% if p.is_mirror_of_rfb %}<span class="badge badge-violet">Espelho</span>{% else %}<span class="badge badge-info">Primária</span>{% endif %}
+            </div>
+            <span class="badge {{ estado[0] }}"><span class="dot" aria-hidden="true"></span>{{ estado[1] }}</span>
+        </header>
+        <dl class="metrics">
+            <div><dt>Consultas</dt><dd>{{ s.total_queries }}</dd></div>
+            <div><dt>Erros</dt><dd>{{ s.total_errors }}</dd></div>
+            <div><dt>Limite/min</dt><dd>{{ p.rate_limit_per_minute if p.rate_limit_per_minute < 10000 else "∞" }}</dd></div>
+        </dl>
+        <p class="source-meta">
+            <span>Último sucesso: {{ s.last_success | data_br if s.last_success else "—" }}</span>
+            <span>Última falha: {{ s.last_failure | data_br if s.last_failure else "—" }}</span>
+        </p>
+        {% if s.last_error and s.consecutive_failures %}<p class="source-error">{{ s.last_error }}</p>{% endif %}
+    </article>
+    {% endfor %}
+</section>
+
+<div class="grid-2 section">
+    <section class="card" aria-labelledby="titulo-desligadas">
+        <div class="card-header"><h2 id="titulo-desligadas">Fontes desligadas</h2></div>
+        {% if desligadas %}
+        <dl class="kv">
+            {% for p in desligadas %}
+            <dt>{{ p.name | fonte }}</dt><dd><code class="small">{{ p.name | upper }}_ENABLED=true</code></dd>
+            {% endfor %}
+        </dl>
+        <p class="muted small">A ReceitaWS vem desligada porque os termos proíbem a republicação dos dados; a base local exige o <code>sync-receita</code>.</p>
+        {% else %}
+        <p class="empty-state">Todas as fontes conhecidas estão ligadas.</p>
+        {% endif %}
+    </section>
+
+    <section class="card" aria-labelledby="titulo-recursos">
+        <div class="card-header"><h2 id="titulo-recursos">Recursos opcionais</h2></div>
+        <dl class="kv">
+            <dt>Pesquisa na internet</dt><dd>{% if web_enabled %}<span class="badge badge-success">Ligada</span> {{ web_provider }}{% else %}<span class="badge badge-plain">Só atalhos</span> <code class="small">WEB_SEARCH_PROVIDER</code>{% endif %}</dd>
+            <dt>Sanções (CEIS/CNEP)</dt><dd>{% if settings.portal_transparencia_api_key %}<span class="badge badge-success">Ligada</span> Portal da Transparência{% else %}<span class="badge badge-plain">Desligada</span> <code class="small">PORTAL_TRANSPARENCIA_API_KEY</code>{% endif %}</dd>
+            <dt>Base local da Receita</dt><dd>{% if settings.receita_local_enabled %}<span class="badge badge-success">Ligada</span>{% else %}<span class="badge badge-plain">Desligada</span> <code class="small">RECEITA_LOCAL_ENABLED</code>{% endif %}</dd>
+            <dt>Cache</dt><dd>{{ settings.cache_backend | upper }} · {{ "%g" | format(settings.cache_ttl_seconds / 3600) }} h</dd>
+            <dt>Limite de entrada</dt><dd>{{ settings.inbound_rate_limit_per_minute }} consultas/min por IP · lote até {{ settings.batch_max_items }}</dd>
+            <dt>Tempo máximo</dt><dd>{{ settings.request_timeout_seconds }} s por fonte · {{ "%g" | format(settings.request_total_timeout_seconds) }} s por consulta</dd>
+        </dl>
+    </section>
+</div>
+<p class="muted small section">Os contadores zeram quando o servidor reinicia. Fontes no limite por minuto são puladas na hora e aparecem como "limite atingido" na consulta.</p>
+{% endblock %}

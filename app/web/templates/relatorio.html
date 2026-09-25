@@ -90,7 +90,7 @@
       <h2 class="sec">Divergências entre fontes</h2>
       <ul>
         {% for item in c.conflitos %}
-        <li>{{ item | replace("minha_receita", "Minha Receita") | replace("receitaws", "ReceitaWS") | replace("brasilapi", "BrasilAPI") | replace("receita_local", "Receita Federal") | replace("cnpjws", "CNPJ.ws") }}</li>
+        <li>{{ item | fontes_no_texto }}</li>
         {% endfor %}
       </ul>
     </section>

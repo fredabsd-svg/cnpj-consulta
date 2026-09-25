@@ -1,9 +1,10 @@
+{% import "_macros.html" as ui %}
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="Consulta local de CNPJ e busca reversa por socios em fontes publicas">
+    <meta name="description" content="Consulta local de CNPJ com fontes públicas cruzadas, procedência de cada dado e diligência cadastral">
     <meta name="color-scheme" content="dark light">
     <title>{% block title %}CNPJ Consulta{% endblock %} · CNPJ Consulta</title>
     <link rel="icon" href="{{ static_url('favicon.svg') }}" type="image/svg+xml">
@@ -16,49 +17,65 @@
 </head>
 <body>
 {% set atual = request.url.path %}
-{% set itens = [
-  ('/', 'Consultar CNPJ', '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>'),
-  ('/socios', 'Buscar sócio', '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'),
-  ('/historico', 'Histórico e favoritos', '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>'),
-  ('/docs', 'API', '<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>'),
-  ('/privacidade', 'Privacidade', '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>'),
+{% set grupos = [
+  ('Consultas', [
+    ('/', 'Consultar CNPJ', 'search', false),
+    ('/lote', 'Consulta em lote', 'table', true),
+    ('/socios', 'Buscar sócio', 'users', false),
+    ('/historico', 'Histórico e favoritos', 'history', false),
+  ]),
+  ('Sistema', [
+    ('/fontes', 'Status das fontes', 'activity', true),
+    ('/docs', 'API REST', 'code', false),
+    ('/privacidade', 'Privacidade', 'shield', false),
+  ]),
 ] %}
 {% macro ativo(href) -%}{% if atual == href or (href == '/' and atual.startswith('/empresa')) %}aria-current="page"{% endif %}{%- endmacro %}
-{% macro icone(paths) -%}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{{ paths|safe }}</svg>{%- endmacro %}
-{% set icone_tema = '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>' %}
 
 <a class="skip-link" href="#conteudo">Pular para o conteúdo</a>
 <div class="app" id="app">
   <aside class="sidebar" aria-label="Navegação principal">
     <a href="/" class="logo"><img class="logo-mark" src="{{ static_url('logo-mark.svg') }}" alt="" width="28" height="28"><span>CNPJ Consulta</span></a>
     <nav class="main-nav" aria-label="Principal">
-      {% for href, rotulo, paths in itens %}
-      <a href="{{ href }}" {{ ativo(href) }} title="{{ rotulo }}">{{ icone(paths) }}<span>{{ rotulo }}</span></a>
+      {% for titulo, itens in grupos %}
+      <div class="nav-group">
+        <div class="nav-label">{{ titulo }}</div>
+        {% for href, rotulo, ico, novo in itens %}
+        <a href="{{ href }}" {{ ativo(href) }} title="{{ rotulo }}">{{ ui.icon(ico) }}<span>{{ rotulo }}</span>{% if novo %}<span class="tag tag-novo">Novo</span>{% endif %}</a>
+        {% endfor %}
+      </div>
       {% endfor %}
     </nav>
     <div class="sidebar-footer">
-      <button type="button" class="btn btn-ghost" data-acao="tema" title="Alternar tema claro/escuro">
-        {{ icone(icone_tema) }}<span>Alternar tema</span>
-      </button>
       <button type="button" class="btn btn-ghost" data-acao="recolher" aria-expanded="true" title="Recolher menu">
-        {{ icone('<rect width="18" height="18" x="3" y="3"/><path d="M9 3v18"/><path d="m16 15-3-3 3-3"/>') }}<span>Recolher menu</span>
+        {{ ui.icon('sidebar') }}<span>Recolher menu</span>
       </button>
-      <div class="sidebar-meta"><strong>Instalação local</strong>v{{ version }}</div>
+      <div class="sidebar-meta"><strong>Instalação local · 127.0.0.1</strong>Versão {{ version }}</div>
     </div>
   </aside>
 
   <div class="content">
-    <div class="topbar">
-      <button type="button" class="btn btn-ghost" data-acao="menu" aria-label="Abrir menu" aria-expanded="false" aria-controls="menu-mobile">
-        {{ icone('<line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/>') }}
-      </button>
-      <img class="logo-mark" src="{{ static_url('logo-mark.svg') }}" alt="" width="28" height="28"><span>CNPJ Consulta</span>
-      <button type="button" class="btn btn-ghost" data-acao="tema" aria-label="Alternar tema claro/escuro">{{ icone(icone_tema) }}</button>
-    </div>
+    <header class="topbar">
+      <button type="button" class="icon-btn" data-acao="menu" aria-label="Abrir menu" aria-expanded="false" aria-controls="menu-mobile">{{ ui.icon('menu') }}</button>
+      <a class="topbar-brand" href="/"><img class="logo-mark" src="{{ static_url('logo-mark.svg') }}" alt="" width="28" height="28"><span>CNPJ Consulta</span></a>
+      {% if atual != '/' %}
+      <form class="quick-search" action="/consulta" method="get" role="search" aria-label="Consulta rápida de CNPJ">
+        {{ ui.icon('search') }}
+        <label for="busca-rapida" class="visually-hidden">Consultar CNPJ</label>
+        <input class="input" type="text" id="busca-rapida" name="cnpj" placeholder="Consultar CNPJ…" maxlength="18"
+               autocomplete="off" autocapitalize="characters" spellcheck="false" data-cnpj-mask data-atalho-busca>
+        <kbd aria-hidden="true">/</kbd>
+      </form>
+      {% endif %}
+      <div class="topbar-actions">
+        <a class="btn btn-ghost btn-sm" href="/lote">{{ ui.icon('table') }}<span>Lote</span></a>
+        <button type="button" class="icon-btn" data-acao="tema" aria-label="Alternar tema claro/escuro" title="Alternar tema claro/escuro">{{ ui.icon('moon') }}</button>
+      </div>
+    </header>
     <nav class="mobile-nav" id="menu-mobile" aria-label="Menu" data-aberto="false">
-      {% for href, rotulo, paths in itens %}
-      <a href="{{ href }}" {{ ativo(href) }}>{{ icone(paths) }}{{ rotulo }}</a>
-      {% endfor %}
+      {% for titulo, itens in grupos %}{% for href, rotulo, ico, novo in itens %}
+      <a href="{{ href }}" {{ ativo(href) }}>{{ ui.icon(ico) }}{{ rotulo }}</a>
+      {% endfor %}{% endfor %}
     </nav>
 
     <main class="container" id="conteudo" tabindex="-1">

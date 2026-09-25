@@ -13,7 +13,7 @@ from fastapi.responses import PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
-from app.api import companies, health, history, partners, providers
+from app.api import batch, companies, health, history, partners, providers
 from app.config import assert_bind_allowed, get_settings
 from app.db import init_database
 from app.providers.registry import get_registry
@@ -85,6 +85,7 @@ if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 app.include_router(pages_router)
+app.include_router(batch.router)
 app.include_router(companies.router)
 app.include_router(partners.router)
 app.include_router(health.router)

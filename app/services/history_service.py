@@ -131,3 +131,20 @@ def list_favorites() -> list[dict[str, Any]]:
             {"cnpj": r.cnpj, "label": r.label, "created_at": _utc_iso(r.created_at)}
             for r in rows
         ]
+
+
+def history_stats() -> dict[str, int]:
+    """Numeros do painel inicial: consultas totais, de hoje e empresas distintas."""
+    from app.db import get_session_factory
+    from app.models.favorite import Favorite
+    from app.models.history import History
+
+    inicio_do_dia = datetime.now().astimezone().replace(hour=0, minute=0, second=0, microsecond=0)
+    # queried_at e gravado em UTC sem fuso (SQLite): compara na mesma base.
+    corte = inicio_do_dia.astimezone(UTC).replace(tzinfo=None)
+    with get_session_factory()() as s:
+        total = s.scalar(select(func.count(History.id))) or 0
+        hoje = s.scalar(select(func.count(History.id)).where(History.queried_at >= corte)) or 0
+        empresas = s.scalar(select(func.count(func.distinct(History.cnpj)))) or 0
+        favoritos = s.scalar(select(func.count(Favorite.id))) or 0
+    return {"total": total, "hoje": hoje, "empresas": empresas, "favoritos": favoritos}

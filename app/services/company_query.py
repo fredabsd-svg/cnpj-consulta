@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 
 from app.core.cnpj_validator import normalize
 from app.providers.registry import ProviderRegistry, get_registry
@@ -20,11 +21,14 @@ async def query_company_async(
     registry: ProviderRegistry | None = None,
     *,
     force_refresh: bool = False,
+    on_miss: Callable[[], None] | None = None,
 ) -> CompanyUnified:
     """Consulta assincrona. Pode ser chamada de dentro de event loop (FastAPI).
 
     Levanta ValueError se o CNPJ for invalido -- nunca consulta provedores
-    externos com entrada mal formada.
+    externos com entrada mal formada. `on_miss` e chamado antes de ir as
+    fontes (so quando o cache nao serve); se levantar excecao, a consulta
+    e abortada sem tocar os provedores (usado pelo limite da consulta em lote).
     """
     normalized = normalize(cnpj)
     registry = registry or get_registry()
@@ -35,6 +39,8 @@ async def query_company_async(
         log.info("cache hit para %s", normalized)
         unified.origem_cache = True
     else:
+        if on_miss is not None:
+            on_miss()
         results = await registry.fetch_all_parallel(normalized)
         ok = [r for r in results if r.http_status == 200]
         if not ok:
