@@ -1,0 +1,298 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+
+{% block title %}Base de Dados CNPJ{% endblock %}
+
+{% set rotulos_status = {
+  "nao_instalada": ("badge-plain", "Não instalada"),
+  "desatualizada": ("badge-warning", "Desatualizada"),
+  "atualizada": ("badge-success", "Atualizada"),
+  "falhou": ("badge-danger", "Última atualização falhou"),
+  "em_andamento": ("badge-info", "Atualização em andamento"),
+  "pausada": ("badge-warning", "Atualização pausada"),
+  "interrompida": ("badge-warning", "Atualização interrompida"),
+  "formato_antigo": ("badge-warning", "Formato antigo — atualize"),
+} %}
+{% set rotulos_job = {"pendente": "Aguardando", "executando": "Em execução", "pausado": "Pausada", "cancelado": "Cancelada",
+                     "falhou": "Falhou", "concluido": "Concluída", "interrompido": "Interrompida"} %}
+
+{% block content %}
+{% set e = estado %}
+{% set a = e.ativa %}
+{% set v = e.verificacao %}
+<header class="page-header">
+    <div>
+        <div class="eyebrow">{{ ui.icon('database') }} Área administrativa</div>
+        <h1>Base de Dados CNPJ</h1>
+        <p class="lead">Dados abertos oficiais do CNPJ, baixados do portal da Receita Federal e mantidos neste computador. As consultas usam a versão ativa enquanto uma nova é preparada.</p>
+    </div>
+    <div class="actions">
+        <a class="btn btn-sm" href="/admin/auditoria">{{ ui.icon('shield') }} Auditoria</a>
+        <form action="/admin/sair" method="post"><button type="submit" class="btn btn-sm btn-ghost">{{ ui.icon('lock') }} Sair</button></form>
+    </div>
+</header>
+
+{% if request.query_params.get('msg') %}
+<div class="alert alert-info" role="status">{{ ui.icon('info') }}<div><p>{{ request.query_params.get('msg') }}</p></div></div>
+{% endif %}
+
+<section class="card base-status" aria-labelledby="t-status" data-base-painel data-job-id="{{ (e.job_ativo or {}).get('id', '') }}">
+    <div class="card-header">
+        <div>
+            <h2 id="t-status">Situação da base</h2>
+            {% set st = rotulos_status[e.status] %}
+            <p><span class="badge {{ st[0] }}" data-status-badge>{{ st[1] }}</span>
+               {% if v.verificado_em %}<span class="muted small">Portal verificado em {{ v.verificado_em | data_br }}{% if v.mes_remoto %}: versão mais recente <strong>{{ v.mes_remoto }}</strong>{% endif %}{% if v.erro %} — <span class="field-error">{{ v.erro }}</span>{% endif %}</span>{% endif %}</p>
+        </div>
+        <form action="/base/acao" method="post" data-api="/api/admin/base/verificar">
+            <input type="hidden" name="acao" value="verificar">
+            <button type="submit" class="btn">{{ ui.icon('refresh') }} Verificar nova versão</button>
+        </form>
+    </div>
+    <dl class="summary">
+        <div class="summary-item"><dt>Versão ativa</dt><dd>{% if a %}{{ a.mes or "?" }}<small>{{ "formato antigo" if a.legado or not a.schema_atual else ("publicada em " ~ (a.publicada_em | data_br)) }}</small>{% else %}{{ ui.value(none) }}{% endif %}</dd></div>
+        <div class="summary-item"><dt>Empresas</dt><dd>{{ ui.numero(a.contagens.get('empresas')) if a else "—" }}</dd></div>
+        <div class="summary-item"><dt>Estabelecimentos</dt><dd>{{ ui.numero(a.contagens.get('estabelecimentos')) if a else "—" }}</dd></div>
+        <div class="summary-item"><dt>Sócios</dt><dd>{{ ui.numero(a.contagens.get('socios')) if a else "—" }}</dd></div>
+        <div class="summary-item"><dt>Tamanho da base</dt><dd>{{ ui.bytes(a.tamanho) if a else "—" }}</dd></div>
+        <div class="summary-item"><dt>Disco</dt><dd>{{ ui.bytes(e.disco.livre) }} livres<small>{{ ui.bytes(e.disco.usado) }} usados{% if e.disco.trabalho %} · {{ ui.bytes(e.disco.trabalho) }} temporários{% endif %}</small></dd></div>
+    </dl>
+    {% if a and a.erro %}<div class="alert alert-danger section" role="alert">{{ ui.icon('falha') }}<div><p>{{ a.erro }}</p></div></div>{% endif %}
+</section>
+
+{# ------------------------------------------------------------- tarefa #}
+{% if job %}
+{% set j = job %}
+{% set ef = j.status_efetivo %}
+<section class="card section job-card" aria-labelledby="t-job" data-job data-id="{{ j.id }}" data-status="{{ ef }}">
+    <div class="card-header">
+        <div>
+            <h2 id="t-job">{{ "Validação" if j.tipo == "validar" else "Atualização" }} #{{ j.id }}{% if j.mes %} · versão {{ j.mes }}{% endif %}</h2>
+            <p class="muted small"><span data-job-status>{{ rotulos_job.get(ef, ef) }}</span> · iniciada {{ (j.iniciado_em or j.criado_em) | data_br }}{% if j.origem != "manual" %} · {{ j.origem }}{% endif %}</p>
+        </div>
+        <div class="actions">
+            {% if ef in ("pendente", "executando") %}
+            <form action="/base/acao" method="post" data-api="/api/admin/base/job/{{ j.id }}/pausar">
+                <input type="hidden" name="acao" value="pausar"><input type="hidden" name="job_id" value="{{ j.id }}">
+                <button type="submit" class="btn">{{ ui.icon('pause') }} Pausar</button></form>
+            {% endif %}
+            {% if ef in ("pausado", "falhou", "interrompido") %}
+            <form action="/base/acao" method="post" data-api="/api/admin/base/job/{{ j.id }}/retomar">
+                <input type="hidden" name="acao" value="retomar"><input type="hidden" name="job_id" value="{{ j.id }}">
+                <button type="submit" class="btn btn-primary">{{ ui.icon('play') }} {{ "Tentar novamente" if ef == "falhou" else "Retomar" }}</button></form>
+            {% endif %}
+            {% if ef in ("pendente", "executando", "pausado", "falhou", "interrompido") %}
+            <form action="/base/acao" method="post" data-api="/api/admin/base/job/{{ j.id }}/cancelar" data-confirmar-texto="CONFIRMAR"
+                  data-confirmar="Cancelar a atualização? A base ativa não muda; os downloads concluídos ficam guardados.">
+                <input type="hidden" name="acao" value="cancelar"><input type="hidden" name="job_id" value="{{ j.id }}">
+                <label class="visually-hidden" for="conf-cancelar">Digite CONFIRMAR</label>
+                <input class="input input-sm no-js-only" id="conf-cancelar" name="confirmar" placeholder="CONFIRMAR" size="10">
+                <button type="submit" class="btn btn-danger">{{ ui.icon('x') }} Cancelar</button></form>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="progresso">
+        <div class="progresso-topo"><strong data-job-pct>{{ "%.0f" | format(j.progresso or 0) }}%</strong>
+            <span data-job-msg>{{ j.mensagem or "" }}</span></div>
+        <progress max="100" value="{{ j.progresso or 0 }}" data-job-barra aria-label="Progresso geral">{{ j.progresso or 0 }}%</progress>
+        <ol class="etapas" data-job-etapas>
+            {% set achou = namespace(v=false) %}
+            {% for et in e.etapas %}
+            {% set atual = et.codigo == j.etapa %}
+            {% set estado_et = "feita" if (not achou.v and not atual and j.etapa) else ("atual" if atual else "") %}
+            {% if atual %}{% set achou.v = true %}{% endif %}
+            {% if ef == "concluido" %}{% set estado_et = "feita" %}{% endif %}
+            <li class="etapa {{ estado_et }}" data-etapa="{{ et.codigo }}">{{ et.rotulo }}</li>
+            {% endfor %}
+        </ol>
+        <dl class="progresso-detalhes">
+            <div><dt>Arquivo</dt><dd data-job-arquivo>{{ j.arquivo_atual or "—" }}</dd></div>
+            <div><dt>Etapa</dt><dd data-job-pct-etapa>{{ "%.0f" | format(j.progresso_etapa or 0) }}%</dd></div>
+            <div><dt>Baixado</dt><dd data-job-bytes>{{ ui.bytes(j.bytes_feitos) }} de {{ ui.bytes(j.bytes_total) }}</dd></div>
+            <div><dt>Velocidade</dt><dd data-job-vel>{% if j.velocidade_bps %}{{ ui.bytes(j.velocidade_bps) }}/s{% else %}—{% endif %}</dd></div>
+            <div><dt>Tempo restante</dt><dd data-job-eta>{% if j.eta_segundos %}{{ (j.eta_segundos // 60) | int }} min{% else %}—{% endif %}</dd></div>
+            <div><dt>Registros importados</dt><dd data-job-registros>{{ ui.numero(j.registros) }}</dd></div>
+        </dl>
+    </div>
+
+    {% if j.erro %}
+    <div class="alert alert-danger section" role="alert" data-job-erro>{{ ui.icon('falha') }}<div>
+        <span class="alert-title">{{ j.mensagem or "Falha" }}</span><p>{{ j.erro }}</p>
+        <p class="small">A versão ativa continua em uso. Corrija a causa (espaço, conexão) e clique em <strong>Tentar novamente</strong>: o processo continua de onde parou.</p></div></div>
+    {% endif %}
+
+    {% set rel = j.relatorio or {} %}
+    {% if ef == "concluido" and rel.contagens %}
+    <div class="section relatorio-job">
+        <h3>Relatório</h3>
+        <ul class="list-plain small">
+            {% for t, n in rel.contagens.items() %}<li>{{ t }}: <strong>{{ ui.numero(n) }}</strong>{% if rel.comparacao and rel.comparacao.get(t) %} <span class="muted">({{ "%+.1f" | format(rel.comparacao[t].variacao_pct) }}% em relação à versão anterior)</span>{% endif %}</li>{% endfor %}
+            {% for t, n in (rel.duplicados_removidos or {}).items() %}{% if n %}<li>Duplicados removidos em {{ t }}: {{ ui.numero(n) }}</li>{% endif %}{% endfor %}
+            {% for t, n in (rel.orfaos or {}).items() %}{% if n %}<li>{{ t | replace("_", " ") | capitalize }}: {{ ui.numero(n) }}</li>{% endif %}{% endfor %}
+            {% if rel.publicada %}<li>Publicada como <code>{{ rel.publicada }}</code>{% if rel.anterior %}; anterior mantida: <code>{{ rel.anterior }}</code>{% endif %}</li>{% endif %}
+        </ul>
+        {% if rel.avisos %}<details><summary>{{ rel.avisos | length }} aviso(s)</summary><ul class="small">{% for x in rel.avisos %}<li>{{ x }}</li>{% endfor %}</ul></details>{% endif %}
+    </div>
+    {% endif %}
+
+    <details class="section" {% if ef in ("falhou",) %}open{% endif %}>
+        <summary>Registro de processamento</summary>
+        <ol class="log-lista" data-job-logs>
+            {% for l in logs %}<li class="log-{{ l.nivel }}"><span class="mono faint">{{ l.em | data_br }}</span> {{ l.mensagem }}</li>{% endfor %}
+        </ol>
+    </details>
+</section>
+{% endif %}
+
+{# ------------------------------------------------------------- acoes #}
+<div class="grid-2 section">
+    <section class="card" aria-labelledby="t-atualizar">
+        <h2 id="t-atualizar">{{ ui.icon('download') }} Baixar e atualizar</h2>
+        <form action="/base/acao" method="post" data-api="/api/admin/base/atualizar" data-api-json='{"mes": "mes", "forcar": "forcar"}'>
+            <input type="hidden" name="acao" value="atualizar">
+            <div class="field">
+                <label for="f-mes">Versão</label>
+                <select class="select" id="f-mes" name="mes">
+                    <option value="">Mais recente publicada{% if v.mes_remoto %} ({{ v.mes_remoto }}){% endif %}</option>
+                    {% for m in (v.meses_disponiveis or []) | reverse %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
+                </select>
+            </div>
+            {% if v.tamanho_total %}
+            <p class="small">Download: <strong>{{ ui.bytes(v.tamanho_total) }}</strong> em {{ v.arquivos | length }} arquivos. Espaço livre recomendado durante a atualização: <strong>~{{ ui.bytes(v.espaco_estimado) }}</strong>{% if e.disco.livre < v.espaco_estimado %} <span class="badge badge-danger">insuficiente</span>{% endif %}. Depois de publicada, a base ocupa ~{{ ui.bytes(v.tamanho_total * 2) }}.</p>
+            {% else %}
+            <p class="small muted">Clique em <strong>Verificar nova versão</strong> para ver tamanhos e espaço necessário.</p>
+            {% endif %}
+            <label class="check"><input type="checkbox" name="forcar" value="sim"> Ignorar avisos de espaço e de queda nas contagens (não recomendado)</label>
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary" {% if e.job_ativo %}disabled{% endif %}>{{ ui.icon('download') }} Baixar, importar e publicar</button>
+            </div>
+            <p class="hint">Roda em segundo plano: pode fechar esta página. Pausar e retomar continuam do ponto em que parou, sem recomeçar downloads concluídos.</p>
+        </form>
+    </section>
+
+    <section class="card" aria-labelledby="t-manut">
+        <h2 id="t-manut">{{ ui.icon('shield-check') }} Manutenção</h2>
+        <form action="/base/acao" method="post" data-api="/api/admin/base/validar" class="linha-acao">
+            <input type="hidden" name="acao" value="validar">
+            <button type="submit" class="btn" {% if not a or e.job_ativo %}disabled{% endif %}>{{ ui.icon('shield-check') }} Validar base ativa</button>
+            <span class="hint">Confere tabelas, colunas, contagens, órfãos e consultas de amostra.</span>
+        </form>
+        <form action="/base/acao" method="post" data-api="/api/admin/base/restaurar" class="linha-acao" data-confirmar-texto="CONFIRMAR"
+              data-confirmar="Voltar para a versão anterior da base? As consultas passam a usar a versão anterior imediatamente.">
+            <input type="hidden" name="acao" value="restaurar">
+            <input class="input input-sm no-js-only" name="confirmar" placeholder="CONFIRMAR" size="10" aria-label="Digite CONFIRMAR">
+            <button type="submit" class="btn" {% if not a or not a.get('arquivo') or e.job_ativo %}disabled{% endif %}>{{ ui.icon('history') }} Restaurar versão anterior</button>
+        </form>
+        <form action="/base/acao" method="post" data-api="/api/admin/base/limpar" class="linha-acao" data-confirmar-texto="CONFIRMAR"
+              data-confirmar="Apagar arquivos temporários de atualizações interrompidas ({{ ui.bytes(e.disco.trabalho) }})? Downloads parciais serão perdidos.">
+            <input type="hidden" name="acao" value="limpar">
+            <input class="input input-sm no-js-only" name="confirmar" placeholder="CONFIRMAR" size="10" aria-label="Digite CONFIRMAR">
+            <button type="submit" class="btn" {% if not e.disco.trabalho or e.job_ativo %}disabled{% endif %}>{{ ui.icon('trash') }} Limpar temporários</button>
+        </form>
+
+        <h3 class="section">{{ ui.icon('calendar') }} Atualização automática</h3>
+        {% set ag = e.agenda %}
+        <form action="/base/acao" method="post" class="form-agenda">
+            <input type="hidden" name="acao" value="agenda">
+            <label class="check"><input type="checkbox" name="ativo" value="sim" {% if ag.ativo %}checked{% endif %}> Verificar o portal e atualizar quando houver versão nova</label>
+            <div class="form-pair">
+                <div class="field"><label for="f-dia">Dia</label>
+                    <select class="select" id="f-dia" name="dia_semana">
+                        <option value="">Todos os dias</option>
+                        {% for d, n in [(0, "Segunda"), (1, "Terça"), (2, "Quarta"), (3, "Quinta"), (4, "Sexta"), (5, "Sábado"), (6, "Domingo")] %}
+                        <option value="{{ d }}" {% if ag.dia_semana == d %}selected{% endif %}>{{ n }}</option>{% endfor %}
+                    </select></div>
+                <div class="field"><label for="f-hora">Hora</label>
+                    <select class="select" id="f-hora" name="hora">
+                        {% for h in range(24) %}<option value="{{ h }}" {% if (ag.hora or 3) == h %}selected{% endif %}>{{ "%02d" | format(h) }}:00</option>{% endfor %}
+                    </select></div>
+            </div>
+            <button type="submit" class="btn">{{ ui.icon('save') }} Salvar agendamento</button>
+            <p class="hint">Funciona com o servidor ligado. Para rodar com o computador sem o app aberto, agende <code>python -m app.cli base atualizar</code> no Agendador de Tarefas do Windows ou no cron.</p>
+        </form>
+    </section>
+</div>
+
+{# ------------------------------------------------------------- versoes e arquivos #}
+<div class="grid-2 section">
+    <section class="card" aria-labelledby="t-versoes">
+        <h2 id="t-versoes">{{ ui.icon('hard-drive') }} Versões no disco</h2>
+        {% if e.versoes %}
+        <div class="table-wrap"><table class="data-table">
+            <thead><tr><th scope="col">Versão</th><th scope="col">Papel</th><th scope="col" class="num">Tamanho</th><th scope="col"><span class="visually-hidden">Ações</span></th></tr></thead>
+            <tbody>
+            {% for x in e.versoes %}
+            <tr><td><span class="mono">{{ x.mes }}</span><span class="cell-sub mono">{{ x.arquivo }}</span></td>
+                <td>{% if x.papel == "ativa" %}<span class="badge badge-success">Ativa</span>{% elif x.papel == "anterior" %}<span class="badge badge-info">Anterior</span>{% else %}<span class="badge badge-plain">Antiga</span>{% endif %}</td>
+                <td class="num">{{ ui.bytes(x.tamanho) }}</td>
+                <td>{% if x.papel != "ativa" %}
+                    <form action="/base/acao" method="post" data-api="/api/admin/base/versoes/remover" data-api-json='{"arquivo": "arquivo"}' data-confirmar-texto="CONFIRMAR"
+                          data-confirmar="Remover a versão {{ x.mes }} do disco? Ela deixa de poder ser restaurada.">
+                        <input type="hidden" name="acao" value="remover_versao"><input type="hidden" name="arquivo" value="{{ x.arquivo }}">
+                        <input class="input input-sm no-js-only" name="confirmar" placeholder="CONFIRMAR" size="10" aria-label="Digite CONFIRMAR">
+                        <button type="submit" class="btn btn-sm btn-ghost" title="Remover">{{ ui.icon('trash') }}<span class="visually-hidden">Remover</span></button></form>
+                {% endif %}</td></tr>
+            {% endfor %}
+            </tbody>
+        </table></div>
+        {% else %}
+        <p class="empty-state">Nenhuma versão publicada ainda.{% if a and a.legado %} Em uso: base avulsa <code>{{ a.caminho }}</code> (formato antigo).{% endif %}</p>
+        {% endif %}
+    </section>
+
+    <section class="card" aria-labelledby="t-arquivos">
+        <h2 id="t-arquivos">{{ ui.icon('globe') }} Arquivos no portal oficial</h2>
+        {% if v.arquivos %}
+        <p class="small muted">Versão {{ v.mes_remoto }} · publicada em {{ (v.publicado_em or "")[:10] }} · fonte: portal de arquivos da Receita Federal (compartilhamento público de dados abertos).</p>
+        <div class="table-wrap arquivos-lista"><table class="data-table">
+            <thead><tr><th scope="col">Arquivo</th><th scope="col" class="num">Tamanho</th></tr></thead>
+            <tbody>{% for f in v.arquivos %}<tr><td class="mono">{{ f.nome }}</td><td class="num">{{ ui.bytes(f.tamanho) }}</td></tr>{% endfor %}</tbody>
+        </table></div>
+        {% else %}
+        <p class="empty-state">Clique em <strong>Verificar nova versão</strong> para listar os arquivos oficiais.</p>
+        {% endif %}
+    </section>
+</div>
+
+{# ------------------------------------------------------------- historico #}
+<section class="card section" aria-labelledby="t-hist">
+    <h2 id="t-hist">{{ ui.icon('history') }} Histórico de atualizações</h2>
+    {% if historico %}
+    <div class="table-wrap"><table class="data-table">
+        <thead><tr><th scope="col">#</th><th scope="col">Tipo</th><th scope="col">Versão</th><th scope="col">Início</th><th scope="col">Fim</th><th scope="col">Situação</th><th scope="col">Mensagem</th></tr></thead>
+        <tbody>
+        {% for h in historico %}
+        <tr><td class="mono">{{ h.id }}</td><td>{{ h.tipo }}{% if h.origem != "manual" %} <span class="faint small">({{ h.origem }})</span>{% endif %}</td><td class="mono">{{ h.mes or "—" }}</td>
+            <td class="nowrap">{{ (h.iniciado_em or h.criado_em) | data_br }}</td><td class="nowrap">{{ h.finalizado_em | data_br }}</td>
+            <td>{% set ef = h.status_efetivo %}<span class="badge {{ {'concluido': 'badge-success', 'falhou': 'badge-danger', 'executando': 'badge-info', 'pendente': 'badge-info'}.get(ef, 'badge-warning') }}">{{ rotulos_job.get(ef, ef) }}</span></td>
+            <td class="small">{{ (h.erro or h.mensagem or "") | truncate(140) }}</td></tr>
+        {% endfor %}
+        </tbody>
+    </table></div>
+    {% else %}<p class="empty-state">Nenhuma tarefa ainda.</p>{% endif %}
+</section>
+
+<div class="grid-2 section">
+    <section class="card" aria-labelledby="t-comp">
+        <h2 id="t-comp">{{ ui.icon('phone') }} Contatos complementares</h2>
+        <p class="small">{{ contatos.total }} contato(s) em {{ contatos.empresas }} empresa(s); {{ contatos.verificados }} verificado(s). São cadastrados manualmente na página de cada empresa, sempre com a fonte.</p>
+        <form action="/base/acao" method="post" data-api="/api/admin/contatos/retencao" class="linha-acao" data-confirmar-texto="CONFIRMAR"
+              data-confirmar="Descartar contatos sem verificação há mais de {{ settings.contatos_retencao_dias }} dias?">
+            <input type="hidden" name="acao" value="retencao">
+            <input class="input input-sm no-js-only" name="confirmar" placeholder="CONFIRMAR" size="10" aria-label="Digite CONFIRMAR">
+            <button type="submit" class="btn">{{ ui.icon('trash') }} Aplicar retenção ({{ settings.contatos_retencao_dias }} dias)</button>
+        </form>
+    </section>
+    <section class="card" aria-labelledby="t-req">
+        <h2 id="t-req">{{ ui.icon('info') }} Requisitos e procedência</h2>
+        <ul class="list-plain small">
+            <li><strong>Fonte:</strong> somente o portal oficial de arquivos da Receita Federal ({{ settings.receita_portal_url }}), pasta de dados abertos do CNPJ. O endereço dos arquivos é descoberto a cada verificação.</li>
+            <li><strong>Disco:</strong> ~45 GB livres durante a atualização; ~15 GB por versão publicada (ficam a ativa e a anterior).</li>
+            <li><strong>Memória:</strong> a importação usa até {{ settings.receita_duckdb_memoria }} de RAM (configurável); o excedente vai para disco.</li>
+            <li><strong>Tempo:</strong> o download depende da conexão (7–8 GB); importação e consolidação levam de 30 a 90 minutos.</li>
+            <li><strong>LGPD:</strong> dados públicos não são autorização irrestrita de uso. Exportações com contatos exigem finalidade e ficam na auditoria.</li>
+        </ul>
+    </section>
+</div>
+{% endblock %}

@@ -46,4 +46,4 @@ Write-Host "Para usar a CLI diretamente:" -ForegroundColor Green
 Write-Host "    python -m app.cli --help"
 Write-Host ""
 Write-Host "Para baixar a base da Receita Federal (opcional, ~10 GB):" -ForegroundColor Green
-Write-Host "    python -m app.cli sync-receita --mes 2024-08"
+Write-Host "    python -m app.cli base atualizar   (ou pelo painel Base de Dados CNPJ)"

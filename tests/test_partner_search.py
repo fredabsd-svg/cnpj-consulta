@@ -26,7 +26,7 @@ class TestSearchEnabledButNoDb:
         )
         get_settings.cache_clear()
 
-        with pytest.raises(RuntimeError, match="nao encontrada"):
+        with pytest.raises(RuntimeError, match="nao instalada"):
             search_partners("JOAO")
 
 

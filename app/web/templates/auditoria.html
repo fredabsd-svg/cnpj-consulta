@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+
+{% block title %}Auditoria{% endblock %}
+
+{% block content %}
+<nav class="breadcrumb" aria-label="Você está em"><a href="/base">Base de Dados CNPJ</a><span aria-hidden="true">/</span><span>Auditoria</span></nav>
+<header class="page-header">
+    <div>
+        <div class="eyebrow">{{ ui.icon('shield') }} Área administrativa</div>
+        <h1>Trilha de auditoria</h1>
+        <p class="lead">Operações administrativas e exportações. Sem dados pessoais: só ação, resultado, quantidades e o IP local.</p>
+    </div>
+</header>
+<section class="card">
+    <div class="table-wrap">
+        <table class="data-table">
+            <thead><tr><th scope="col">Quando</th><th scope="col">Ação</th><th scope="col">Resultado</th><th scope="col">Detalhe</th><th scope="col">IP</th></tr></thead>
+            <tbody>
+            {% for a in itens %}
+            <tr>
+                <td class="nowrap">{{ a.em | data_br }}</td>
+                <td class="mono">{{ a.acao }}</td>
+                <td>{% if a.resultado == "ok" %}<span class="badge badge-success">ok</span>{% else %}<span class="badge badge-danger">{{ a.resultado }}</span>{% endif %}</td>
+                <td class="small">{{ a.detalhe or "" }}</td>
+                <td class="mono small">{{ a.ip or "" }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" class="empty-state">Nenhum registro.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

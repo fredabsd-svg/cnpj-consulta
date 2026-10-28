@@ -1,0 +1,407 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+
+{% block title %}Busca avançada{% endblock %}
+
+{# Campos do formulario. Valores multiplos do mesmo campo = OU; campos diferentes = E. #}
+{% macro val(nome) -%}{{ (params.get(nome) or [""])[-1] }}{%- endmacro %}
+{% macro sel(nome, v) -%}{% if v|string in params.get(nome, []) %}selected{% endif %}{%- endmacro %}
+{% macro chk(nome, v) -%}{% if v|string in params.get(nome, []) %}checked{% endif %}{%- endmacro %}
+
+{% macro campo(nome, tipo=None, placeholder="", extra="") %}
+{% set c = campos[nome] %}
+{% set t = tipo or c.tipo %}
+<div class="field filtro-campo" data-campo="{{ nome }}">
+    {% if t == "checks" %}
+    <fieldset class="checks">
+        <legend>{{ c.rotulo }}</legend>
+        {% for v, r in c.opcoes %}
+        <label class="check"><input type="checkbox" name="{{ nome }}" value="{{ v }}" {{ chk(nome, v) }}> {{ r }}</label>
+        {% endfor %}
+    </fieldset>
+    {% else %}
+    <label for="f-{{ nome }}">{{ c.rotulo }}</label>
+    {% if t == "bool" or t == "enum" %}
+    <select class="select" id="f-{{ nome }}" name="{{ nome }}">
+        <option value="">Indiferente</option>
+        {% for v, r in c.opcoes %}<option value="{{ v }}" {{ sel(nome, v) }}>{{ r }}</option>{% endfor %}
+    </select>
+    {% elif t == "data" %}
+    <input class="input" type="date" id="f-{{ nome }}" name="{{ nome }}" value="{{ val(nome) }}">
+    {% elif t == "numero" %}
+    <input class="input" type="number" min="0" step="any" inputmode="decimal" id="f-{{ nome }}" name="{{ nome }}" value="{{ val(nome) }}" placeholder="{{ placeholder }}">
+    {% else %}
+    <input class="input" type="text" id="f-{{ nome }}" name="{{ nome }}" value="{{ params.get(nome, []) | join(', ') }}" placeholder="{{ placeholder }}" autocomplete="off" spellcheck="false" {{ extra | safe }}>
+    {% endif %}
+    {% endif %}
+    {% if c.ajuda %}<span class="hint">{{ c.ajuda }}</span>{% endif %}
+</div>
+{% endmacro %}
+
+{% block content %}
+<header class="page-header">
+    <div>
+        <div class="eyebrow">{{ ui.icon('filter') }} Base local da Receita Federal{% if info_base and info_base.mes %} · referência {{ info_base.mes }}{% endif %}</div>
+        <h1>Busca avançada e prospecção</h1>
+        <p class="lead">Combine filtros de cadastro, localização, atividade, sócios e contatos. Tudo roda na base local, sem consultar serviços externos.</p>
+    </div>
+</header>
+
+{% if not info_base %}
+<div class="alert alert-warning" role="alert">{{ ui.icon('database') }}<div>
+    <span class="alert-title">A base local da Receita Federal ainda não está instalada.</span>
+    <p>A busca avançada usa os dados abertos oficiais do CNPJ baixados para este computador. Instale em <a href="/base">Base de Dados CNPJ</a> (acesso de administrador) ou com <code>python -m app.cli base atualizar</code>.</p>
+</div></div>
+{% elif not info_base.schema_ok %}
+<div class="alert alert-warning" role="alert">{{ ui.icon('alerta') }}<div><p>A base local está no formato antigo. Atualize em <a href="/base">Base de Dados CNPJ</a> para usar a busca avançada.</p></div></div>
+{% endif %}
+
+<div class="busca-layout">
+  <aside class="busca-filtros" aria-label="Filtros">
+    <form class="card filtros-card" action="/busca" method="get" id="form-busca" data-busca novalidate>
+        <div class="card-header">
+            <h2>{{ ui.icon('filter') }} Filtros</h2>
+            <a class="small" href="/busca">Limpar tudo</a>
+        </div>
+
+        <details class="filtro-grupo" open>
+            <summary>Identificação</summary>
+            {{ campo("razao", placeholder="ex.: contabil") }}
+            {{ campo("fantasia") }}
+            {{ campo("cnpj", placeholder="CNPJ ou início (ex.: 12345678)") }}
+            {{ campo("situacao", "checks") }}
+            {{ campo("matriz_filial") }}
+            <div class="form-pair">{{ campo("abertura_de") }}{{ campo("abertura_ate") }}</div>
+            <div class="form-pair">{{ campo("idade_min", placeholder="anos") }}{{ campo("idade_max", placeholder="anos") }}</div>
+            {{ campo("tem_fantasia") }}
+            {% if naturezas %}
+            <div class="field"><label for="f-natureza">Natureza jurídica</label>
+                <select class="select" id="f-natureza" name="natureza" multiple size="5" data-multi>
+                    {% for n in naturezas %}<option value="{{ n.codigo }}" {{ sel('natureza', n.codigo) }}>{{ "%04d" | format(n.codigo) }} · {{ n.descricao }}</option>{% endfor %}
+                </select></div>
+            {% else %}{{ campo("natureza", "texto", placeholder="códigos, ex.: 2062, 2135") }}{% endif %}
+            <div class="form-pair">{{ campo("data_situacao_de") }}{{ campo("data_situacao_ate") }}</div>
+            {% if motivos %}
+            <div class="field"><label for="f-motivo">Motivo da situação</label>
+                <select class="select" id="f-motivo" name="motivo" multiple size="4" data-multi>
+                    {% for n in motivos %}<option value="{{ n.codigo }}" {{ sel('motivo', n.codigo) }}>{{ n.descricao }}</option>{% endfor %}
+                </select></div>
+            {% endif %}
+        </details>
+
+        <details class="filtro-grupo" {% if params.uf or params.municipio or params.bairro or params.cep %}open{% endif %}>
+            <summary>Localização</summary>
+            <fieldset class="checks checks-uf">
+                <legend>UF</legend>
+                {% for u in ufs %}<label class="check"><input type="checkbox" name="uf" value="{{ u }}" {{ chk('uf', u) }} data-uf> {{ u }}</label>{% endfor %}
+            </fieldset>
+            <div class="field"><label for="f-municipio">Município <span class="muted small">(escolha a UF primeiro)</span></label>
+                <select class="select" id="f-municipio" name="municipio" multiple size="6" data-multi data-municipios>
+                    {% for m in municipios %}<option value="{{ m.codigo }}" {{ sel('municipio', m.codigo) }}>{{ m.nome }}/{{ m.uf }}</option>{% endfor %}
+                    {% for cod in params.get('municipio', []) %}{% if not (municipios | selectattr('codigo', 'equalto', cod|int) | list) %}<option value="{{ cod }}" selected>Código {{ cod }}</option>{% endif %}{% endfor %}
+                </select>
+                <span class="hint">Segure Ctrl (ou ⌘) para escolher vários: Palmas <strong>ou</strong> Araguaína.</span></div>
+            {{ campo("municipio_nome", placeholder="nome exato, ex.: PALMAS") }}
+            {{ campo("bairro") }}
+            {{ campo("cep", placeholder="início, ex.: 77") }}
+            {{ campo("logradouro") }}
+            {{ campo("endereco_completo") }}
+            <div class="field"><label for="f-excluir_municipio">Excluir municípios (NÃO)</label>
+                <input class="input" type="text" id="f-excluir_municipio" name="excluir_municipio" value="{{ params.get('excluir_municipio', []) | join(', ') }}" placeholder="códigos da Receita"></div>
+        </details>
+
+        <details class="filtro-grupo" {% if params.atividade or params.cnae or params.cnae_principal or params.cnae_descricao %}open{% endif %}>
+            <summary>Atividade (CNAE)</summary>
+            <div class="field"><label for="f-atividade">Atividade (atalho para códigos CNAE)</label>
+                <select class="select" id="f-atividade" name="atividade" multiple size="5" data-multi>
+                    {% for k, a in atividades.items() %}<option value="{{ k }}" {{ sel('atividade', k) }}>{{ a.rotulo }} ({{ a.prefixos | join(', ') }}{% if a.prefixos|length > 3 %}…{% endif %})</option>{% endfor %}
+                </select>
+                <span class="hint">Usa o CNAE principal oficial (nunca o nome da empresa). Os códigos aparecem entre parênteses.</span></div>
+            {{ campo("cnae_principal", "texto", placeholder="ex.: 6920601", extra='data-cnae-busca') }}
+            {{ campo("cnae", "texto", placeholder="principal ou secundário", extra='data-cnae-busca') }}
+            {{ campo("cnae_secundario", "texto", placeholder="qualquer um destes", extra='data-cnae-busca') }}
+            {{ campo("cnae_secundario_todos", "texto", placeholder="todos estes", extra='data-cnae-busca') }}
+            {{ campo("cnae_grupo", placeholder="ex.: 69 (divisão), 692 (grupo)") }}
+            {{ campo("cnae_grupo_qualquer") }}
+            {{ campo("cnae_descricao", placeholder="ex.: contabilidade") }}
+            <div class="field"><label for="f-excluir_cnae">Excluir CNAEs (NÃO)</label>
+                <input class="input" type="text" id="f-excluir_cnae" name="excluir_cnae" value="{{ params.get('excluir_cnae', []) | join(', ') }}" placeholder="principal ou secundário" data-cnae-busca></div>
+            <datalist id="lista-cnaes"></datalist>
+        </details>
+
+        <details class="filtro-grupo" {% if params.contato or params.tem_telefone or params.tem_email or params.tipo_telefone %}open{% endif %}>
+            <summary>Contatos oficiais</summary>
+            <div class="field"><label for="f-contato">Combinação</label>
+                <select class="select" id="f-contato" name="contato">
+                    <option value="">Indiferente</option>
+                    {% for k, v in combinacoes.items() %}<option value="{{ k }}" {{ sel('contato', k) }}>{{ v[0] }}</option>{% endfor %}
+                </select></div>
+            {{ campo("tem_telefone") }}
+            {{ campo("tipo_telefone", "checks") }}
+            {{ campo("tem_telefone_principal") }}
+            {{ campo("tem_telefone_secundario") }}
+            {{ campo("ddd", placeholder="ex.: 63, 62") }}
+            {{ campo("tem_email") }}
+            {{ campo("email_tipo") }}
+            {{ campo("email_dominio", placeholder="ex.: empresa.com.br") }}
+            <p class="hint">Contatos oficiais são os declarados pela empresa à Receita e podem estar desatualizados.</p>
+        </details>
+
+        <details class="filtro-grupo" {% if params.comp_tem or params.tem_site or params.comp_verificado or params.origem_contato %}open{% endif %}>
+            <summary>Contatos complementares e qualidade</summary>
+            {{ campo("comp_tem") }}
+            {{ campo("comp_tipo") }}
+            {{ campo("tem_site") }}
+            {{ campo("comp_verificado") }}
+            {{ campo("comp_desatualizado") }}
+            {{ campo("comp_divergente") }}
+            {{ campo("comp_verificado_desde") }}
+            {{ campo("origem_contato") }}
+            {{ campo("dados_completos") }}
+            {{ campo("sem_empresa") }}
+        </details>
+
+        <details class="filtro-grupo" {% if params.socio_nome or params.tem_socios or params.socio_qualificacao or params.compartilha_socios_com %}open{% endif %}>
+            <summary>Sócios</summary>
+            {{ campo("tem_socios") }}
+            <div class="form-pair">{{ campo("qtd_socios_min") }}{{ campo("qtd_socios_max") }}</div>
+            {{ campo("socio_nome", placeholder="parte do nome") }}
+            {{ campo("socio_tipo", "checks") }}
+            {{ campo("socio_administrador") }}
+            {% if qualificacoes %}
+            <div class="field"><label for="f-socio_qualificacao">Qualificação</label>
+                <select class="select" id="f-socio_qualificacao" name="socio_qualificacao" multiple size="5" data-multi>
+                    {% for n in qualificacoes %}<option value="{{ n.codigo }}" {{ sel('socio_qualificacao', n.codigo) }}>{{ n.descricao }}</option>{% endfor %}
+                </select></div>
+            {% endif %}
+            <div class="form-pair">{{ campo("socio_entrada_de") }}{{ campo("socio_entrada_ate") }}</div>
+            {{ campo("socio_documento", placeholder="CNPJ do sócio PJ") }}
+            {{ campo("socio_multiempresas", placeholder="ex.: 3") }}
+            {{ campo("compartilha_socios_com", placeholder="CNPJ de referência") }}
+            <p class="hint">Os critérios de sócio valem para a <strong>mesma pessoa</strong>. O mesmo sócio em várias empresas é identificado por nome + documento como publicados (para pessoa física, uma identificação provável). A base pública não traz percentual de participação.</p>
+        </details>
+
+        <details class="filtro-grupo" {% if params.porte or params.simples or params.mei or params.capital_min %}open{% endif %}>
+            <summary>Porte e perfil</summary>
+            {{ campo("porte", "checks") }}
+            {{ campo("simples") }}
+            {{ campo("mei") }}
+            <div class="form-pair">{{ campo("capital_min") }}{{ campo("capital_max") }}</div>
+            <p class="hint">Opção pelo Simples/MEI é informação cadastral; não comprova regularidade fiscal.</p>
+        </details>
+
+        <details class="filtro-grupo" {% if params.arvore %}open{% endif %}>
+            <summary>Construtor avançado (E / OU / NÃO)</summary>
+            <div data-construtor></div>
+            <div class="field">
+                <label for="f-arvore">Condições em JSON <span class="muted small">(preenchido pelo construtor)</span></label>
+                <textarea class="textarea mono" id="f-arvore" name="arvore" rows="4" spellcheck="false" placeholder='{"op":"OU","itens":[{"campo":"uf","valor":["TO"]},{"campo":"uf","valor":["GO"],"negar":false}]}'>{{ val('arvore') }}</textarea>
+                <span class="hint">Combina com os filtros acima usando E. Use <code>"op": "OU"</code> para alternativas e <code>"negar": true</code> para NÃO.</span>
+            </div>
+        </details>
+
+        <input type="hidden" name="ordem" value="{{ val('ordem') or 'razao' }}">
+        {% if params.direcao %}<input type="hidden" name="direcao" value="{{ val('direcao') }}">{% endif %}
+        {% if params.por_pagina %}<input type="hidden" name="por_pagina" value="{{ val('por_pagina') }}">{% endif %}
+        <div class="filtros-acoes">
+            <button type="submit" class="btn btn-primary btn-block">{{ ui.icon('search') }} Aplicar filtros</button>
+            <output class="previa small muted" data-previa aria-live="polite"></output>
+        </div>
+    </form>
+
+    {% if salvas or recentes %}
+    <div class="card section">
+        {% if salvas %}
+        <h2>{{ ui.icon('save') }} Buscas salvas</h2>
+        <ul class="quick-list">
+            {% for b in salvas %}
+            <li><a href="/busca?salva={{ b.id }}"><span class="quick-title">{{ b.nome }}</span>
+                {% if b.ultimo_total is not none %}<span class="quick-meta">{{ ui.numero(b.ultimo_total) }}</span>{% endif %}</a></li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+        {% if recentes %}
+        <h2 class="section">{{ ui.icon('history') }} Recentes</h2>
+        <ul class="quick-list">
+            {% for b in recentes %}
+            <li><a href="/busca?{{ b.qs }}" title="{{ b.resumo }}">
+                <span class="quick-title">{{ b.resumo | truncate(60) }}</span>
+                {% if b.total is not none %}<span class="quick-meta">{{ ui.numero(b.total) }}</span>{% endif %}</a></li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </div>
+    {% endif %}
+  </aside>
+
+  <section class="busca-resultados" aria-labelledby="titulo-resultados">
+    <div class="card">
+        <label for="f-q" class="visually-hidden">Busca rápida</label>
+        <div class="search-bar">
+            <input class="input input-lg" type="search" id="f-q" name="q" value="{{ val('q') }}" maxlength="100" form="form-busca"
+                   placeholder="CNPJ, razão social ou nome fantasia" autocomplete="off" spellcheck="false" data-atalho-busca>
+            <button type="submit" class="btn btn-primary btn-lg" form="form-busca">{{ ui.icon('search') }} Buscar</button>
+        </div>
+        {% if chips %}
+        <ul class="chips-ativos" aria-label="Filtros ativos">
+            {% for c in chips %}
+            <li><a class="chip chip-filtro" href="/busca?{{ qs_sem(params, c.param, c.valor) }}" title="Remover este filtro">{{ c.texto }} {{ ui.icon('x') }}<span class="visually-hidden">(remover)</span></a></li>
+            {% endfor %}
+            <li><a class="chip" href="/busca">Limpar filtros</a></li>
+        </ul>
+        {% endif %}
+    </div>
+
+    {% if erro %}
+    <div class="alert alert-danger section" role="alert">{{ ui.icon('falha') }}<div><p>{{ erro }}</p></div></div>
+    {% endif %}
+    {% if request.query_params.get('erro_salvar') %}
+    <div class="alert alert-warning section" role="alert">{{ ui.icon('alerta') }}<div><p>{{ request.query_params.get('erro_salvar') }}</p></div></div>
+    {% endif %}
+
+    {% if resultado %}
+    {% set r = resultado %}
+    <div class="card section">
+        <div class="resultado-topo">
+            <div>
+                <h2 id="titulo-resultados">{{ ui.numero(r.total) }} estabelecimento(s)</h2>
+                <p class="muted small">Fonte: Receita Federal — dados abertos do CNPJ{% if r.mes_referencia %}, referência {{ r.mes_referencia }}{% endif %} · {{ r.tempo_ms }} ms</p>
+            </div>
+            <div class="resultado-ferramentas no-print">
+                <label class="visually-hidden" for="f-ordem">Ordenar por</label>
+                <select class="select" id="f-ordem" data-troca-param="ordem">
+                    {% for k, o in ordenacoes.items() %}<option value="{{ k }}" {% if r.ordem == k %}selected{% endif %}>Ordenar: {{ o[0] }}</option>{% endfor %}
+                </select>
+                <a class="btn btn-sm" href="/busca?{{ qs(params, direcao=('asc' if r.direcao == 'desc' else 'desc'), pagina=None) }}" title="Inverter ordem">{{ "↓ Decrescente" if r.direcao == "desc" else "↑ Crescente" }}</a>
+                <details class="more-actions" data-colunas>
+                    <summary class="btn btn-sm">{{ ui.icon('columns') }} Colunas</summary>
+                    <div class="more-actions-menu colunas-menu">
+                        {% for col in colunas_tela %}{% if col not in ('cnpj', 'razao_social', 'nome_fantasia', 'municipio_codigo') %}
+                        <label class="check"><input type="checkbox" data-col-toggle="{{ col }}" checked> {{ colunas[col][0] }}</label>
+                        {% endif %}{% endfor %}
+                    </div>
+                </details>
+            </div>
+        </div>
+
+        <div class="selecao-barra no-print" data-selecao-barra hidden>
+            <strong data-selecao-total>0</strong> selecionado(s)
+            <button type="button" class="btn btn-sm" data-copiar-selecionados>{{ ui.icon('copy') }} Copiar CNPJs</button>
+            {% if listas %}
+            <label class="visually-hidden" for="lista-destino">Lista</label>
+            <select class="select" id="lista-destino" data-lista-destino>
+                {% for l in listas %}<option value="{{ l.id }}">{{ l.nome }} ({{ l.qtd }})</option>{% endfor %}
+            </select>
+            <button type="button" class="btn btn-sm" data-adicionar-lista>{{ ui.icon('plus') }} Adicionar à lista</button>
+            {% else %}
+            <a class="btn btn-sm" href="/listas">{{ ui.icon('list') }} Criar uma lista</a>
+            {% endif %}
+            <button type="button" class="btn btn-sm" data-exportar-selecionados="csv">{{ ui.icon('download') }} CSV dos selecionados</button>
+        </div>
+
+        {% if r.itens %}
+        <div class="table-wrap">
+            <table class="data-table resultados" data-resultados>
+                <thead><tr>
+                    <th scope="col" class="col-sel"><input type="checkbox" data-sel-todos aria-label="Selecionar todos desta página"></th>
+                    <th scope="col">Empresa</th>
+                    {% for col in colunas_tela %}{% if col not in ('cnpj', 'razao_social', 'nome_fantasia', 'municipio_codigo') %}
+                    <th scope="col" data-col="{{ col }}">{{ colunas[col][0] }}</th>
+                    {% endif %}{% endfor %}
+                </tr></thead>
+                <tbody>
+                {% for it in r.itens %}
+                <tr data-cnpj="{{ it.cnpj }}">
+                    <td class="col-sel"><input type="checkbox" data-sel value="{{ it.cnpj }}" aria-label="Selecionar {{ it.cnpj | cnpj }}"></td>
+                    <td>
+                        <a class="cell-title" href="/empresa/{{ it.cnpj }}">{{ it.razao_social or "(sem razão social na base)" }}</a>
+                        <span class="cell-sub mono">{{ it.cnpj | cnpj }}
+                            <button type="button" class="icon-btn icon-btn-sm" data-copy="{{ it.cnpj | cnpj }}" aria-label="Copiar CNPJ">{{ ui.icon('copy') }}</button></span>
+                        {% if it.nome_fantasia %}<span class="cell-sub">{{ it.nome_fantasia }}</span>{% endif %}
+                        {% if not it.telefone_1 and not it.telefone_2 and not it.email %}<span class="badge badge-plain" title="Sem telefone nem e-mail na base oficial">Sem contato</span>{% endif %}
+                        <span data-dup></span>
+                    </td>
+                    {% for col in colunas_tela %}{% if col not in ('cnpj', 'razao_social', 'nome_fantasia', 'municipio_codigo') %}
+                    {% set v = it[col] %}
+                    <td data-col="{{ col }}" class="{% if col in ('capital_social', 'qtd_socios') %}num {% endif %}{% if col in ('abertura', 'telefone_1', 'telefone_2', 'cnae_principal') %}nowrap{% endif %}">
+                        {%- if v is none or v == "" -%}<span class="faint">—</span>
+                        {%- elif col == "situacao" -%}{{ ui.situacao_badge(v) }}
+                        {%- elif col == "abertura" -%}{{ v | data_br }}
+                        {%- elif col == "capital_social" -%}{{ v | brl }}
+                        {%- elif col in ("telefone_1", "telefone_2") -%}<a class="mono" href="tel:+55{{ v }}">{{ v[:2] | telefone(v[2:]) }}</a>
+                        {%- elif col == "email" -%}<a href="mailto:{{ v }}">{{ v }}</a>
+                        {%- elif col == "uf" -%}<a href="/busca?{{ qs(params, uf=v, pagina=None) }}" title="Filtrar por {{ v }}">{{ v }}</a>
+                        {%- elif col == "cnae_principal" -%}<a class="mono" href="/busca?{{ qs(params, cnae_principal=v, pagina=None) }}" title="Filtrar por este CNAE">{{ v | cnae }}</a>
+                        {%- elif col == "municipio" and it.municipio_codigo -%}<a href="/busca?{{ qs(params, municipio=it.municipio_codigo|string, pagina=None) }}" title="Filtrar por este município">{{ v }}</a>
+                        {%- else -%}{{ v }}{%- endif -%}
+                    </td>
+                    {% endif %}{% endfor %}
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <nav class="paginacao no-print" aria-label="Paginação">
+            {% if r.pagina > 1 %}<a class="btn btn-sm" href="/busca?{{ qs(params, pagina=r.pagina - 1) }}">← Anterior</a>{% endif %}
+            <span class="muted small">Página {{ r.pagina }} de {{ ui.numero(r.paginas) }}</span>
+            {% if r.pagina < r.paginas %}<a class="btn btn-sm" href="/busca?{{ qs(params, pagina=r.pagina + 1) }}">Próxima →</a>{% endif %}
+            <label class="visually-hidden" for="f-por-pagina">Por página</label>
+            <select class="select select-sm" id="f-por-pagina" data-troca-param="por_pagina">
+                {% for n in (25, 50, 100) %}<option value="{{ n }}" {% if r.por_pagina == n %}selected{% endif %}>{{ n }} por página</option>{% endfor %}
+            </select>
+        </nav>
+        {% else %}
+        <p class="empty-state">Nenhum estabelecimento atende a esses filtros. Remova algum filtro acima para ampliar a busca.</p>
+        {% endif %}
+    </div>
+
+    {% if r.total > 0 %}
+    <div class="grid-2 section no-print">
+        <div class="card" data-contadores data-qs="{{ qs(params, pagina=None) }}">
+            <h2>{{ ui.icon('activity') }} Distribuição do resultado</h2>
+            <p class="muted small" data-contadores-vazio>Carregando contadores…</p>
+            <noscript><p class="muted small">Os contadores precisam de JavaScript.</p></noscript>
+        </div>
+        <div class="card">
+            <h2>{{ ui.icon('download') }} Exportar e salvar</h2>
+            <form action="/api/busca/exportar.csv" method="get" class="export-form" data-exportar>
+                {% for k, vs in params.items() %}{% if k not in ('pagina', 'colunas', 'finalidade') %}{% for v in vs %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}{% endif %}{% endfor %}
+                <fieldset class="checks checks-colunas">
+                    <legend>Colunas da planilha</legend>
+                    {% for col, info in colunas.items() %}
+                    <label class="check"><input type="checkbox" name="colunas" value="{{ col }}" {% if col in colunas_padrao %}checked{% endif %} {% if info[2] %}data-restrita{% endif %}> {{ info[0] }}{% if info[2] %} <span class="badge badge-warning" title="Dado de contato ou pessoal">restrita</span>{% endif %}</label>
+                    {% endfor %}
+                </fieldset>
+                <div class="field">
+                    <label for="f-finalidade">Finalidade (obrigatória com colunas restritas)</label>
+                    <input class="input" type="text" id="f-finalidade" name="finalidade" maxlength="300" placeholder="ex.: prospecção de clientes do escritório em Palmas">
+                    <span class="hint">LGPD: informe para que os contatos serão usados. A exportação fica registrada na auditoria (sem os dados).</span>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn">{{ ui.icon('download') }} CSV (Excel)</button>
+                    <button type="submit" class="btn" formaction="/api/busca/exportar.xlsx">{{ ui.icon('table') }} Excel (.xlsx)</button>
+                </div>
+                <p class="hint">Até {{ "{:,}".format(20000) | replace(",", ".") }} linhas o arquivo sai na hora; acima disso, a exportação roda em segundo plano.</p>
+            </form>
+            <form action="/busca/salvar" method="post" class="salvar-form">
+                <input type="hidden" name="filtros" value="{{ qs(params, pagina=None) }}">
+                <label for="f-nome-busca">Salvar estes critérios</label>
+                <div class="search-bar">
+                    <input class="input" type="text" id="f-nome-busca" name="nome" maxlength="120" required placeholder="ex.: Escritórios contábeis ativos — TO">
+                    <button type="submit" class="btn">{{ ui.icon('save') }} Salvar busca</button>
+                </div>
+                <span class="hint">A busca salva guarda os critérios e é executada de novo a cada abertura (os resultados acompanham a base atualizada).</span>
+            </form>
+        </div>
+    </div>
+    {% endif %}
+    {% elif info_base and info_base.schema_ok and not erro %}
+    <div class="card section empty-state">
+        <p><strong>Escolha os filtros e clique em Aplicar.</strong> Exemplo: situação <em>Ativa</em>, UF <em>TO</em>, municípios Palmas ou Araguaína, atividade <em>Contabilidade</em>, combinação <em>Telefone e e-mail</em>, idade mínima 2 anos e <em>Tem sócios</em>.</p>
+        <p><a class="btn" href="/busca?situacao=2&uf=TO&municipio_nome=PALMAS&municipio_nome=ARAGUAINA&atividade=contabilidade&contato=telefone_e_email&idade_min=2&tem_socios=sim">Ver este exemplo</a></p>
+    </div>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

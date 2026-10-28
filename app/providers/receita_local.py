@@ -3,7 +3,9 @@
 Permite consulta por CNPJ SEM depender de APIs externas e habilita a
 busca reversa por socio.
 
-A base e montada pelo sincronizador app.sync.receita_federal. Decisoes:
+A base e montada pelo pipeline app.receita (painel "Base de Dados CNPJ" ou
+`cnpj base atualizar`); a versao em uso vem de app.receita.armazenamento.
+Decisoes:
 - Uma conexao somente-leitura POR CONSULTA, fechada em seguida. Manter a
   conexao aberta travaria o arquivo no Windows e impediria o sync de
   substituir a base com o servidor rodando.
@@ -25,10 +27,9 @@ from typing import Any
 import duckdb
 
 from app.providers.base import Provider, ProviderError, ProviderResult
+from app.receita.armazenamento import caminho_base_ativa
+from app.receita.layout import PORTES, SITUACOES  # noqa: F401 -- reexportados
 
-# Codigos oficiais do leiaute de dados abertos do CNPJ.
-SITUACOES = {1: "NULA", 2: "ATIVA", 3: "SUSPENSA", 4: "INAPTA", 8: "BAIXADA"}
-PORTES = {0: "NAO INFORMADO", 1: "MICRO EMPRESA", 3: "EMPRESA DE PEQUENO PORTE", 5: "DEMAIS"}
 TIPOS_SOCIO = {1: "PESSOA_JURIDICA", 2: "PESSOA_FISICA", 3: "ESTRANGEIRO"}
 
 
@@ -169,12 +170,12 @@ class ReceitaLocalProvider(Provider):
     def enabled(self) -> bool:
         if not self.settings.receita_local_enabled:
             return False
-        return Path(self.settings.receita_local_path).exists()
+        return caminho_base_ativa(self.settings) is not None
 
     @property
     def base_url(self) -> str:
         # Nao usa HTTP; exposto para interface
-        return f"duckdb://{self.settings.receita_local_path}"
+        return f"duckdb://{caminho_base_ativa(self.settings) or self.settings.receita_local_path}"
 
     def build_url(self, cnpj: str) -> str:
         return f"local://receita/{cnpj}"
@@ -185,7 +186,9 @@ class ReceitaLocalProvider(Provider):
 
     async def fetch_company(self, cnpj: str) -> ProviderResult:
         async def _do() -> ProviderResult:
-            path = self.settings.receita_local_path
+            path = caminho_base_ativa(self.settings)
+            if path is None:
+                raise ProviderError("Base local nao instalada", status=503, source=self.name)
             data = await asyncio.to_thread(_fetch_company_sync, path, cnpj)
             if data is None:
                 raise ProviderError("CNPJ nao encontrado na base local", status=404, source=self.name)

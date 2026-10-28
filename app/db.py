@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from pathlib import Path
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.config import get_settings
@@ -34,9 +34,25 @@ def get_engine():
         settings = get_settings()
         url = settings.database_url
         _ensure_data_dir(url)
-        connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
+        is_sqlite = url.startswith("sqlite")
+        # timeout: o processo de atualizacao da base escreve progresso ao mesmo
+        # tempo que o servidor le; WAL permite leitura durante a escrita.
+        connect_args = {"check_same_thread": False, "timeout": 30} if is_sqlite else {}
         _engine = create_engine(url, connect_args=connect_args, echo=False, future=True)
+        if is_sqlite:
+            event.listen(_engine, "connect", _sqlite_pragmas)
     return _engine
+
+
+def _sqlite_pragmas(dbapi_conn, _record) -> None:
+    cur = dbapi_conn.cursor()
+    try:
+        if ":memory:" not in str(get_settings().database_url):
+            cur.execute("PRAGMA journal_mode=WAL")
+        cur.execute("PRAGMA foreign_keys=ON")
+        cur.execute("PRAGMA busy_timeout=30000")
+    finally:
+        cur.close()
 
 
 def get_session_factory() -> sessionmaker[Session]:
@@ -49,6 +65,7 @@ def get_session_factory() -> sessionmaker[Session]:
 def init_database() -> None:
     """Cria todas as tabelas (apenas para SQLite principal)."""
     from app.models import (
+        base_cnpj,  # noqa: F401
         cached_query,  # noqa: F401
         favorite,  # noqa: F401
         history,  # noqa: F401 -- registrar modelos

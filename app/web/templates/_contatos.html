@@ -1,0 +1,134 @@
+{# Aba Contatos: oficiais (Receita) e complementares (com fonte), separados.
+   Contexto: company (c), ficha (opcional), complementares, admin, erro_contato. #}
+{% import "_macros.html" as ui %}
+{% set c = company %}
+{% macro form_contato(cnpj, k) %}
+<form action="/admin/contatos/{{ cnpj }}" method="post" class="form-contato">
+    <input type="hidden" name="acao" value="salvar">
+    {% if k %}<input type="hidden" name="contato_id" value="{{ k.id }}">{% endif %}
+    {% set sfx = k.id if k else "novo" %}
+    <div class="form-pair">
+        <div class="field"><label for="ct-tipo-{{ sfx }}">Tipo</label>
+            <select class="select" id="ct-tipo-{{ sfx }}" name="tipo" required>
+                {% for t, r in [("telefone", "Telefone"), ("email", "E-mail"), ("site", "Site")] %}<option value="{{ t }}" {% if k and k.tipo == t %}selected{% endif %}>{{ r }}</option>{% endfor %}
+            </select></div>
+        <div class="field"><label for="ct-valor-{{ sfx }}">Contato</label>
+            <input class="input" id="ct-valor-{{ sfx }}" name="valor" required maxlength="320" value="{{ k.valor if k else '' }}" placeholder="(63) 99999-9999, nome@empresa.com.br ou empresa.com.br"></div>
+    </div>
+    <div class="form-pair">
+        <div class="field"><label for="ct-fonte-{{ sfx }}">Fonte (obrigatória)</label>
+            <input class="input" id="ct-fonte-{{ sfx }}" name="fonte" required minlength="3" maxlength="200" value="{{ k.fonte if k else '' }}" placeholder="ex.: site oficial da empresa"></div>
+        <div class="field"><label for="ct-url-{{ sfx }}">Endereço da fonte <span class="faint">(opcional)</span></label>
+            <input class="input" id="ct-url-{{ sfx }}" name="url_fonte" type="url" maxlength="500" value="{{ k.url_fonte or '' if k else '' }}" placeholder="https://"></div>
+    </div>
+    <div class="form-pair">
+        <label class="check"><input type="checkbox" name="verificado" value="sim" {% if k and k.verificado %}checked{% endif %}> Verifiquei este contato</label>
+        <div class="field"><label for="ct-data-{{ sfx }}">Data da verificação</label>
+            <input class="input" type="date" id="ct-data-{{ sfx }}" name="data_verificacao" value="{{ k.data_verificacao.isoformat() if k and k.data_verificacao else '' }}"></div>
+    </div>
+    <div class="field"><label for="ct-obs-{{ sfx }}">Observação <span class="faint">(opcional)</span></label>
+        <input class="input" id="ct-obs-{{ sfx }}" name="observacao" maxlength="500" value="{{ k.observacao or '' if k else '' }}"></div>
+    <button type="submit" class="btn btn-primary btn-sm">{{ ui.icon('save') }} Salvar contato</button>
+</form>
+{% endmacro %}
+
+<section id="contatos" class="tab-panel card" role="tabpanel" aria-labelledby="tab-contatos">
+    <h2>{{ ui.icon('landmark') }} Contatos oficiais</h2>
+    <p class="muted small">Declarados pela própria empresa à Receita Federal{% if ficha %} (base de {{ ficha.base.mes }}){% endif %}. Podem estar desatualizados; o app não completa nem corrige estes dados.</p>
+    {% set oficiais = ficha.contatos_oficiais if ficha else [] %}
+    {% if ficha %}
+    {% if oficiais %}
+    <ul class="contatos-lista">
+        {% for o in oficiais %}
+        <li class="contato">
+            <span class="contato-ico">{{ ui.icon('mail' if o.tipo == 'email' else 'phone') }}</span>
+            <div>
+                <strong class="mono">{{ o.formatado }}</strong>
+                <span class="cell-sub">
+                    {% if o.tipo == "telefone" %}Telefone {{ o.posicao }} · {{ {"celular": "celular", "fixo": "fixo", "indeterminado": "tipo indeterminado"}[o.subtipo] }}{% elif o.tipo == "fax" %}Fax{% else %}E-mail{% if o.subtipo == "dominio_proprio" %} · domínio próprio provável{% elif o.subtipo == "webmail" %} · webmail{% endif %}{% endif %}
+                    {% if not o.valido %} · <span class="badge badge-warning">formato inválido na fonte</span>{% endif %}
+                </span>
+                <span class="cell-sub">{{ ui.origem_badge("oficial") }} referência {{ o.data_referencia }}</span>
+            </div>
+            <div class="contato-acoes">
+                <button type="button" class="btn btn-sm" data-copy="{{ o.formatado }}">{{ ui.icon('copy') }} Copiar</button>
+                {% if o.tipo == "email" and o.valido %}<a class="btn btn-sm" href="mailto:{{ o.valor }}">{{ ui.icon('mail') }} Enviar e-mail</a>{% endif %}
+                {% if o.tipo == "telefone" and o.valido %}<a class="btn btn-sm" href="tel:+55{{ o.valor }}">{{ ui.icon('phone') }} Ligar</a>{% endif %}
+            </div>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p class="empty-state">A empresa não declarou telefone nem e-mail à Receita.</p>
+    {% endif %}
+    {% else %}
+    {% if c.telefones or c.email %}
+    <ul class="contatos-lista">
+        {% for t in c.telefones %}
+        <li class="contato"><span class="contato-ico">{{ ui.icon('phone') }}</span>
+            <div><strong class="mono">{{ t.ddd | telefone(t.numero) }}</strong><span class="cell-sub">Telefone {{ t.tipo or "" }} · fontes da consulta (aba Fontes)</span></div>
+            <div class="contato-acoes"><button type="button" class="btn btn-sm" data-copy="{{ t.ddd | telefone(t.numero) }}">{{ ui.icon('copy') }} Copiar</button></div></li>
+        {% endfor %}
+        {% if c.email %}
+        <li class="contato"><span class="contato-ico">{{ ui.icon('mail') }}</span>
+            <div><strong>{{ c.email }}</strong><span class="cell-sub">E-mail · fontes da consulta (aba Fontes)</span></div>
+            <div class="contato-acoes"><button type="button" class="btn btn-sm" data-copy="{{ c.email }}">{{ ui.icon('copy') }} Copiar</button>
+                <a class="btn btn-sm" href="mailto:{{ c.email }}">{{ ui.icon('mail') }} Enviar e-mail</a></div></li>
+        {% endif %}
+    </ul>
+    {% else %}
+    <p class="empty-state">Nenhuma fonte informou telefone ou e-mail.</p>
+    {% endif %}
+    {% endif %}
+
+    <h2 class="section">{{ ui.icon('plus') }} Contatos complementares</h2>
+    <p class="muted small">Obtidos fora da base da Receita (site da empresa, documento do cliente, contato direto), sempre com a fonte e a data de verificação informadas por quem cadastrou. Nunca são preenchidos automaticamente.</p>
+    {% if erro_contato %}<div class="alert alert-danger" role="alert">{{ ui.icon('falha') }}<div><p>{{ erro_contato }}</p></div></div>{% endif %}
+    {% if complementares %}
+    <ul class="contatos-lista">
+        {% for k in complementares %}
+        <li class="contato">
+            <span class="contato-ico">{{ ui.icon({'email': 'mail', 'site': 'globe'}.get(k.tipo, 'phone')) }}</span>
+            <div>
+                <strong class="mono">{% if k.tipo == "telefone" %}{{ k.valor_normalizado[:2] | telefone(k.valor_normalizado[2:]) }}{% else %}{{ k.valor }}{% endif %}</strong>
+                <span class="cell-sub">{{ k.tipo | capitalize }}{% if k.subtipo %} · {{ k.subtipo }}{% endif %} · fonte: {% if k.url_fonte %}<a href="{{ k.url_fonte }}" target="_blank" rel="noopener noreferrer nofollow">{{ k.fonte }}</a>{% else %}{{ k.fonte }}{% endif %}</span>
+                <span class="cell-sub">{{ ui.origem_badge("complementar") }}
+                    {% if k.verificado %}<span class="badge badge-success">verificado em {{ k.data_verificacao | data_br }}</span>{% else %}<span class="badge badge-plain">não verificado</span>{% endif %}
+                    {% if k.desatualizado %}<span class="badge badge-warning">verificação antiga</span>{% endif %}
+                    {% if k.difere_do_oficial %}<span class="badge badge-warning" title="Diferente do contato declarado à Receita">diverge do oficial</span>{% endif %}</span>
+                {% if k.observacao %}<span class="cell-sub">{{ k.observacao }}</span>{% endif %}
+            </div>
+            <div class="contato-acoes">
+                <button type="button" class="btn btn-sm" data-copy="{{ k.valor }}">{{ ui.icon('copy') }} Copiar</button>
+                {% if k.tipo == "email" %}<a class="btn btn-sm" href="mailto:{{ k.valor_normalizado }}">{{ ui.icon('mail') }} E-mail</a>{% endif %}
+                {% if k.tipo == "site" %}<a class="btn btn-sm" href="https://{{ k.valor_normalizado }}" target="_blank" rel="noopener noreferrer nofollow">{{ ui.icon('external') }} Abrir</a>{% endif %}
+                {% if admin %}
+                <form action="/admin/contatos/{{ c.cnpj }}" method="post" data-confirmar="Remover este contato complementar?">
+                    <input type="hidden" name="acao" value="remover"><input type="hidden" name="contato_id" value="{{ k.id }}">
+                    <button type="submit" class="btn btn-sm btn-ghost" title="Remover">{{ ui.icon('trash') }}<span class="visually-hidden">Remover</span></button>
+                </form>
+                {% endif %}
+            </div>
+            {% if admin %}
+            <details class="contato-editar">
+                <summary class="small">Corrigir / atualizar</summary>
+                {{ form_contato(c.cnpj, k) }}
+            </details>
+            {% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p class="empty-state">Nenhum contato complementar cadastrado.</p>
+    {% endif %}
+
+    {% if admin %}
+    <details class="section card-inset" {% if erro_contato %}open{% endif %}>
+        <summary><strong>{{ ui.icon('plus') }} Cadastrar contato complementar</strong></summary>
+        {{ form_contato(c.cnpj, none) }}
+    </details>
+    {% else %}
+    <p class="small"><a href="/admin/entrar?proximo=/empresa/{{ c.cnpj }}%23contatos">{{ ui.icon('lock') }} Entrar como administrador</a> para cadastrar, corrigir ou remover contatos complementares.</p>
+    {% endif %}
+</section>
+

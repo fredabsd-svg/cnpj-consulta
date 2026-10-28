@@ -45,30 +45,34 @@ class ProviderRegistry:
             except Exception:  # pragma: no cover -- defensivo
                 log.exception("Falha ao instanciar %s", cls.__name__)
                 continue
-            (self._providers if p.enabled else self._disabled).append(p)
+            # A base local pode ser instalada com o servidor rodando: fica na
+            # lista e a disponibilidade e conferida a cada consulta.
+            dinamico = isinstance(p, ReceitaLocalProvider) and settings.receita_local_enabled
+            (self._providers if p.enabled or dinamico else self._disabled).append(p)
 
     async def aclose(self) -> None:
         for p in self._providers:
             await p.aclose()
 
     def all(self) -> list[Provider]:
-        return list(self._providers)
+        return [p for p in self._providers if p.enabled]
 
     def disabled(self) -> list[Provider]:
         """Fontes conhecidas mas desligadas no .env (para a pagina de status)."""
-        return list(self._disabled)
+        return list(self._disabled) + [p for p in self._providers if not p.enabled]
 
     def by_name(self, name: str) -> Provider | None:
-        return next((p for p in self._providers if p.name == name), None)
+        return next((p for p in self.all() if p.name == name), None)
 
-    async def fetch_all_parallel(self, cnpj: str) -> list[ProviderResult]:
+    async def fetch_all_parallel(self, cnpj: str, *, nomes: set[str] | None = None) -> list[ProviderResult]:
         """Consulta todos os provedores habilitados em paralelo.
 
         Cada provedor que falhar (ou estourar o tempo total) NAO interrompe os
         demais -- a falha vira um ProviderResult com erro na procedencia.
         """
         budget = self.settings.request_total_timeout_seconds
-        tasks = [self._safe_fetch(p, cnpj, budget) for p in self._providers]
+        alvos = [p for p in self.all() if nomes is None or p.name in nomes]
+        tasks = [self._safe_fetch(p, cnpj, budget) for p in alvos]
         return list(await asyncio.gather(*tasks))
 
     @staticmethod

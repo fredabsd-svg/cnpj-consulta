@@ -11,25 +11,28 @@
         <p class="lead">Situação cadastral, sócios, CNAEs e endereço comparados entre as fontes, com a procedência
             de cada dado, checklist de diligência e relatório pronto para o cliente.</p>
 
-        <form action="/consulta" method="get" data-loading="Consultando fontes…" novalidate>
+        <form action="/consulta" method="get" data-loading="Consultando…" novalidate>
             <div class="field">
-                <label for="cnpj">CNPJ da empresa</label>
-                <div class="search-bar">
+                <label for="cnpj">{% if receita_local %}CNPJ, razão social ou nome fantasia{% else %}CNPJ da empresa{% endif %}</label>
+                <div class="search-bar sugestoes-wrap">
                     <input class="input input-lg" type="text" id="cnpj" name="cnpj"
-                           value="{{ value }}" placeholder="00.000.000/0000-00"
-                           autocomplete="off" autocapitalize="characters" spellcheck="false"
-                           maxlength="18" autofocus required data-cnpj-mask data-atalho-busca
+                           value="{{ value }}" placeholder="{% if receita_local %}00.000.000/0000-00 ou nome da empresa{% else %}00.000.000/0000-00{% endif %}"
+                           autocomplete="off" spellcheck="false"
+                           maxlength="{{ 100 if receita_local else 18 }}" autofocus required data-cnpj-mask="auto" data-atalho-busca
+                           {% if receita_local %}data-sugestoes role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="sug-inicio"{% endif %}
                            aria-describedby="cnpj-hint{% if error %} cnpj-erro{% endif %}"
                            {% if error %}aria-invalid="true"{% endif %}>
+                    {% if receita_local %}<ul class="sugestoes" id="sug-inicio" role="listbox" hidden></ul>{% endif %}
                     <button type="submit" class="btn btn-primary btn-lg">{{ ui.icon('search') }} Consultar</button>
                 </div>
-                <span id="cnpj-hint" class="hint">Numérico ou alfanumérico, com ou sem pontuação. Pressione <kbd>/</kbd> em qualquer tela para consultar.</span>
+                <span id="cnpj-hint" class="hint">{% if receita_local %}Digite o CNPJ (numérico ou alfanumérico) ou parte do nome: as sugestões vêm da base local da Receita.{% else %}Numérico ou alfanumérico, com ou sem pontuação.{% endif %} Pressione <kbd>/</kbd> em qualquer tela para consultar.</span>
                 {% if error %}<p id="cnpj-erro" class="field-error" role="alert">{{ error }}</p>{% endif %}
                 <p class="loading-note" aria-live="polite">Consultando Minha Receita, BrasilAPI e as demais fontes habilitadas…</p>
             </div>
         </form>
         <div class="examples"><span>Exemplos:</span>
             <a class="chip" href="/consulta?cnpj=19.131.243%2F0001-97">19.131.243/0001-97</a>
+            <a class="chip" href="/busca">Busca avançada e prospecção →</a>
             <a class="chip" href="/lote">Vários CNPJs de uma vez →</a>
         </div>
     </div>
@@ -64,6 +67,11 @@
         <span class="ico">{{ ui.icon('table') }}</span>
         <strong>Consulta em lote <span class="tag tag-novo">Novo</span></strong>
         <span>Cole até 30 CNPJs e exporte o quadro-resumo para o Excel.</span>
+    </a>
+    <a class="card shortcut" href="/busca">
+        <span class="ico violet">{{ ui.icon('filter') }}</span>
+        <strong>Busca avançada <span class="tag tag-novo">Novo</span></strong>
+        <span>{% if receita_local %}Filtre por UF, município, CNAE, porte, sócios e contatos; exporte para o Excel.{% else %}Requer a base local da Receita Federal (menu Base de Dados CNPJ).{% endif %}</span>
     </a>
     <a class="card shortcut" href="/socios">
         <span class="ico violet">{{ ui.icon('users') }}</span>

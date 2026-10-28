@@ -22,6 +22,7 @@
                     <button type="button" class="icon-btn" data-copy="{{ c.cnpj_formatado }}" aria-label="Copiar CNPJ" title="Copiar CNPJ">{{ ui.icon('copy') }}</button>
                     {% if c.razao_social %}{{ ui.situacao_badge(c.situacao_cadastral) }}{% endif %}
                     {% if c.data_situacao_cadastral %}<span>desde {{ c.data_situacao_cadastral | data_br }}</span>{% endif %}
+                    {% if ficha %}<span class="badge badge-info" title="Dados da base local oficial da Receita Federal">{{ ui.icon('database') }} Base local RFB · {{ ficha.base.mes }}</span>{% endif %}
                 </div>
             </div>
             <div class="actions no-print">
@@ -39,8 +40,10 @@
                 <details class="more-actions">
                     <summary class="btn">Mais</summary>
                     <div class="more-actions-menu">
-                        <a class="btn" href="/empresa/{{ c.cnpj }}?atualizar=1" data-loading="Atualizando…">{{ ui.icon('refresh') }} Atualizar dados</a>
+                        <a class="btn" href="/empresa/{{ c.cnpj }}?atualizar=1" data-loading="Atualizando…">{{ ui.icon('refresh') }} {{ "Comparar com fontes externas" if so_local else "Atualizar dados" }}</a>
                         {% if c.razao_social %}
+                        {% if ficha %}<a class="btn" href="/empresa/{{ c.cnpj }}/ficha.xlsx" download>{{ ui.icon('table') }} Ficha em Excel (.xlsx)</a>{% endif %}
+                        <a class="btn" href="/empresa/{{ c.cnpj }}/relatorio">{{ ui.icon('printer') }} PDF (relatório para imprimir)</a>
                         <a class="btn" href="/api/companies/{{ c.cnpj }}/export.csv" download>{{ ui.icon('download') }} CSV (Excel)</a>
                         <a class="btn" href="/api/companies/{{ c.cnpj }}/export.json" download>{{ ui.icon('download') }} JSON</a>
                         <button type="button" class="btn" data-print>{{ ui.icon('printer') }} Imprimir esta página</button>
@@ -97,6 +100,19 @@
         </div>
         {% endif %}
 
+        {% if so_local and c.razao_social %}
+        <p class="muted small">{{ ui.icon('database') }} Dados da base local da Receita Federal (referência {{ ficha.base.mes if ficha else "" }}), sem consultar serviços externos.
+            <a href="/empresa/{{ c.cnpj }}?externas=1" data-loading="Consultando fontes externas…">Comparar com as fontes externas</a></p>
+        {% endif %}
+        {% if listas and c.razao_social %}
+        <form action="/listas/adicionar" method="post" class="inline-form no-print">
+            <input type="hidden" name="cnpjs" value="{{ c.cnpj }}"><input type="hidden" name="voltar" value="/empresa/{{ c.cnpj }}">
+            <label for="lista-empresa" class="small muted">{{ ui.icon('list') }} Adicionar à lista</label>
+            <select class="select select-sm" id="lista-empresa" name="lista_id">{% for l in listas %}<option value="{{ l.id }}">{{ l.nome }}</option>{% endfor %}</select>
+            <button type="submit" class="btn btn-sm">{{ ui.icon('plus') }} Adicionar</button>
+        </form>
+        {% endif %}
+
         {% if c.origem_cache and c.fontes %}
         <p class="muted small">{{ ui.icon('clock') }} Dados do cache local, consultados em {{ c.fontes[0].data_consulta | data_br }}.
             <a href="/empresa/{{ c.cnpj }}?atualizar=1" data-loading="Atualizando…">Atualizar agora</a></p>
@@ -121,16 +137,22 @@
 
     {% if c.razao_social %}
     <div class="tabs" role="tablist" aria-label="Detalhes da empresa">
-        <a class="tab" role="tab" id="tab-dados" href="#dados" aria-controls="dados" aria-selected="true">Dados cadastrais</a>
-        <a class="tab" role="tab" id="tab-socios" href="#socios" aria-controls="socios" aria-selected="false">Sócios <span class="count">{{ c.socios | length }}</span></a>
-        <a class="tab" role="tab" id="tab-cnaes" href="#cnaes" aria-controls="cnaes" aria-selected="false">Atividades <span class="count">{{ (c.cnaes_secundarios | length) + (1 if c.cnae_principal else 0) }}</span></a>
-        <a class="tab" role="tab" id="tab-estab" href="#estabelecimentos" aria-controls="estabelecimentos" aria-selected="false">Estabelecimentos {% if c.filiais %}<span class="count">{{ c.filiais | length }}</span>{% endif %}</a>
-        <a class="tab" role="tab" id="tab-internet" href="#internet" aria-controls="internet" aria-selected="false">{{ ui.icon('globe') }} Pesquisa na internet</a>
+        <a class="tab" role="tab" id="tab-dados" href="#dados" aria-controls="dados" aria-selected="true">Resumo</a>
+        <a class="tab" role="tab" id="tab-endereco" href="#endereco" aria-controls="endereco" aria-selected="false">Endereço</a>
+        <a class="tab" role="tab" id="tab-contatos" href="#contatos" aria-controls="contatos" aria-selected="false">Contatos {% if complementares %}<span class="count">+{{ complementares | length }}</span>{% endif %}</a>
+        <a class="tab" role="tab" id="tab-cnaes" href="#cnaes" aria-controls="cnaes" aria-selected="false">CNAEs <span class="count">{{ (ficha.cnaes.secundarios | length + (1 if ficha.cnaes.principal else 0)) if ficha else ((c.cnaes_secundarios | length) + (1 if c.cnae_principal else 0)) }}</span></a>
+        <a class="tab" role="tab" id="tab-socios" href="#socios" aria-controls="socios" aria-selected="false">Sócios <span class="count">{{ (ficha.socios | length) if ficha else (c.socios | length) }}</span></a>
+        <a class="tab" role="tab" id="tab-estab" href="#estabelecimentos" aria-controls="estabelecimentos" aria-selected="false">Estabelecimentos {% if ficha %}<span class="count">{{ ficha.estabelecimentos.total }}</span>{% elif c.filiais %}<span class="count">{{ c.filiais | length }}</span>{% endif %}</a>
+        <a class="tab" role="tab" id="tab-historico" href="#historico" aria-controls="historico" aria-selected="false">Histórico</a>
+        <a class="tab" role="tab" id="tab-internet" href="#internet" aria-controls="internet" aria-selected="false">{{ ui.icon('globe') }} Pesquisa</a>
         <a class="tab" role="tab" id="tab-fontes" href="#fontes" aria-controls="fontes" aria-selected="false">Fontes <span class="count">{{ ok_sources | length }}/{{ c.fontes | length }}</span></a>
     </div>
 
+    {% if ficha %}
+    {% include "_ficha_local.html" %}
+    {% else %}
     <section id="dados" class="tab-panel card" role="tabpanel" aria-labelledby="tab-dados">
-        <h2 class="visually-hidden">Dados cadastrais</h2>
+        <h2 class="visually-hidden">Resumo</h2>
         <dl class="kv">
             <dt>CNPJ</dt><dd class="mono">{{ c.cnpj_formatado }}</dd>
             <dt>Razão social</dt><dd>{{ c.razao_social }}</dd>
@@ -207,9 +229,36 @@
         </ul>
         {% else %}
         <p class="empty-state">As APIs públicas não listam filiais. Esta lista vem da base local da Receita Federal
-            (<code>python -m app.cli sync-receita --mes AAAA-MM</code> e <code>RECEITA_LOCAL_ENABLED=true</code>).</p>
+            (painel <a href="/base">Base de Dados CNPJ</a> ou <code>python -m app.cli base atualizar</code>).</p>
         {% endif %}
     </section>
+
+    <section id="endereco" class="tab-panel card" role="tabpanel" aria-labelledby="tab-endereco">
+        <h2>Endereço</h2>
+        {% if c.endereco %}{% set e = c.endereco %}
+        <dl class="kv">
+            <dt>Logradouro</dt><dd>{{ ui.value(e.logradouro) }}</dd>
+            <dt>Número</dt><dd>{{ ui.value(e.numero) }}</dd>
+            {% if e.complemento %}<dt>Complemento</dt><dd>{{ e.complemento }}</dd>{% endif %}
+            <dt>Bairro</dt><dd>{{ ui.value(e.bairro) }}</dd>
+            <dt>CEP</dt><dd>{% if e.cep %}<span class="mono">{{ e.cep | cep }}</span>{% else %}{{ ui.value(none) }}{% endif %}</dd>
+            <dt>Município/UF</dt><dd>{{ e.municipio or "" }}{% if e.uf %}/{{ e.uf }}{% endif %}</dd>
+        </dl>
+        {% else %}<p class="empty-state">Endereço não informado.</p>{% endif %}
+    </section>
+
+    {% include "_contatos.html" %}
+
+    <section id="historico" class="tab-panel card" role="tabpanel" aria-labelledby="tab-historico">
+        <h2>Linha do tempo cadastral</h2>
+        <ol class="linha-tempo">
+            {% if c.data_situacao_cadastral %}<li><span class="mono">{{ c.data_situacao_cadastral | data_br }}</span><span>Situação cadastral: {{ c.situacao_cadastral }}{% if c.motivo_situacao %} — {{ c.motivo_situacao }}{% endif %}</span></li>{% endif %}
+            {% for s in c.socios | selectattr("data_entrada") | sort(attribute="data_entrada", reverse=true) %}<li><span class="mono">{{ s.data_entrada | data_br }}</span><span>Entrada de {{ s.nome }} no quadro societário</span></li>{% endfor %}
+            {% if c.data_abertura %}<li><span class="mono">{{ c.data_abertura | data_br }}</span><span>Início da atividade (abertura)</span></li>{% endif %}
+        </ol>
+        <p class="muted small">Com a base local da Receita instalada, esta aba mostra também as opções pelo Simples/MEI e as mudanças entre versões da base.</p>
+    </section>
+    {% endif %}
 
     <section id="internet" class="tab-panel" role="tabpanel" aria-labelledby="tab-internet">
         <h2 class="visually-hidden">Pesquisa na internet</h2>

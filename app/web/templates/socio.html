@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+
+{% block title %}{{ socio.nome if socio else "Sócio" }}{% endblock %}
+
+{% block content %}
+<nav class="breadcrumb" aria-label="Você está em"><a href="/socios">Buscar sócio</a><span aria-hidden="true">/</span><span>Sócio</span></nav>
+{% if erro %}
+<div class="alert alert-warning" role="alert">{{ ui.icon('alerta') }}<div><p>{{ erro }}</p></div></div>
+{% else %}
+{% set s = socio %}
+<header class="card">
+    <div class="eyebrow">{{ ui.icon('users') }} {{ s.tipo or "Sócio" }}</div>
+    <h1>{{ s.nome }}</h1>
+    <div class="company-id">
+        {% if s.documento %}<span class="mono" title="Como publicado pela Receita">{{ s.documento }}</span>{% endif %}
+        <span class="badge badge-info">{{ s.qtd_empresas }} empresa(s) na base</span>
+        {{ ui.origem_badge("oficial") }}
+    </div>
+    {% if s.identificacao_provavel %}
+    <p class="muted small section">{{ ui.icon('info') }} A Receita publica o CPF mascarado (6 dígitos visíveis). As empresas abaixo têm um sócio com o <strong>mesmo nome e os mesmos dígitos visíveis</strong> — identificação provável, não confirmação de que é a mesma pessoa.</p>
+    {% endif %}
+    <div class="actions section">
+        <a class="btn" href="/busca?socio_chave={{ s.chave }}">{{ ui.icon('filter') }} Abrir estas empresas na busca avançada</a>
+    </div>
+</header>
+
+<section class="card section" aria-labelledby="t-empresas">
+    <h2 id="t-empresas">Empresas relacionadas</h2>
+    <div class="table-wrap">
+        <table class="data-table">
+            <thead><tr><th scope="col">Empresa</th><th scope="col">Situação</th><th scope="col">Qualificação</th><th scope="col">Entrada</th><th scope="col">Sede</th></tr></thead>
+            <tbody>
+            {% for e in s.empresas %}
+            <tr>
+                <td><a class="cell-title" href="/empresa/{{ e.cnpj }}">{{ e.razao_social }}</a><span class="cell-sub mono">{{ e.cnpj | cnpj }}</span></td>
+                <td>{{ ui.situacao_badge(e.situacao) }}</td>
+                <td>{{ e.qualificacao or "—" }}{% if e.administrador %} <span class="badge badge-violet">Administração</span>{% endif %}</td>
+                <td class="nowrap">{{ e.data_entrada | data_br }}</td>
+                <td>{{ e.municipio_nome or "" }}{% if e.uf %}/{{ e.uf }}{% endif %}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <p class="muted small">Fonte: Receita Federal — dados abertos do CNPJ (QSA). A base pública não informa percentual de participação.</p>
+</section>
+{% endif %}
+{% endblock %}

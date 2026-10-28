@@ -24,9 +24,11 @@ err_console = Console(stderr=True)
 # Sub-comandos
 providers_app = typer.Typer(help="Gerenciar provedores", no_args_is_help=True)
 consulta_app = typer.Typer(help="Consultas pre-definidas", no_args_is_help=True)
+base_app = typer.Typer(help="Base local da Receita Federal (dados abertos do CNPJ)", no_args_is_help=True)
 
 app.add_typer(providers_app, name="providers")
 app.add_typer(consulta_app, name="consulta")
+app.add_typer(base_app, name="base")
 
 
 @app.callback()
@@ -192,37 +194,192 @@ def consulta_historico(limit: int = typer.Option(20, "--limit", "-n")) -> None:
         console.print(f"  {r['queried_at']}  {r['cnpj']}  {r.get('razao_social') or '-'}")
 
 
-@app.command()
-def sync_receita(
-    mes: str = typer.Option(..., "--mes", help="Mes da base no formato YYYY-MM"),
-    keep_zip: bool = typer.Option(False, "--keep-zip", help="Nao apagar ZIPs apos importar"),
-    only_download: bool = typer.Option(False, "--only-download", help="So baixar, sem importar"),
-    only_import: bool = typer.Option(False, "--only-import", help="So importar ZIPs/CSVs ja baixados"),
-    data_dir: Path = typer.Option(None, "--data-dir", help="Padrao: pasta de RECEITA_LOCAL_PATH"),
-) -> None:
-    """Baixa e importa a base oficial da Receita Federal."""
-    from app.sync.receita_federal import ReceitaFederalSync, SyncError
+def _gb(n: int | float | None) -> str:
+    return f"{(n or 0) / 1024**3:.2f} GB"
 
-    target_dir = data_dir or Path(get_settings().receita_local_path).parent
+
+@base_app.command("status")
+def base_status() -> None:
+    """Mostra a versao ativa, contagens, disco e a ultima tarefa."""
+    from app.db import init_database
+    from app.receita.servico import estado_geral
+
+    init_database()
+    e = estado_geral()
+    console.print(f"[bold]Situacao:[/bold] {e['status']}")
+    a = e["ativa"]
+    if a:
+        console.print(f"Versao ativa: {a['mes'] or '?'} ({a['arquivo']}, {_gb(a['tamanho'])})")
+        for t, n in a["contagens"].items():
+            console.print(f"  {t}: {n:,}")
+    v = e["verificacao"]
+    if v.get("mes_remoto"):
+        console.print(f"Mais recente no portal: {v['mes_remoto']} (verificado em {v['verificado_em'][:16]})")
+    console.print(f"Disco: {_gb(e['disco']['usado'])} usados, {_gb(e['disco']['livre'])} livres em {e['disco']['pasta']}")
+    j = e["ultimo_job"]
+    if j:
+        console.print(f"Ultima tarefa #{j['id']} ({j['tipo']} {j['mes'] or ''}): {j['status_efetivo']} - {j['mensagem'] or ''}")
+
+
+@base_app.command("verificar")
+def base_verificar() -> None:
+    """Consulta o portal oficial e informa se ha versao nova."""
+    from app.db import init_database
+    from app.receita.servico import verificar_atualizacao
+
+    init_database()
+    r = verificar_atualizacao()
+    if r.get("erro"):
+        err_console.print(f"[red]Erro:[/red] {r['erro']}")
+        raise typer.Exit(code=2)
+    console.print(f"Versao mais recente: [bold]{r['mes_remoto']}[/bold] ({len(r['arquivos'])} arquivos, {_gb(r['tamanho_total'])})")
+    console.print(f"Base local: {r['mes_local'] or 'nao instalada'}")
+    console.print("[yellow]Ha versao nova.[/yellow]" if r["nova_versao"] else "[green]Base em dia.[/green]")
+
+
+@base_app.command("atualizar")
+def base_atualizar(
+    mes: str = typer.Option(None, "--mes", help="AAAA-MM; padrao: a mais recente do portal"),
+    forcar: bool = typer.Option(False, "--forcar", help="Ignora avisos de espaco e de queda de contagem"),
+    segundo_plano: bool = typer.Option(False, "--segundo-plano", help="Executa num processo separado"),
+) -> None:
+    """Baixa, valida, importa e publica a base oficial (retoma se interrompida)."""
+    from app.db import init_database
+    from app.receita import jobs
+    from app.receita.servico import executar_job, iniciar_atualizacao
+
+    init_database()
     try:
-        sync = ReceitaFederalSync(
-            mes=mes,
-            data_dir=target_dir,
-            keep_zip=keep_zip,
-            only_download=only_download,
-            only_import=only_import,
-            progress=lambda msg: console.print(f"[cyan]>[/cyan] {msg}"),
-        )
-        sync.run()
-    except (ValueError, SyncError) as e:
+        job = iniciar_atualizacao(mes, forcar=forcar, origem="cli", em_processo=segundo_plano)
+    except jobs.JobEmAndamento as e:
+        err_console.print(f"[red]Erro:[/red] {e} Use `cnpj base retomar` ou `cnpj base cancelar`.")
+        raise typer.Exit(code=2) from e
+    jobs.auditar("base.atualizar", detalhe=f"cli job={job['id']} mes={mes or 'mais recente'}")
+    if segundo_plano:
+        console.print(f"Tarefa #{job['id']} iniciada em segundo plano. Acompanhe com `cnpj base status`.")
+        return
+    _executar_com_saida(job["id"], executar_job)
+
+
+def _executar_com_saida(job_id: int, executar) -> None:
+    import logging as _logging
+
+    _logging.getLogger("app.receita").setLevel(_logging.INFO)
+    status = executar(job_id)
+    from app.receita import jobs
+
+    j = jobs.obter(job_id) or {}
+    cor = {"concluido": "green", "pausado": "yellow", "cancelado": "yellow"}.get(status, "red")
+    console.print(f"[{cor}]Tarefa #{job_id}: {status}[/{cor}] {j.get('mensagem') or ''}")
+    if j.get("erro"):
+        err_console.print(j["erro"])
+    if status != "concluido":
+        raise typer.Exit(code=0 if status in ("pausado", "cancelado") else 1)
+
+
+@base_app.command("executar", hidden=True)
+def base_executar(job_id: int = typer.Argument(...)) -> None:
+    """Processo de trabalho (usado pelo painel)."""
+    from app.receita.servico import executar_job
+
+    executar_job(job_id)
+
+
+@base_app.command("retomar")
+def base_retomar(job_id: int = typer.Argument(None, help="Padrao: a ultima tarefa")) -> None:
+    """Retoma uma atualizacao pausada, interrompida ou com falha."""
+    from app.db import init_database
+    from app.receita import jobs
+    from app.receita.servico import executar_job, retomar
+
+    init_database()
+    job_id = job_id or (jobs.ultimo_job("atualizar") or {}).get("id")
+    if not job_id:
+        err_console.print("Nenhuma tarefa para retomar.")
+        raise typer.Exit(code=2)
+    try:
+        retomar(job_id, em_processo=False)
+    except (ValueError, LookupError, jobs.JobEmAndamento) as e:
         err_console.print(f"[red]Erro:[/red] {e}")
         raise typer.Exit(code=2) from e
+    _executar_com_saida(job_id, executar_job)
 
-    if not get_settings().receita_local_enabled:
-        console.print(
-            "[yellow]Base pronta. Para usa-la, defina RECEITA_LOCAL_ENABLED=true no .env "
-            "e reinicie o servidor.[/yellow]"
-        )
+
+@base_app.command("cancelar")
+def base_cancelar(job_id: int = typer.Argument(None)) -> None:
+    """Pede o cancelamento da tarefa em andamento (a base ativa nao muda)."""
+    from app.db import init_database
+    from app.receita import jobs
+
+    init_database()
+    job_id = job_id or (jobs.job_ativo() or jobs.ultimo_job() or {}).get("id")
+    if not job_id:
+        err_console.print("Nenhuma tarefa.")
+        raise typer.Exit(code=2)
+    try:
+        jobs.solicitar(job_id, "cancelar")
+    except (ValueError, LookupError) as e:
+        err_console.print(f"[red]Erro:[/red] {e}")
+        raise typer.Exit(code=2) from e
+    console.print(f"Cancelamento solicitado para a tarefa #{job_id}.")
+
+
+@base_app.command("validar")
+def base_validar() -> None:
+    """Confere a base ativa (esquema, contagens, orfaos, consultas de amostra)."""
+    from app.db import init_database
+    from app.receita.servico import executar_job, iniciar_validacao
+
+    init_database()
+    job = iniciar_validacao(em_processo=False)
+    _executar_com_saida(job["id"], executar_job)
+
+
+@base_app.command("restaurar")
+def base_restaurar() -> None:
+    """Volta para a versao anterior da base."""
+    from app.receita import armazenamento, jobs
+
+    try:
+        nome = armazenamento.restaurar_anterior()
+    except FileNotFoundError as e:
+        err_console.print(f"[red]Erro:[/red] {e}")
+        raise typer.Exit(code=2) from e
+    jobs.auditar("base.restaurar", detalhe=f"cli arquivo={nome}")
+    console.print(f"[green]Versao ativa:[/green] {nome}")
+
+
+@base_app.command("limpar")
+def base_limpar() -> None:
+    """Apaga arquivos temporarios de atualizacoes interrompidas."""
+    from app.db import init_database
+    from app.receita import jobs
+    from app.receita.servico import limpar_trabalho
+
+    init_database()
+    try:
+        liberado = limpar_trabalho()
+    except jobs.JobEmAndamento as e:
+        err_console.print(f"[red]Erro:[/red] {e}")
+        raise typer.Exit(code=2) from e
+    console.print(f"{_gb(liberado)} liberados.")
+
+
+@app.command(hidden=True)
+def sync_receita(
+    mes: str = typer.Option(None, "--mes", help="AAAA-MM (padrao: mais recente)"),
+) -> None:
+    """[Obsoleto] Use `cnpj base atualizar`."""
+    console.print("[yellow]`sync-receita` foi substituido por `cnpj base atualizar`.[/yellow]")
+    base_atualizar(mes=mes, forcar=False, segundo_plano=False)
+
+
+@app.command()
+def admin_token() -> None:
+    """Mostra o token de acesso a area administrativa."""
+    from app.services.admin_auth import token_admin
+
+    console.print(token_admin())
 
 
 @app.command()

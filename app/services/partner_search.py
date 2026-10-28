@@ -1,7 +1,7 @@
 """Busca reversa por socio na base local da Receita Federal.
 
 Requer base local habilitada (RECEITA_LOCAL_ENABLED=true) e base ja
-sincronizada (sync-receita). NUNCA consulta provedores externos: nao ha
+instalada (painel /base ou `cnpj base atualizar`). NUNCA consulta provedores externos: nao ha
 API publica gratuita que busque empresas pelo nome do socio.
 
 Cada empresa aparece UMA vez (usa-se o estabelecimento matriz); UF e
@@ -9,12 +9,11 @@ municipio filtram pela sede.
 
 Performance: syncs novos materializam `socios.nome_socio_norm` (sem acento,
 maiusculo) e criam indice. Bases antigas sem a coluna usam o fallback
-`strip_accents(upper(s.nome_socio))` ate o proximo `sync-receita`.
+`strip_accents(upper(s.nome_socio))` ate a proxima atualizacao.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from app.config import get_settings
@@ -27,6 +26,7 @@ from app.providers.receita_local import (
     lookup_join,
     rows_as_dicts,
 )
+from app.receita.armazenamento import caminho_base_ativa
 
 MAX_LIMIT = 200
 MIN_QUERY_LEN = 3
@@ -36,15 +36,15 @@ def _db_path() -> str:
     settings = get_settings()
     if not settings.receita_local_enabled:
         raise RuntimeError(
-            "Busca por socio requer base local. "
-            "Habilite RECEITA_LOCAL_ENABLED=true e execute: python -m app.cli sync-receita --mes YYYY-MM"
+            "Busca por socio requer a base local. Habilite RECEITA_LOCAL_ENABLED=true."
         )
-    if not Path(settings.receita_local_path).exists():
+    path = caminho_base_ativa(settings)
+    if path is None:
         raise RuntimeError(
-            f"Base local nao encontrada em {settings.receita_local_path}. "
-            "Execute: python -m app.cli sync-receita --mes YYYY-MM"
+            "Base local da Receita nao instalada. Instale pelo painel Base de Dados CNPJ (/base) "
+            "ou com: python -m app.cli base atualizar"
         )
-    return settings.receita_local_path
+    return path
 
 
 def _post_process(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -82,14 +82,18 @@ def search_partners(
         tables = existing_tables(conn)
         j_mun, d_mun = lookup_join(tables, "municipios", "mun", "e.municipio")
         j_qual, d_qual = lookup_join(tables, "qualificacoes", "q", "s.qualificacao_socio")
-        municipio_expr = f"COALESCE({d_mun}, e.municipio)"
+        municipio_expr = f"COALESCE({d_mun}, CAST(e.municipio AS VARCHAR))"
         use_norm = _has_nome_socio_norm(conn)
+        tem_chave = bool(conn.execute(
+            "SELECT 1 FROM information_schema.columns WHERE table_name = 'socios' AND column_name = 'socio_chave'"
+        ).fetchall())
         # Preferir coluna materializada; fallback para bases importadas antes desta release.
         nome_expr = "s.nome_socio_norm" if use_norm else "strip_accents(upper(s.nome_socio))"
 
         sql = [
             "SELECT",
             "  s.nome_socio,",
+            f"  {'s.socio_chave' if tem_chave else 'NULL'} AS socio_chave,",
             "  e.cnpj_completo AS cnpj,",
             "  em.razao_social,",
             "  e.situacao_cadastral AS situacao,",

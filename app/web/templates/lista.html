@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+
+{% block title %}{{ lista.nome }}{% endblock %}
+
+{% block content %}
+<nav class="breadcrumb" aria-label="Você está em"><a href="/listas">Listas</a><span aria-hidden="true">/</span><span>{{ lista.nome }}</span></nav>
+<header class="page-header">
+    <div>
+        <div class="eyebrow">{{ ui.icon('list') }} Lista · {{ lista.itens | length }} empresa(s)</div>
+        <h1>{{ lista.nome }}</h1>
+        {% if lista.descricao %}<p class="lead">{{ lista.descricao }}</p>{% endif %}
+    </div>
+    <div class="actions">
+        <a class="btn" href="/listas/{{ lista.id }}/exportar.csv" download>{{ ui.icon('download') }} CSV</a>
+        {% if lista.itens %}<a class="btn" href="/busca?{% for i in lista.itens[:300] %}cnpj={{ i.cnpj }}&{% endfor %}">{{ ui.icon('filter') }} Abrir na busca</a>{% endif %}
+    </div>
+</header>
+
+<section class="card">
+    <form action="/listas/{{ lista.id }}/itens" method="post" class="search-bar">
+        <label for="add-cnpjs" class="visually-hidden">CNPJs para adicionar</label>
+        <input class="input" id="add-cnpjs" name="cnpjs" placeholder="Adicionar CNPJs (separados por vírgula)" maxlength="20000">
+        <button type="submit" class="btn">{{ ui.icon('plus') }} Adicionar</button>
+    </form>
+</section>
+
+<section class="card section">
+    {% if lista.itens %}
+    <div class="table-wrap">
+        <table class="data-table">
+            <thead><tr><th scope="col">Empresa</th><th scope="col">Situação atual</th><th scope="col">Local</th><th scope="col">Adicionada em</th><th scope="col">Observação</th><th scope="col"><span class="visually-hidden">Ações</span></th></tr></thead>
+            <tbody>
+            {% for i in lista.itens %}
+            {% set a = atuais.get(i.cnpj) %}
+            <tr id="item-{{ i.cnpj }}">
+                <td><a class="cell-title" href="/empresa/{{ i.cnpj }}">{{ (a.razao_social if a else none) or i.razao_social or (i.cnpj | cnpj) }}</a>
+                    <span class="cell-sub mono">{{ i.cnpj | cnpj }}</span></td>
+                <td>{% if a %}{{ ui.situacao_badge(a.situacao) }}{% else %}<span class="faint">—</span>{% endif %}</td>
+                <td>{% if a %}{{ a.municipio or "" }}{% if a.uf %}/{{ a.uf }}{% endif %}{% else %}<span class="faint">—</span>{% endif %}</td>
+                <td class="nowrap">{{ i.adicionado_em | data_br }}</td>
+                <td>
+                    <form action="/listas/{{ lista.id }}/itens/{{ i.cnpj }}/nota" method="post" class="nota-form">
+                        <label class="visually-hidden" for="nota-{{ i.cnpj }}">Observação</label>
+                        <input class="input input-sm" id="nota-{{ i.cnpj }}" name="observacao" value="{{ i.observacao or '' }}" maxlength="1000" placeholder="Anotação">
+                        <button type="submit" class="btn btn-sm">{{ ui.icon('save') }}<span class="visually-hidden">Salvar observação</span></button>
+                    </form>
+                </td>
+                <td><form action="/listas/{{ lista.id }}/itens/{{ i.cnpj }}/remover" method="post" data-confirmar="Remover esta empresa da lista?">
+                    <button type="submit" class="btn btn-sm btn-ghost" title="Remover da lista">{{ ui.icon('trash') }}<span class="visually-hidden">Remover</span></button></form></td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="empty-state">Lista vazia. Adicione CNPJs acima ou selecione empresas na <a href="/busca">busca avançada</a>.</p>
+    {% endif %}
+</section>
+
+<section class="card section danger-zone">
+    <h2>Excluir lista</h2>
+    <form action="/listas/{{ lista.id }}/remover" method="post" data-confirmar="Excluir a lista {{ lista.nome }} e todas as anotações? Esta ação não pode ser desfeita.">
+        <label class="check"><input type="checkbox" name="confirmar" value="sim" required> Confirmo que quero excluir esta lista e suas observações</label>
+        <button type="submit" class="btn btn-danger">{{ ui.icon('trash') }} Excluir lista</button>
+    </form>
+</section>
+{% endblock %}
