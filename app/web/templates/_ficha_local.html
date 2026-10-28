@@ -1,0 +1,144 @@
+{# Abas da ficha a partir da base local da Receita (somente campos existentes na fonte).
+   Contexto: company (c), ficha (f). #}
+{% import "_macros.html" as ui %}
+{% set f = ficha %}
+{% set i = f.identificacao %}
+{% set en = f.endereco %}
+<section id="dados" class="tab-panel card" role="tabpanel" aria-labelledby="tab-dados">
+    <div class="card-header">
+        <h2>Identificação</h2>
+        <span class="small muted">{{ ui.origem_badge("oficial") }} referência {{ f.base.mes }}</span>
+    </div>
+    <dl class="kv">
+        <dt>CNPJ</dt><dd class="mono">{{ i.cnpj | cnpj }} <button type="button" class="icon-btn icon-btn-sm" data-copy="{{ i.cnpj | cnpj }}" aria-label="Copiar CNPJ">{{ ui.icon('copy') }}</button></dd>
+        <dt>Tipo</dt><dd>{{ ui.value(i.matriz_filial) }}</dd>
+        <dt>Razão social</dt><dd>{{ i.razao_social }} <button type="button" class="icon-btn icon-btn-sm" data-copy="{{ i.razao_social }}" aria-label="Copiar razão social">{{ ui.icon('copy') }}</button></dd>
+        <dt>Nome fantasia</dt><dd>{{ ui.value(i.nome_fantasia) }}</dd>
+        <dt>Situação cadastral</dt><dd>{{ ui.situacao_badge(i.situacao) }}{% if i.data_situacao %} desde {{ i.data_situacao | data_br }}{% endif %}</dd>
+        {% if i.motivo %}<dt>Motivo da situação</dt><dd>{{ i.motivo }}</dd>{% endif %}
+        {% if i.situacao_especial %}<dt>Situação especial</dt><dd>{{ i.situacao_especial }}{% if i.data_situacao_especial %} desde {{ i.data_situacao_especial | data_br }}{% endif %}</dd>{% endif %}
+        <dt>Início da atividade</dt><dd>{{ i.data_abertura | data_br }}{% if i.idade_anos is not none %} <span class="muted">({{ i.idade_anos }} ano{{ "s" if i.idade_anos != 1 }})</span>{% endif %}</dd>
+        <dt>Natureza jurídica</dt><dd>{% if i.natureza_codigo is not none %}<span class="mono">{{ "%04d" | format(i.natureza_codigo) }}</span> · {% endif %}{{ ui.value(i.natureza) }}</dd>
+        <dt>Porte</dt><dd>{{ ui.value(i.porte) }}</dd>
+        <dt>Capital social</dt><dd>{{ i.capital_social | brl }}</dd>
+        {% if i.ente_federativo %}<dt>Ente federativo responsável</dt><dd>{{ i.ente_federativo }}</dd>{% endif %}
+        {% if i.qualificacao_responsavel %}<dt>Qualificação do responsável</dt><dd>{{ i.qualificacao_responsavel }}</dd>{% endif %}
+        <dt>Simples Nacional</dt><dd>{% if i.simples %}{{ "Optante" if i.simples.optante else "Não optante" }}{% if i.simples.data_opcao %} · opção em {{ i.simples.data_opcao | data_br }}{% endif %}{% if i.simples.data_exclusao %} · exclusão em {{ i.simples.data_exclusao | data_br }}{% endif %}{% else %}{{ ui.value(none) }}{% endif %}</dd>
+        <dt>MEI</dt><dd>{% if i.mei %}{{ "Optante" if i.mei.optante else "Não optante" }}{% if i.mei.data_opcao %} · opção em {{ i.mei.data_opcao | data_br }}{% endif %}{% if i.mei.data_exclusao %} · exclusão em {{ i.mei.data_exclusao | data_br }}{% endif %}{% else %}{{ ui.value(none) }}{% endif %}</dd>
+        <dt>Inscrição estadual</dt><dd><a href="/empresa/{{ c.cnpj }}/inscricao-estadual">Consultar no CCC / SEFAZ</a> <span class="muted small">(não consta nos dados abertos do CNPJ)</span></dd>
+        <dt>Inscrição municipal</dt><dd><span class="muted small">Não consta nos dados abertos do CNPJ; consulte a prefeitura.</span></dd>
+        <dt>Cartão CNPJ</dt><dd><a href="/empresa/{{ c.cnpj }}/cartao-cnpj">Emitir no site oficial da Receita</a></dd>
+    </dl>
+    <p class="muted small">Opção pelo Simples/MEI é informação cadastral e não comprova regularidade fiscal. Fonte: {{ f.base.fonte }}; base importada em {{ f.base.importado_em | data_br }}.</p>
+</section>
+
+<section id="endereco" class="tab-panel card" role="tabpanel" aria-labelledby="tab-endereco">
+    <div class="card-header">
+        <h2>Endereço</h2>
+        <div class="actions">
+            {% set linha = (" ".join([en.tipo_logradouro or "", en.logradouro or ""]) | trim) ~ (", " ~ en.numero if en.numero else "") ~ (" - " ~ en.complemento if en.complemento else "") ~ (" - " ~ en.bairro if en.bairro else "") ~ (" - " ~ en.municipio_nome if en.municipio_nome else "") ~ ("/" ~ en.uf if en.uf else "") ~ (" - CEP " ~ (en.cep | cep) if en.cep else "") %}
+            <button type="button" class="btn btn-sm" data-copy="{{ linha }}">{{ ui.icon('copy') }} Copiar endereço</button>
+            {% if en.mapa_url %}<a class="btn btn-sm" href="{{ en.mapa_url }}" target="_blank" rel="noopener noreferrer">{{ ui.icon('map-pin') }} Ver no mapa</a>{% endif %}
+        </div>
+    </div>
+    <dl class="kv">
+        <dt>Logradouro</dt><dd>{{ ui.value((" ".join([en.tipo_logradouro or "", en.logradouro or ""]) | trim) or none) }}</dd>
+        <dt>Número</dt><dd>{{ ui.value(en.numero) }}</dd>
+        {% if en.complemento %}<dt>Complemento</dt><dd>{{ en.complemento }}</dd>{% endif %}
+        <dt>Bairro</dt><dd>{{ ui.value(en.bairro) }}</dd>
+        <dt>CEP</dt><dd>{% if en.cep %}<span class="mono">{{ en.cep | cep }}</span>{% else %}{{ ui.value(none) }}{% endif %}</dd>
+        <dt>Município</dt><dd>{{ ui.value(en.municipio_nome) }}{% if en.municipio_codigo is not none %} <span class="muted small">(código da Receita {{ "%04d" | format(en.municipio_codigo) }})</span>{% endif %}</dd>
+        <dt>UF</dt><dd>{{ ui.value(en.uf) }}</dd>
+        {% if en.pais_nome or en.cidade_exterior %}<dt>País</dt><dd>{{ en.pais_nome or "" }}{% if en.cidade_exterior %} · {{ en.cidade_exterior }}{% endif %}</dd>{% endif %}
+        <dt>Endereço completo?</dt><dd>{% if en.completo %}<span class="badge badge-success">Sim</span>{% else %}<span class="badge badge-warning">Incompleto</span> <span class="muted small">falta logradouro, número, bairro, CEP, município ou UF</span>{% endif %}</dd>
+    </dl>
+    <p class="muted small">O mapa abre o OpenStreetMap em nova aba, só quando você clica (o endereço é enviado a esse site).</p>
+</section>
+
+{% include "_contatos.html" %}
+
+<section id="cnaes" class="tab-panel card" role="tabpanel" aria-labelledby="tab-cnaes">
+    <h2>Atividade principal</h2>
+    {% if f.cnaes.principal %}
+    <p><a class="mono" href="/busca?cnae_principal={{ f.cnaes.principal.codigo }}" title="Empresas com esta atividade">{{ "%07d" | format(f.cnaes.principal.codigo) | cnae }}</a> · {{ ui.value(f.cnaes.principal.descricao) }}</p>
+    {% else %}<p class="empty-state">Não informada.</p>{% endif %}
+    <h2 class="section">Atividades secundárias ({{ f.cnaes.secundarios | length }})</h2>
+    {% if f.cnaes.secundarios %}
+    <ul class="list-plain">
+        {% for a in f.cnaes.secundarios %}<li><a class="mono" href="/busca?cnae={{ a.codigo }}">{{ "%07d" | format(a.codigo) | cnae }}</a> · {{ ui.value(a.descricao) }}</li>{% endfor %}
+    </ul>
+    {% else %}<p class="empty-state">Nenhuma atividade secundária.</p>{% endif %}
+</section>
+
+<section id="socios" class="tab-panel card" role="tabpanel" aria-labelledby="tab-socios">
+    <h2 class="visually-hidden">Quadro societário</h2>
+    {% if f.socios %}
+    <div class="table-wrap">
+        <table class="data-table">
+            <thead><tr><th scope="col">Nome</th><th scope="col">Qualificação</th><th scope="col">Entrada</th><th scope="col">Documento</th><th scope="col">Faixa etária</th><th scope="col">Representante legal</th></tr></thead>
+            <tbody>
+            {% for s in f.socios %}
+            <tr>
+                <td><a class="cell-title" href="/socio/{{ s.chave }}" title="Ficha do sócio e empresas relacionadas">{{ s.nome }}</a>
+                    <span class="cell-sub">{{ s.tipo }}{% if s.pais %} · {{ s.pais }}{% endif %}{% if s.qtd_empresas and s.qtd_empresas > 1 %} · <a href="/socio/{{ s.chave }}">{{ s.qtd_empresas }} empresas</a>{% endif %}</span></td>
+                <td>{{ ui.value(s.qualificacao) }}{% if s.administrador %} <span class="badge badge-violet">Administração</span>{% endif %}</td>
+                <td class="nowrap">{{ s.data_entrada | data_br }}</td>
+                <td class="mono nowrap">{{ s.documento or "—" }}</td>
+                <td class="nowrap">{{ s.faixa_etaria or "—" }}</td>
+                <td>{% if s.representante %}{{ s.representante.nome or "" }}{% if s.representante.documento %} <span class="mono small">{{ s.representante.documento }}</span>{% endif %}{% if s.representante.qualificacao %}<span class="cell-sub">{{ s.representante.qualificacao }}</span>{% endif %}{% else %}—{% endif %}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <p class="muted small">CPFs aparecem mascarados, como publicados pela Receita Federal; o app não tenta revelá-los. A base pública não informa percentual de participação.</p>
+    {% else %}
+    <p class="empty-state">A base da Receita não traz quadro societário para esta empresa (comum em empresário individual e MEI).</p>
+    {% endif %}
+</section>
+
+<section id="estabelecimentos" class="tab-panel card" role="tabpanel" aria-labelledby="tab-estab">
+    <div class="card-header">
+        <h2>Estabelecimentos da empresa ({{ f.estabelecimentos.total }})</h2>
+        <a class="btn btn-sm" href="/busca?cnpj_basico={{ i.cnpj_basico }}">{{ ui.icon('filter') }} Abrir na busca</a>
+    </div>
+    <p class="muted small">A <strong>empresa</strong> (raiz {{ i.cnpj_basico }}) tem razão social, natureza, porte e capital únicos; cada <strong>estabelecimento</strong> (matriz ou filial) tem CNPJ, endereço, situação e contatos próprios.</p>
+    <div class="table-wrap">
+        <table class="data-table">
+            <thead><tr><th scope="col">CNPJ</th><th scope="col">Tipo</th><th scope="col">Nome fantasia</th><th scope="col">Situação</th><th scope="col">Local</th><th scope="col">Abertura</th></tr></thead>
+            <tbody>
+            {% for x in f.estabelecimentos.itens %}
+            <tr {% if x.cnpj_completo == c.cnpj %}aria-current="true" class="linha-atual"{% endif %}>
+                <td class="mono nowrap">{% if x.cnpj_completo == c.cnpj %}{{ x.cnpj_completo | cnpj }} <span class="badge badge-info">esta</span>{% else %}<a href="/empresa/{{ x.cnpj_completo }}">{{ x.cnpj_completo | cnpj }}</a>{% endif %}</td>
+                <td>{{ x.matriz_filial or "—" }}</td>
+                <td>{{ x.nome_fantasia or "—" }}</td>
+                <td>{{ ui.situacao_badge(x.situacao) }}</td>
+                <td>{{ x.municipio_nome or "" }}{% if x.uf %}/{{ x.uf }}{% endif %}</td>
+                <td class="nowrap">{{ x.data_inicio_atividade | data_br }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% if f.estabelecimentos.total > f.estabelecimentos.itens | length %}<p class="muted small">Mostrando {{ f.estabelecimentos.itens | length }} de {{ f.estabelecimentos.total }}. Use “Abrir na busca” para ver todos.</p>{% endif %}
+</section>
+
+<section id="historico" class="tab-panel card" role="tabpanel" aria-labelledby="tab-historico">
+    <h2>Linha do tempo cadastral</h2>
+    <p class="muted small">Datas publicadas na base da Receita. Os dados abertos trazem a situação atual, não o histórico completo de alterações.</p>
+    {% if f.historico %}
+    <ol class="linha-tempo">
+        {% for ev in f.historico %}<li><span class="mono">{{ ev.data | data_br }}</span><span>{{ ev.evento }}</span></li>{% endfor %}
+    </ol>
+    {% else %}<p class="empty-state">Sem datas registradas.</p>{% endif %}
+    {% if f.alteracoes %}
+    <h2 class="section">Mudanças desde a versão {{ f.alteracoes.mes_anterior }} da base</h2>
+    {% if f.alteracoes.novo %}<p>CNPJ novo: não constava na versão anterior.</p>
+    {% elif f.alteracoes.mudancas %}
+    <div class="table-wrap"><table class="data-table">
+        <thead><tr><th scope="col">Campo</th><th scope="col">Antes</th><th scope="col">Agora</th></tr></thead>
+        <tbody>{% for m in f.alteracoes.mudancas %}<tr><td>{{ m.campo }}</td><td>{{ m.antes if m.antes is not none else "—" }}</td><td>{{ m.depois if m.depois is not none else "—" }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+    {% else %}<p class="muted">Nenhuma mudança nos campos acompanhados.</p>{% endif %}
+    {% endif %}
+</section>

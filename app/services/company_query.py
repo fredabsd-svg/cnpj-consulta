@@ -6,6 +6,7 @@ import asyncio
 import logging
 from collections.abc import Callable
 
+from app.config import get_settings
 from app.core.cnpj_validator import normalize
 from app.providers.registry import ProviderRegistry, get_registry
 from app.schemas.company import CompanyUnified
@@ -22,6 +23,7 @@ async def query_company_async(
     *,
     force_refresh: bool = False,
     on_miss: Callable[[], None] | None = None,
+    externas: bool = False,
 ) -> CompanyUnified:
     """Consulta assincrona. Pode ser chamada de dentro de event loop (FastAPI).
 
@@ -33,15 +35,29 @@ async def query_company_async(
     normalized = normalize(cnpj)
     registry = registry or get_registry()
 
+    results = None
+    so_local = False
+    local = registry.by_name("receita_local")
+    if local is not None and get_settings().receita_local_primeiro and not externas:
+        # Base local primeiro: se o CNPJ estiver la, as fontes externas so sao
+        # chamadas quando o usuario pedir ("Comparar com fontes externas").
+        local_res = await registry.fetch_all_parallel(normalized, nomes={"receita_local"})
+        if local_res and local_res[0].http_status == 200:
+            results, so_local = local_res, True
+
     # SQLite e sincrono: roda em thread para nao travar o servidor.
-    unified = None if force_refresh else await asyncio.to_thread(cache_get, normalized)
+    # Pedir as fontes externas ignora o cache (que pode ter so a base local).
+    unified = None
+    if results is None and not (force_refresh or externas):
+        unified = await asyncio.to_thread(cache_get, normalized)
     if unified is not None:
         log.info("cache hit para %s", normalized)
         unified.origem_cache = True
     else:
-        if on_miss is not None:
-            on_miss()
-        results = await registry.fetch_all_parallel(normalized)
+        if results is None:
+            if on_miss is not None:
+                on_miss()
+            results = await registry.fetch_all_parallel(normalized)
         ok = [r for r in results if r.http_status == 200]
         if not ok:
             # Sem corpo de resposta: so status/provedor -- evita vazar payload.
@@ -54,7 +70,9 @@ async def query_company_async(
                 summary,
             )
         unified = reconcile(normalized, results)
-        if ok:
+        # A base local e consultada direto (rapida) e muda a cada atualizacao:
+        # nao vai para o cache.
+        if ok and not so_local:
             try:
                 await asyncio.to_thread(cache_put, normalized, unified)
             except Exception as e:  # noqa: BLE001

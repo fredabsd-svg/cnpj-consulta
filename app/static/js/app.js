@@ -45,12 +45,18 @@ document.documentElement.classList.add("js");
 
     function initMask() {
         document.querySelectorAll("[data-cnpj-mask]").forEach((input) => {
+            // "auto": o mesmo campo aceita nome da empresa; so mascara o que parece CNPJ
+            const auto = input.dataset.cnpjMask === "auto";
+            const pareceCnpj = (v) => !auto || (/^[0-9]/.test(v) && !/\s/.test(v) && v.replace(/[^A-Za-z0-9]/g, "").length <= 14);
             input.addEventListener("input", () => {
+                if (!pareceCnpj(input.value)) return;
                 const atEnd = input.selectionStart === input.value.length;
                 input.value = maskCnpj(input.value);
                 if (atEnd) input.setSelectionRange(input.value.length, input.value.length);
             });
-            input.addEventListener("paste", () => setTimeout(() => (input.value = maskCnpj(input.value))));
+            input.addEventListener("paste", () => setTimeout(() => {
+                if (pareceCnpj(input.value)) input.value = maskCnpj(input.value);
+            }));
         });
     }
 

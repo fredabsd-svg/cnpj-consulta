@@ -36,6 +36,18 @@
   "clock": '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
   "trash": '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>',
   "calendar": '<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/>',
+  "filter": '<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>',
+  "list": '<path d="M3 12h.01"/><path d="M3 18h.01"/><path d="M3 6h.01"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M8 6h13"/>',
+  "lock": '<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+  "pause": '<rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/>',
+  "play": '<polygon points="6 3 20 12 6 21 6 3"/>',
+  "x": '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  "plus": '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  "save": '<path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/>',
+  "phone": '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/>',
+  "mail": '<rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>',
+  "columns": '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M12 3v18"/>',
+  "hard-drive": '<line x1="22" x2="2" y1="12" y2="12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><line x1="6" x2="6.01" y1="16" y2="16"/><line x1="10" x2="10.01" y1="16" y2="16"/>',
 } %}
 
 {% macro icon(name, extra="") -%}
@@ -59,4 +71,17 @@
 {% macro verdict_badge(nivel) -%}
 {%- set m = {"regular": ("badge-success", "Regular"), "ressalvas": ("badge-warning", "Com ressalvas"), "critico": ("badge-danger", "Crítico")} -%}
 {%- if nivel in m %}<span class="badge {{ m[nivel][0] }}">{{ m[nivel][1] }}</span>{% else %}<span class="faint">—</span>{% endif -%}
+{%- endmacro %}
+
+{% macro origem_badge(tipo, titulo="") -%}
+{%- if tipo == "oficial" -%}<span class="badge badge-info" title="{{ titulo or 'Base oficial da Receita Federal' }}">{{ icon('landmark') }} Receita Federal</span>
+{%- else -%}<span class="badge badge-violet" title="{{ titulo or 'Cadastrado fora da base da Receita, com fonte informada' }}">{{ icon('plus') }} Complementar</span>{%- endif -%}
+{%- endmacro %}
+
+{% macro bytes(n) -%}
+{%- if n is none %}—{% elif n >= 1073741824 %}{{ "%.2f" | format(n / 1073741824) | replace(".", ",") }} GB{% elif n >= 1048576 %}{{ "%.1f" | format(n / 1048576) | replace(".", ",") }} MB{% else %}{{ "%.0f" | format(n / 1024) }} KB{% endif -%}
+{%- endmacro %}
+
+{% macro numero(n) -%}
+{%- if n is none %}—{% else %}{{ "{:,}".format(n) | replace(",", ".") }}{% endif -%}
 {%- endmacro %}

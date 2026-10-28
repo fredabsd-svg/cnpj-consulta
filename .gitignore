@@ -30,6 +30,18 @@ data/receita/*.db
 data/receita/*.db.bak
 data/receita/*.wal
 data/cache/
+# Base local v0.4: versoes publicadas, area de trabalho, exportacoes e segredos
+data/receita/versoes/
+data/receita/trabalho/
+data/receita/exportacoes/
+data/receita/zips/
+data/receita/logs/
+data/receita/ATIVA.json
+data/admin_token.txt
+data/app.db-wal
+data/app.db-shm
+*.duckdb
+*.duckdb.wal
 .env
 .env.local
 .env.*.local

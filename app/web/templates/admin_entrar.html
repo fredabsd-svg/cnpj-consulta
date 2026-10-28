@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+
+{% block title %}Acesso de administrador{% endblock %}
+
+{% block content %}
+<section class="card login-card" aria-labelledby="t-login">
+    <div class="eyebrow">{{ ui.icon('lock') }} Área administrativa</div>
+    <h1 id="t-login">Entrar como administrador</h1>
+    <p class="muted">Necessário para baixar, atualizar ou restaurar a base da Receita, editar contatos complementares e ver a auditoria. As consultas continuam livres neste computador.</p>
+    {% if erro %}<div class="alert alert-danger" role="alert">{{ ui.icon('falha') }}<div><p>{{ erro }}</p></div></div>{% endif %}
+    <form action="/admin/entrar" method="post">
+        <input type="hidden" name="proximo" value="{{ proximo }}">
+        <div class="field">
+            <label for="token">Token de administrador</label>
+            <input class="input input-lg mono" type="password" id="token" name="token" required autocomplete="current-password" autofocus>
+            <span class="hint">{% if arquivo_token %}O token foi gerado em <code>{{ arquivo_token }}</code>. Também aparece com <code>python -m app.cli admin-token</code>.{% else %}Definido em <code>ADMIN_TOKEN</code> no arquivo <code>.env</code>.{% endif %}</span>
+        </div>
+        <button type="submit" class="btn btn-primary btn-lg">{{ ui.icon('lock') }} Entrar</button>
+    </form>
+</section>
+{% endblock %}

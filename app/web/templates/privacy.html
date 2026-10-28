@@ -47,6 +47,15 @@
     <p>Você pode apagar o histórico na página <a href="/historico">Histórico e favoritos</a> ou pela linha de comando
         (<code>python -m app.cli limpar-historico</code> e <code>limpar-cache</code>).</p>
 
+    <h2>4-A. Base local, busca avançada e contatos complementares</h2>
+    <ul>
+        <li>A base local é a cópia dos <strong>dados abertos oficiais do CNPJ</strong> baixada do portal da Receita Federal; fica neste computador e é consultada sem enviar nada para fora.</li>
+        <li>CPFs de sócios aparecem <strong>mascarados</strong> como publicados pela Receita. A base pública não traz CPF completo nem percentual de participação, e o app não tenta obtê-los.</li>
+        <li><strong>Contatos complementares</strong> (fora da Receita) só entram por cadastro de um administrador, com a fonte e a data de verificação. Podem ser corrigidos ou removidos a qualquer momento e são descartados após {{ retencao_dias }} dias sem verificação.</li>
+        <li>Exportar telefones, e-mails ou nomes de sócios exige informar a <strong>finalidade</strong>; a exportação fica na trilha de auditoria (sem os dados). Nomes de sócios não ficam no histórico de buscas nem nos logs.</li>
+        <li>A disponibilidade pública de um dado <strong>não autoriza qualquer tratamento</strong>: use-o conforme a finalidade, a boa-fé e o interesse público que justificaram a publicação (LGPD, art. 7º, §§ 3º e 4º) e atenda pedidos de oposição e exclusão.</li>
+    </ul>
+
     <h2>5. Uso responsável</h2>
     <p>Não use este software para spam, assédio, prospecção abusiva, discriminação, revenda de dados (atenção aos termos da
         ReceitaWS) ou qualquer finalidade ilegal. O usuário é responsável pela finalidade do tratamento (LGPD, art. 7º).</p>

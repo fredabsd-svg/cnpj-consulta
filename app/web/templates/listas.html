@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+
+{% block title %}Listas de empresas{% endblock %}
+
+{% block content %}
+<header class="page-header">
+    <div>
+        <div class="eyebrow">{{ ui.icon('list') }} Prospecção</div>
+        <h1>Listas de empresas</h1>
+        <p class="lead">Uma lista guarda <strong>empresas escolhidas</strong>, com data de inclusão e observações. Diferente da <a href="/busca">busca salva</a>, que guarda só os critérios e é refeita a cada abertura.</p>
+    </div>
+</header>
+
+{% if erro %}<div class="alert alert-danger" role="alert">{{ ui.icon('falha') }}<div><p>{{ erro }}</p></div></div>{% endif %}
+
+<div class="grid-2">
+    <section class="card" aria-labelledby="t-listas">
+        <h2 id="t-listas">{{ ui.icon('list') }} Suas listas</h2>
+        {% if listas %}
+        <ul class="quick-list">
+            {% for l in listas %}
+            <li><a href="/listas/{{ l.id }}"><span class="quick-title">{{ l.nome }}</span><span class="quick-meta">{{ l.qtd }} empresa(s)</span></a></li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="empty-state">Nenhuma lista ainda.</p>
+        {% endif %}
+    </section>
+    <section class="card" aria-labelledby="t-nova">
+        <h2 id="t-nova">{{ ui.icon('plus') }} Nova lista</h2>
+        <form action="/listas" method="post">
+            <div class="field"><label for="nome">Nome</label>
+                <input class="input" id="nome" name="nome" maxlength="120" required placeholder="ex.: Clientes potenciais — Palmas"></div>
+            <div class="field"><label for="descricao">Descrição <span class="faint">(opcional)</span></label>
+                <input class="input" id="descricao" name="descricao" maxlength="500"></div>
+            <button type="submit" class="btn btn-primary">{{ ui.icon('plus') }} Criar lista</button>
+        </form>
+        <p class="hint section">Adicione empresas pela <a href="/busca">busca avançada</a> (selecione as linhas) ou pela página de cada empresa.</p>
+    </section>
+</div>
+{% endblock %}

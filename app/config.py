@@ -36,10 +36,51 @@ class Settings(BaseSettings):
     # Banco principal
     database_url: str = "sqlite:///./data/app.db"
 
-    # Base local Receita Federal
+    # Base local Receita Federal (dados abertos do CNPJ)
+    # Pasta com as versoes publicadas, o ponteiro ATIVA.json e a area de trabalho
+    # das atualizacoes. Precisa de ~45 GB livres durante uma atualizacao.
+    receita_data_dir: str = "./data/receita"
+    # Base avulsa (formato antigo ou copiada de outra maquina). So e usada quando
+    # ainda nao ha versao publicada em receita_data_dir.
     receita_local_path: str = "./data/receita/receita.db"
-    # Diretorio publico dos dados abertos; os arquivos ficam em {base}/{YYYY-MM}/
-    receita_base_url: str = "https://arquivos.receitafederal.gov.br/dados/cnpj/dados_abertos_cnpj"
+    # Ponto de entrada OFICIAL: o portal de arquivos da Receita. O endereco do
+    # compartilhamento e descoberto a partir dele (redirecionamento) e a pasta
+    # do CNPJ e confirmada pela listagem WebDAV, sem URLs fixas de arquivos.
+    receita_portal_url: str = "https://arquivos.receitafederal.gov.br/"
+    # Caminho da pasta do CNPJ dentro do compartilhamento. Se nao existir mais,
+    # o app procura uma pasta "CNPJ" com subpastas AAAA-MM.
+    receita_pasta_cnpj: str = "Dados/Cadastros/CNPJ"
+    # Forca um token de compartilhamento (so se a descoberta automatica falhar).
+    receita_share_token: str = ""
+    # Limites do DuckDB durante a importacao (nunca carrega a base inteira na RAM:
+    # o excedente vai para disco temporario na area de trabalho).
+    receita_duckdb_memoria: str = "4GB"
+    receita_duckdb_threads: int = 0  # 0 = automatico
+    receita_manter_zips: bool = False
+    receita_versoes_mantidas: int = 2  # ativa + anterior (para restaurar)
+    # Validacao: recusa publicar se uma tabela principal encolher mais que isto
+    # em relacao a versao ativa (protege contra arquivo truncado na origem).
+    receita_queda_maxima_pct: float = 10.0
+    receita_orfaos_max_pct: float = 5.0
+    # Consulta local primeiro: se o CNPJ estiver na base local, as fontes
+    # externas so sao chamadas quando o usuario pedir.
+    receita_local_primeiro: bool = True
+
+    # Area administrativa (base de dados, contatos complementares, auditoria).
+    # Vazio = token gerado no primeiro uso em data/admin_token.txt.
+    admin_token: str = ""
+    admin_sessao_horas: int = 8
+
+    # Busca avancada
+    busca_timeout_segundos: float = 30.0
+    busca_max_por_pagina: int = 100
+    exportacao_max_linhas: int = 500_000
+    # Acima disto a exportacao vira tarefa em segundo plano.
+    exportacao_sincrona_max: int = 20_000
+
+    # Contatos complementares (fontes fora da Receita, sempre com origem)
+    contatos_desatualizado_dias: int = 365
+    contatos_retencao_dias: int = 730
 
     # HTTP
     request_timeout_seconds: int = 10
@@ -80,7 +121,9 @@ class Settings(BaseSettings):
     receitaws_enabled: bool = False
     receitaws_base_url: str = "https://www.receitaws.com.br/v1"
 
-    receita_local_enabled: bool = False
+    # Usa a base local quando ela existir (publicada pelo painel "Base de Dados
+    # CNPJ" ou pelo comando `cnpj base atualizar`).
+    receita_local_enabled: bool = True
 
     # Pesquisa na internet (opcional). Vazio = so atalhos de pesquisa (links).
     # "tavily": Tavily (1.000 buscas/mes gratis; chave em WEB_SEARCH_API_KEY);

@@ -19,10 +19,14 @@ from app.core import formatting
 from app.core.cnpj_validator import normalize_or_none, strip
 from app.core.inbound_limit import check_company_lookup_limit, reserver_for
 from app.providers.registry import get_registry
-from app.services import inscricao_estadual, official_docs, web_research
+from app.receita.armazenamento import caminho_base_ativa
+from app.services import contatos, inscricao_estadual, official_docs, web_research
+from app.services import listas as listas_srv
+from app.services.admin_auth import eh_admin
 from app.services.batch import parse_cnpj_list, run_batch, summarize
 from app.services.company_query import query_company_async
 from app.services.diligence import STATUS_LABELS, build_diligence_checklist, build_diligence_verdict
+from app.services.ficha import BaseIndisponivel, ficha_local
 from app.services.history_service import history_stats, is_favorite, list_favorites, recent_queries
 from app.services.partner_search import MAX_LIMIT, search_partners
 from app.services.report_context import build_report_context
@@ -84,7 +88,7 @@ async def _index(request: Request, *, error: str | None = None, value: str = "",
             "favorites": favorites,
             "stats": stats,
             "fontes_ativas": [p.name for p in get_registry().all()],
-            "receita_local": get_settings().receita_local_enabled,
+            "receita_local": get_settings().receita_local_enabled and caminho_base_ativa() is not None,
         },
         status,
     )
@@ -97,10 +101,16 @@ async def index(request: Request) -> HTMLResponse:
 
 @router.get("/consulta")
 async def consulta(request: Request, cnpj: str = "") -> Response:
-    """Destino do formulario da pagina inicial: valida e redireciona."""
+    """Destino do formulario da pagina inicial: CNPJ abre a ficha; nome
+    (razao social / fantasia) abre a busca na base local."""
     if not strip(cnpj):
-        return await _index(request, error="Informe um CNPJ.", status=400)
+        return await _index(request, error="Informe um CNPJ ou o nome da empresa.", status=400)
     normalized = normalize_or_none(cnpj)
+    tem_letras = any(ch.isalpha() for ch in cnpj)
+    if normalized is None and tem_letras and len(strip(cnpj)) != 14 and caminho_base_ativa():
+        from urllib.parse import urlencode
+
+        return RedirectResponse(f"/busca?{urlencode({'q': cnpj.strip()[:100]})}", status_code=303)
     if normalized is None:
         return await _index(
             request,
@@ -116,18 +126,27 @@ async def consulta(request: Request, cnpj: str = "") -> Response:
     response_class=HTMLResponse,
     dependencies=[Depends(check_company_lookup_limit)],
 )
-async def empresa(request: Request, cnpj: str, atualizar: bool = False) -> HTMLResponse:
+async def empresa(
+    request: Request,
+    cnpj: str,
+    atualizar: bool = False,
+    externas: bool = False,
+    erro_contato: str = Query("", max_length=300),
+) -> HTMLResponse:
     normalized = normalize_or_none(cnpj)
     if normalized is None:
         return await _index(
             request, error="CNPJ inválido. Confira os dígitos.", value=cnpj[:18], status=400
         )
-    company = await query_company_async(normalized, force_refresh=atualizar)
-    favorite, sanctions = await asyncio.gather(
+    company = await query_company_async(normalized, force_refresh=atualizar, externas=externas or atualizar)
+    favorite, sanctions, ficha, complementares = await asyncio.gather(
         asyncio.to_thread(is_favorite, normalized),
         check_sanctions(normalized, force_refresh=atualizar) if company.razao_social else _none(),
+        asyncio.to_thread(_ficha_ou_none, normalized),
+        asyncio.to_thread(contatos.listar, normalized),
     )
     diligence = build_diligence_checklist(company, sanctions) if company.razao_social else []
+    so_local = bool(company.fontes) and all(f.fonte == "receita_local" for f in company.fontes)
     return _render(
         request,
         "company.html",
@@ -138,10 +157,23 @@ async def empresa(request: Request, cnpj: str, atualizar: bool = False) -> HTMLR
             "diligence": diligence,
             "verdict": build_diligence_verdict(diligence) if diligence else None,
             "status_labels": STATUS_LABELS,
+            "ficha": ficha,
+            "complementares": complementares,
+            "so_local": so_local,
+            "admin": eh_admin(request),
+            "erro_contato": erro_contato,
+            "listas": await asyncio.to_thread(listas_srv.listas),
             **_research_ctx(company),
         },
         200 if company.razao_social else 404,
     )
+
+
+def _ficha_ou_none(cnpj: str) -> dict | None:
+    try:
+        return ficha_local(cnpj)
+    except BaseIndisponivel:
+        return None
 
 
 def _research_ctx(company, query: str | None = None) -> dict:
@@ -297,7 +329,7 @@ async def socios(
     settings = get_settings()
     ctx: dict = {
         "active": "socios",
-        "enabled": settings.receita_local_enabled,
+        "enabled": settings.receita_local_enabled and caminho_base_ativa() is not None,
         "q": q.strip(),
         "uf": uf.strip().upper(),
         "municipio": municipio.strip(),
@@ -342,6 +374,7 @@ async def privacidade(request: Request) -> HTMLResponse:
             "active": "privacidade",
             "contact_email": settings.app_contact_email,
             "cache_hours": settings.cache_ttl_seconds / 3600,
+            "retencao_dias": settings.contatos_retencao_dias,
         },
     )
 

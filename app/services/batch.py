@@ -102,16 +102,27 @@ async def run_batch(
     ou os segundos ate liberar; so e chamado quando o cache nao serve.
     """
     sem = asyncio.Semaphore(max(1, concurrency))
+    # As vagas do limite seguem a ORDEM da lista: cada CNPJ so decide (cache ou
+    # vaga) depois do anterior. A consulta as fontes continua em paralelo.
+    decidido = [asyncio.Event() for _ in cnpjs]
 
-    def on_miss() -> None:
-        if reserve is not None and (wait := reserve()) > 0:
-            raise BatchLimitError(wait)
+    def on_miss_de(i: int) -> Callable[[], None]:
+        def on_miss() -> None:
+            try:
+                if reserve is not None and (wait := reserve()) > 0:
+                    raise BatchLimitError(wait)
+            finally:
+                decidido[i].set()
 
-    async def one(cnpj: str) -> BatchRow:
+        return on_miss
+
+    async def one(i: int, cnpj: str) -> BatchRow:
         row = BatchRow(cnpj=cnpj, cnpj_formatado=format_cnpj(cnpj), status="erro")
+        if i:
+            await decidido[i - 1].wait()
         async with sem:
             try:
-                c = await query_company_async(cnpj, on_miss=on_miss)
+                c = await query_company_async(cnpj, on_miss=on_miss_de(i))
             except BatchLimitError as e:
                 row.status = "limite"
                 row.mensagem = f"Limite de consultas por minuto atingido; tente de novo em {e.wait:.0f}s."
@@ -119,6 +130,8 @@ async def run_batch(
             except Exception:  # noqa: BLE001 -- uma falha nao derruba o lote
                 row.mensagem = "Falha inesperada ao consultar."
                 return row
+            finally:
+                decidido[i].set()  # cache/base local: decidiu sem pedir vaga
         row.fontes_total = len(c.fontes)
         row.fontes_ok = sum(1 for f in c.fontes if f.status == 200)
         row.do_cache = c.origem_cache
@@ -155,7 +168,7 @@ async def run_batch(
             row.sancoes = "; ".join(sanctions.cadastros) or "Nenhuma"
         return row
 
-    return list(await asyncio.gather(*(one(c) for c in cnpjs)))
+    return list(await asyncio.gather(*(one(i, c) for i, c in enumerate(cnpjs))))
 
 
 def summarize(rows: list[BatchRow]) -> dict[str, int]:

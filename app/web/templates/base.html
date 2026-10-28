@@ -14,23 +14,27 @@
     <link rel="stylesheet" href="{{ static_url('css/styles.css') }}">
     {# Carregado no <head> e sem defer: aplica o tema salvo antes da pintura (sem flash). #}
     <script src="{{ static_url('js/app.js') }}"></script>
+    <script src="{{ static_url('js/base.js') }}" defer></script>
 </head>
 <body>
 {% set atual = request.url.path %}
 {% set grupos = [
   ('Consultas', [
     ('/', 'Consultar CNPJ', 'search', false),
-    ('/lote', 'Consulta em lote', 'table', true),
+    ('/busca', 'Busca avançada', 'filter', true),
+    ('/listas', 'Listas de empresas', 'list', true),
+    ('/lote', 'Consulta em lote', 'table', false),
     ('/socios', 'Buscar sócio', 'users', false),
     ('/historico', 'Histórico e favoritos', 'history', false),
   ]),
   ('Sistema', [
-    ('/fontes', 'Status das fontes', 'activity', true),
+    ('/base', 'Base de Dados CNPJ', 'database', true),
+    ('/fontes', 'Status das fontes', 'activity', false),
     ('/docs', 'API REST', 'code', false),
     ('/privacidade', 'Privacidade', 'shield', false),
   ]),
 ] %}
-{% macro ativo(href) -%}{% if atual == href or (href == '/' and atual.startswith('/empresa')) %}aria-current="page"{% endif %}{%- endmacro %}
+{% macro ativo(href) -%}{% if atual == href or (href == '/' and atual.startswith('/empresa')) or (href != '/' and atual.startswith(href ~ '/')) %}aria-current="page"{% endif %}{%- endmacro %}
 
 <a class="skip-link" href="#conteudo">Pular para o conteúdo</a>
 <div class="app" id="app">
@@ -62,8 +66,10 @@
       <form class="quick-search" action="/consulta" method="get" role="search" aria-label="Consulta rápida de CNPJ">
         {{ ui.icon('search') }}
         <label for="busca-rapida" class="visually-hidden">Consultar CNPJ</label>
-        <input class="input" type="text" id="busca-rapida" name="cnpj" placeholder="Consultar CNPJ…" maxlength="18"
-               autocomplete="off" autocapitalize="characters" spellcheck="false" data-cnpj-mask data-atalho-busca>
+        <input class="input" type="text" id="busca-rapida" name="cnpj" placeholder="CNPJ ou nome da empresa…" maxlength="100"
+               autocomplete="off" spellcheck="false" data-atalho-busca data-sugestoes
+               role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="sug-topo">
+        <ul class="sugestoes" id="sug-topo" role="listbox" hidden></ul>
         <kbd aria-hidden="true">/</kbd>
       </form>
       {% endif %}

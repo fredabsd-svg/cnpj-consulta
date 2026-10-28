@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 
 from unidecode import unidecode
@@ -122,7 +123,7 @@ def parse_decimal(value: Any) -> float | None:
     """
     if value is None or isinstance(value, bool):
         return None
-    if isinstance(value, (int, float)):
+    if isinstance(value, (int, float, Decimal)):
         return float(value)
     if not isinstance(value, str):
         return None

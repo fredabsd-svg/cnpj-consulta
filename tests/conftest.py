@@ -20,6 +20,9 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[No
     monkeypatch.setenv("APP_HOST", "127.0.0.1")
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'data' / 'app.db'}")
     monkeypatch.setenv("RECEITA_LOCAL_PATH", str(tmp_path / "data" / "receita" / "receita.db"))
+    monkeypatch.setenv("RECEITA_DATA_DIR", str(tmp_path / "data" / "receita"))
+    monkeypatch.setenv("RECEITA_DUCKDB_MEMORIA", "512MB")
+    monkeypatch.setenv("ADMIN_TOKEN", "token-de-teste-123456")
     monkeypatch.setenv("CACHE_TTL_SECONDS", "60")
     monkeypatch.setenv("BRASILAPI_ENABLED", "true")
     monkeypatch.setenv("MINHA_RECEITA_ENABLED", "true")
@@ -42,6 +45,11 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[No
     from app.core.inbound_limit import reset_inbound_limiter
 
     reset_inbound_limiter()
+    from app.receita.armazenamento import limpar_cache
+    from app.services.admin_auth import limpar_falhas
+
+    limpar_cache()
+    limpar_falhas()
 
     # Reseta engine/Factory do SQLAlchemy para apontar para o DB isolado
     import app.db as _db
@@ -163,3 +171,33 @@ def receitaws_payload() -> dict:
         "simei": {"optante": False, "data_opcao": None, "data_exclusao": None},
         "billing": {"free": True, "database": True},
     }
+
+
+@pytest.fixture
+def base_local(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, db_initialized) -> Path:
+    """Base local publicada pelo pipeline real, a partir do portal falso."""
+    import respx
+
+    from app.config import get_settings
+    from app.receita.armazenamento import base_ativa, limpar_cache
+    from app.receita.pipeline import Atualizacao
+    from tests.receita_fake import PortalFalso, dataset_padrao
+
+    monkeypatch.setenv("RECEITA_LOCAL_ENABLED", "true")
+    get_settings.cache_clear()
+    from app.providers.registry import get_registry
+
+    get_registry.cache_clear()
+    portal = PortalFalso({"2026-10": dataset_padrao()})
+    with respx.mock(assert_all_called=False) as router:
+        portal.instalar(router)
+        Atualizacao(sleep=lambda s: None).executar()
+    limpar_cache()
+    ativa = base_ativa()
+    assert ativa is not None
+    return ativa.caminho
+
+
+@pytest.fixture
+def admin_headers() -> dict[str, str]:
+    return {"Authorization": "Bearer token-de-teste-123456"}

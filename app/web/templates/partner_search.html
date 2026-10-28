@@ -17,10 +17,10 @@
     {{ ui.icon('database') }}
     <div>
         <span class="alert-title">A busca por sócio precisa da base local da Receita Federal.</span>
-        <p>Nenhuma API pública gratuita permite buscar pelo nome do sócio. Para habilitar (cerca de 40 GB livres durante a importação):</p>
+        <p>Nenhuma API pública gratuita permite buscar pelo nome do sócio. Instale a base oficial (cerca de 45 GB livres durante a atualização):</p>
         <ol>
-            <li>Baixe e importe a base: <pre>python -m app.cli sync-receita --mes AAAA-MM</pre></li>
-            <li>No arquivo <code>.env</code>, defina <code>RECEITA_LOCAL_ENABLED=true</code> e reinicie o servidor.</li>
+            <li>Pelo painel <a href="/base">Base de Dados CNPJ</a> (acesso de administrador), ou</li>
+            <li>no terminal: <pre>python -m app.cli base atualizar</pre></li>
         </ol>
     </div>
 </div>
@@ -64,7 +64,7 @@
             <tbody>
                 {% for r in rows %}
                 <tr>
-                    <td>{{ r.nome_socio }}</td>
+                    <td>{% if r.socio_chave %}<a href="/socio/{{ r.socio_chave }}" title="Todas as empresas deste sócio">{{ r.nome_socio }}</a>{% else %}{{ r.nome_socio }}{% endif %}</td>
                     <td><a href="/empresa/{{ r.cnpj }}">{{ r.razao_social or "Sem razão social" }}</a></td>
                     <td class="mono nowrap">{{ r.cnpj | cnpj }}</td>
                     <td>{% if r.situacao %}{{ ui.situacao_badge(r.situacao) }}{% else %}—{% endif %}</td>

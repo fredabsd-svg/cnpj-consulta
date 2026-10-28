@@ -25,7 +25,7 @@ HTTPX · Pydantic v2 · Jinja2 · HTMX · Typer/Rich**.
 |---|---|---|
 | **Minha Receita** | `https://minhareceita.org/{cnpj}` | primária (RFB indireta) |
 | **BrasilAPI** | `https://brasilapi.com.br/api/cnpj/v1/{cnpj}` | proxy da Minha Receita |
-| **Receita Federal local** | `python -m app.cli sync-receita --mes YYYY-MM` | primária (oficial) |
+| **Receita Federal local** | painel `/base` ou `python -m app.cli base atualizar` | primária (oficial) |
 | **ReceitaWS** | `https://www.receitaws.com.br/v1/cnpj/{cnpj}` | espelho agregado |
 | **CNPJ.ws** | `https://publica.cnpj.ws/cnpj/{cnpj}` | espelho (RFB + SEFAZ + Sintegra) |
 
@@ -160,26 +160,26 @@ conflito entre espelho e primária.
    nunca o CPF de sócios ou dados sensíveis. Use `LOG_LEVEL=WARNING`
    se precisar reduzir.
 9. **Endereço da Receita**: a RFB já mudou o endereço dos dados abertos
-   mais de uma vez. O padrão é
-   `https://arquivos.receitafederal.gov.br/dados/cnpj/dados_abertos_cnpj/{AAAA-MM}/`;
-   se o `sync-receita` responder 404, ajuste `RECEITA_BASE_URL`.
+   mais de uma vez (desde 2025 é um compartilhamento público no portal de
+   arquivos). O app descobre o compartilhamento e a pasta do CNPJ a partir de
+   `RECEITA_PORTAL_URL`; se a descoberta falhar, ajuste `RECEITA_PASTA_CNPJ`
+   ou `RECEITA_SHARE_TOKEN` (ver [BASE_LOCAL.md](BASE_LOCAL.md)).
 
 ## 8. Como atualizar ou substituir uma fonte
 
 ### 8.1. Atualizar a base local (Receita Federal)
 
 ```bash
-python -m app.cli sync-receita --mes 2026-08
+python -m app.cli base atualizar            # ou pelo painel /base
 ```
 
-Opções:
+Detalhes do pipeline, requisitos de disco e retomada em [BASE_LOCAL.md](BASE_LOCAL.md).
 
-- `--keep-zip` — não apaga os ZIPs após extrair.
-- `--only-download` — só baixa, sem importar.
-- `--only-import` — só importa (assume arquivos já extraídos).
-
-A base substitui a anterior (`DuckDB` é sobrescrito). Use `--data-dir`
-para trocar o diretório padrão `./data/receita`.
+Opções: `--mes AAAA-MM` (padrão: a mais recente completa), `--forcar`
+(ignora avisos de espaço e de queda nas contagens) e `--segundo-plano`.
+`RECEITA_MANTER_ZIPS=true` guarda os ZIPs; `RECEITA_DATA_DIR` troca a pasta.
+A versão nova só substitui a ativa depois de validada, e a anterior fica no
+disco (`cnpj base restaurar`).
 
 ### 8.2. Trocar a URL base de uma fonte
 
@@ -295,7 +295,7 @@ Para a base local:
 
 ```bash
 python -m app.cli init-db
-python -m app.cli sync-receita --mes 2025-09
+python -m app.cli base atualizar
 ```
 
 ## 11. Aviso legal
