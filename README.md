@@ -150,7 +150,10 @@ O `setup` cria o ambiente virtual `.venv`, instala as dependências (`pip instal
 - **Status das fontes** (`/fontes`): consultas, erros, último sucesso e falha de cada fonte, fontes desligadas e recursos opcionais.
 - **Cartão CNPJ** (`/empresa/{cnpj}/cartao-cnpj`): a página oficial de emissão do Comprovante de Inscrição e de Situação Cadastral da Receita, dentro do app e com o CNPJ preenchido. O app não emite nem altera o documento: o captcha e a impressão são feitos no próprio site da Receita. Se o navegador bloquear o quadro, há o botão **Abrir em nova janela**.
 - **Inscrição estadual** (`/empresa/{cnpj}/inscricao-estadual`): com `CERTIFICADO_A1_PATH` e `CERTIFICADO_A1_SENHA`, consulta o web service de consulta cadastral da SEFAZ da UF escolhida (a da sede vem marcada) e mostra IE, situação (habilitado ou não), regime de apuração, CNAE, datas e endereço. Sem certificado, guia a consulta no portal CCC (exige login gov.br). Regras da SEFAZ: o web service existe em 15 UFs (AC, AM, BA, ES, GO, MG, MS, MT, PB, PE, PR, RN, RS, SC, SP) e só atende certificados de empresas **emissoras de NF-e**; fora disso a SEFAZ responde 257 e o app orienta a usar o CCC. As raízes ICP-Brasil v5 e v10 vêm em `app/certs/` e valem só para as conexões com a SEFAZ.
-- **Buscar sócio**: por nome (palavras em qualquer ordem, sem acento), UF e município da sede. Requer a base local.
+- **Buscar sócio**: por nome (palavras em qualquer ordem, sem acento), UF e município da sede, com ficha do sócio e empresas relacionadas (`/socio/{id}`). Requer a base local.
+- **Busca avançada e prospecção** (`/busca`): filtros por identificação, localização (UF → municípios), CNAE (principal, secundário, grupo, descrição ou atalho como *contabilidade*), sócios, porte/Simples/MEI, contatos oficiais (celular/fixo pelo plano da Anatel, DDD, domínio do e-mail) e complementares, qualidade dos dados, construtor E/OU/NÃO, contadores, colunas configuráveis, exportação CSV/Excel (em segundo plano se for grande), buscas salvas, histórico de buscas e **listas de empresas** com observações (`/listas`). Requer a base local.
+- **Base de Dados CNPJ** (`/base`, administrador): baixa os dados abertos oficiais do portal da Receita, com progresso, velocidade, tempo restante, pausa/retomada/cancelamento, validação, histórico, restauração da versão anterior e atualização agendada. Detalhes em [BASE_LOCAL.md](BASE_LOCAL.md).
+- **Ficha completa** (página da empresa, com a base local): abas Resumo, Endereço (com mapa), Contatos (oficiais e complementares, com origem e data), CNAEs, Sócios (qualificação, entrada, representante legal, faixa etária, CPF mascarado), Estabelecimentos e Histórico (inclui mudanças desde a versão anterior da base); exporta em Excel e PDF.
 - **Histórico e favoritos**: consultas recentes, favoritos e botão para apagar o histórico.
 
 ### CLI
@@ -162,7 +165,10 @@ python -m app.cli consultar 19131243000197 --json
 python -m app.cli consultar 12ABC34501DE35 --atualizar        # ignora o cache
 python -m app.cli socio "JOAO SILVA" --uf SP --municipio "sao paulo"   # requer a base local
 python -m app.cli providers list
-python -m app.cli sync-receita --mes 2026-08                  # baixa e importa a base oficial
+python -m app.cli base verificar                               # versão mais recente no portal da Receita
+python -m app.cli base atualizar                              # baixa, valida, importa e publica (retoma se interrompida)
+python -m app.cli base status | retomar | cancelar | validar | restaurar | limpar
+python -m app.cli admin-token                                 # token da área administrativa
 python -m app.cli limpar-historico
 python -m app.cli limpar-cache
 python -m app.cli init-db
@@ -204,6 +210,15 @@ GET    /api/batch                            ?cnpjs=A,B,C  consulta em lote (JSO
 GET    /api/batch/export.csv                 ?cnpjs=A,B,C&excel=true
 GET    /api/partners/search                  ?q=nome&uf=SP&municipio=...&limit=50  (requer a base local)
 GET    /api/partners/{cnpj}/companies        empresas em que um CNPJ (PJ) é sócio
+GET    /api/busca                            busca avançada (filtros na query string; ver /api/busca/campos)
+GET    /api/busca/contar | /contadores       total e distribuição por UF, situação, porte, município, CNAE
+GET    /api/busca/exportar.csv|.xlsx         ?colunas=...&finalidade=...  (contatos exigem finalidade)
+GET    /api/base/empresa/{cnpj}              ficha completa da base local (+ contatos complementares)
+GET    /api/base/socio/{id}                  sócio e empresas relacionadas
+GET    /api/base/sugestoes?q=                autocompletar por CNPJ, razão social ou nome fantasia
+GET    /api/base/municipios?uf=TO            municípios da UF   GET /api/base/dominio/{cnaes|naturezas|...}
+GET    /api/buscas-salvas  /api/buscas-recentes  /api/listas   (POST/PATCH/DELETE para gerenciar)
+*      /api/admin/...                        base de dados, tarefas, auditoria e contatos (exige administrador)
 GET    /api/health
 GET    /api/providers/status
 GET    /api/history                          DELETE /api/history
@@ -240,13 +255,13 @@ Requisições POST e DELETE vindas de outra origem (outro site aberto no navegad
 | BrasilAPI | Sim | Não | Espelho | Proxy da Minha Receita: confirma o formato, mas conta como a mesma base (60/min) |
 | ReceitaWS | Plano free | Não | Espelho | Segunda opinião, desligada por padrão (termos restritivos); o plano gratuito limita a 3 consultas/min |
 | CNPJ.ws | Plano free | Não | Espelho | Opcional, desligada por padrão (3/min) |
-| Receita Federal (base local) | Sim | Não | Primária | Busca por sócio, filiais e modo offline |
+| Receita Federal (base local) | Sim | Não | Primária | Ficha completa, busca avançada, busca por sócio, filiais e modo offline; consultada **antes** das demais |
 
 ## Modos de operação
 
 **Online (padrão)** consulta as APIs gratuitas configuradas. A instalação é leve (cerca de 200 MB), mas **não permite busca reversa por sócio**.
 
-**Local** importa a base oficial da Receita Federal com `python -m app.cli sync-receita --mes AAAA-MM` (as 10 partes de Empresas, Estabelecimentos e Sócios, o Simples e as tabelas de descrição). O download retoma de onde parou e a base em uso só é substituída depois de validada. Habilite com `RECEITA_LOCAL_ENABLED=true` no `.env`. Com ela ativa, o app faz busca por sócio, lista filiais, continua funcionando com as APIs fora do ar e dá prioridade a ela sobre as demais fontes. Reserve cerca de **40 GB livres** durante a importação (ZIPs e CSVs extraídos); depois ficam apenas a base DuckDB e um backup.
+**Local** baixa os dados abertos oficiais do CNPJ do portal de arquivos da Receita Federal pelo painel **Base de Dados CNPJ** (`/base`) ou com `python -m app.cli base atualizar`. O endereço dos arquivos é descoberto no próprio portal (sem URL fixa); o download retoma de onde parou, cada arquivo é validado (tamanho, ZIP, CRC, colunas e codificação), a importação é feita em lotes com pontos de retomada e a versão em uso só é trocada depois da validação — a anterior continua disponível para restaurar. Com a base instalada, a consulta por CNPJ usa primeiro a base local (as fontes externas ficam a um clique) e ficam disponíveis a ficha completa, a busca avançada, a busca por sócio e as filiais. Reserve **~45 GB livres** durante a atualização; cada versão publicada ocupa ~15 GB. Guia completo em [BASE_LOCAL.md](BASE_LOCAL.md).
 
 ## Configuração
 
@@ -257,11 +272,15 @@ Tudo é configurado por variáveis de ambiente (ou pelo arquivo `.env`; veja o `
 | `BRASILAPI_ENABLED`, `MINHA_RECEITA_ENABLED` | `true` | Liga/desliga cada fonte |
 | `RECEITAWS_ENABLED` | `false` | ReceitaWS (opcional: os termos proíbem republicar os dados; use só localmente) |
 | `CNPJWS_ENABLED` | `false` | CNPJ.ws (opcional) |
-| `RECEITA_LOCAL_ENABLED` | `false` | Usa a base local da Receita Federal |
+| `RECEITA_LOCAL_ENABLED` | `true` | Usa a base local da Receita Federal quando instalada |
+| `RECEITA_DATA_DIR` | `./data/receita` | Pasta das versões da base e da área de trabalho das atualizações |
+| `RECEITA_PORTAL_URL` / `RECEITA_PASTA_CNPJ` | portal oficial / `Dados/Cadastros/CNPJ` | Ponto de entrada oficial e pasta dos dados abertos (descoberta automática) |
+| `RECEITA_DUCKDB_MEMORIA` | `4GB` | Memória máxima da importação (o excedente vai para disco) |
+| `ADMIN_TOKEN` | gerado | Token da área administrativa (vazio: gerado em `data/admin_token.txt`) |
+| `EXPORTACAO_MAX_LINHAS` / `EXPORTACAO_SINCRONA_MAX` | `500000` / `20000` | Teto de exportação e limite para gerar na hora |
 | `RATE_LIMIT_<FONTE>` | 60 / 30 / 3 / 3 | Consultas por minuto de cada fonte |
 | `REQUEST_TIMEOUT_SECONDS` / `REQUEST_TOTAL_TIMEOUT_SECONDS` | `10` / `20` | Timeout por requisição e por consulta |
 | `CACHE_BACKEND` / `CACHE_TTL_SECONDS` | `sqlite` / `86400` | Cache persistente (ou em memória) e validade |
-| `RECEITA_BASE_URL` | dados abertos da RFB | Endereço dos arquivos mensais (ajuste se a Receita mudar) |
 | `APP_HOST` / `APP_PORT` | `127.0.0.1` / `8000` | Onde o servidor escuta |
 | `APP_CONTACT_EMAIL` | vazio | Contato exibido na página de privacidade |
 | `WEB_SEARCH_PROVIDER` | vazio | `tavily`, `brave` ou `searxng`: mostra resultados da web na aba Pesquisa na internet |
@@ -280,12 +299,14 @@ Tudo é configurado por variáveis de ambiente (ou pelo arquivo `.env`; veja o `
 - A **pesquisa na internet** usa só dados da empresa (razão social, CNPJ, endereço) e só sai do seu computador quando você clica; nomes e documentos de sócios nunca entram nas buscas.
 - Histórico, cache e favoritos ficam **só no seu computador** e podem ser apagados a qualquer momento (`python -m app.cli limpar-historico`).
 - Transparência: nas consultas online, o CNPJ consultado é enviado às fontes habilitadas, porque é assim que a consulta funciona. Com a base local, nada sai do seu computador.
+- **Contatos complementares** (fora da Receita) só entram por cadastro de um administrador, com fonte e data de verificação; nunca são inferidos ou completados. Podem ser corrigidos e removidos, e há descarte por retenção.
+- **Exportações** com telefones, e-mails ou nomes de sócios exigem informar a finalidade e ficam na trilha de auditoria (sem os dados). Logs de acesso não registram a query string das buscas.
 
 Detalhes e canais de contato em [`politica-de-privacidade.md`](politica-de-privacidade.md).
 
 ## Segurança
 
-O app foi feito para **uso local e de um único usuário**: escuta apenas em `127.0.0.1`, aplica CSP estrita (sem scripts e estilos inline nem de terceiros), cabeçalhos anti-clickjacking e bloqueia requisições POST/DELETE de outra origem. Ele **não tem login**: para expor em uma rede, coloque na frente um proxy reverso com autenticação.
+O app foi feito para **uso local e de um único usuário**: escuta apenas em `127.0.0.1`, aplica CSP estrita (sem scripts e estilos inline nem de terceiros), cabeçalhos anti-clickjacking e bloqueia requisições POST/DELETE de outra origem. As consultas **não têm login**; as funções administrativas (base de dados, contatos complementares, auditoria) exigem o **token de administrador** (sessão assinada, HttpOnly/SameSite=Strict, limite de tentativas e trilha de auditoria). Para expor em uma rede, coloque na frente um proxy reverso com autenticação.
 
 ## Limitações conhecidas
 
@@ -306,9 +327,10 @@ A lista completa, com o que cada fonte fornece, está no [relatório técnico](R
 | No lote, algumas linhas ficam "Aguardando limite" | O limite de consultas por minuto acabou: rode o lote de novo em instantes (os já consultados vêm do cache) |
 | Pesquisa na internet: "recusou o formato JSON" | Na sua instância SearXNG, inclua `json` em `search.formats` no `settings.yml` |
 | A API responde 429 | Aguarde alguns minutos ou desabilite a fonte no `.env` |
-| `sync-receita` retorna 404 | O mês ainda não foi publicado ou a Receita mudou o endereço: ajuste `RECEITA_BASE_URL` |
-| `sync-receita`: "arquivo em uso" | Pare o servidor e rode de novo com `--only-import` (não baixa de novo) |
-| Base local muito grande | Use SSD e reserve cerca de 40 GB livres durante a importação |
+| Atualização da base falhou | Veja o registro no painel `/base`; corrija a causa (espaço, conexão) e clique em **Tentar novamente** — continua de onde parou |
+| "Pasta dos dados abertos do CNPJ não encontrada" | A Receita mudou o portal: ajuste `RECEITA_PASTA_CNPJ` ou `RECEITA_SHARE_TOKEN` conforme o site oficial |
+| Esqueci o token de administrador | `python -m app.cli admin-token` |
+| Base local muito grande | Use SSD; reserve ~45 GB durante a atualização e ~15 GB por versão |
 
 ## Estrutura do projeto
 
@@ -319,7 +341,7 @@ app/
 ├── providers/   adaptadores das fontes (Minha Receita, BrasilAPI, ReceitaWS, CNPJ.ws, base local)
 ├── services/    consulta, conciliação, cache, histórico, busca por sócio,
 │                diligência, pesquisa na internet, sanções e consulta em lote
-├── sync/        download e importação da base da Receita Federal
+├── receita/     base local: descoberta no portal oficial, pipeline, versões, tarefas
 ├── web/         páginas e templates (Jinja2, renderizados no servidor)
 ├── static/      CSS e JS próprios (sem CDN)
 ├── models/      tabelas SQLAlchemy      schemas/  modelos Pydantic

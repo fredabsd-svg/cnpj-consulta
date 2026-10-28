@@ -309,7 +309,8 @@ class TestContatosComplementares:
     def test_classificacao_telefone(self):
         assert ct.classificar_telefone("63992345678") == "celular"
         assert ct.classificar_telefone("6332151234") == "fixo"
-        assert ct.classificar_telefone("6392345678") == "indeterminado"  # 8 digitos comecando por 9
+        assert ct.classificar_telefone("6392345678") == "celular"  # como a Receita publica: sem o nono digito
+        assert ct.classificar_telefone("6312345678") == "indeterminado"
 
     def test_retencao(self, db_initialized):
         ct.salvar(CNPJ, tipo="email", valor="velho@x.com.br", fonte="planilha antiga", verificado=True,

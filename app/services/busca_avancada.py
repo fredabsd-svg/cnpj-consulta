@@ -553,7 +553,7 @@ _CAMPOS: list[Campo] = [
           _sim_nao("e.telefone_2 IS NOT NULL", "e.telefone_2 IS NULL"), SIM_NAO),
     Campo("tipo_telefone", "Tipo de telefone", "contatos", "multi", _tipo_telefone("qualquer"),
           (("celular", "Celular"), ("fixo", "Fixo"), ("indeterminado", "Indeterminado")),
-          ajuda="Plano de numeração da Anatel: celular tem 9 dígitos começando por 9; fixo, 8 dígitos de 2 a 5."),
+          ajuda="Plano de numeração da Anatel: celular começa por 6 a 9 (a Receita publica sem o nono dígito); fixo, por 2 a 5."),
     Campo("tipo_telefone_principal", "Tipo do telefone principal", "contatos", "multi", _tipo_telefone("principal"),
           (("celular", "Celular"), ("fixo", "Fixo"), ("indeterminado", "Indeterminado"))),
     Campo("ddd", "DDD", "contatos", "multi", _ddd),

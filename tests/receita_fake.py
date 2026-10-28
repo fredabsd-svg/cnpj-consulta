@@ -84,7 +84,7 @@ def dataset_padrao() -> dict[str, bytes]:
     ]))
     files["Estabelecimentos0.zip"] = zip_bytes("K3241.K03200Y0.D61010.ESTABELE", csv_bytes([
         estab("12345678", "0001", "95", fantasia="CONTA FACIL", ddd1="63", tel1="32151234",
-              ddd2="63", tel2="992345678", email="CONTATO@CONTAFACIL.COM.BR", secundarios="6920602,8211300"),
+              ddd2="63", tel2="92345678", email="CONTATO@CONTAFACIL.COM.BR", secundarios="6920602,8211300"),
         estab("87654321", "0001", "98", fantasia="", cnae="4711302", uf="TO", municipio="9241",
               email="mercado@gmail.com"),
     ]))

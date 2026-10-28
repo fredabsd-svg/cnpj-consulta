@@ -6,9 +6,10 @@ direto...). Regras:
   Nada e preenchido, completado ou inferido automaticamente.
 - "Verificado" e uma declaracao de quem cadastrou, com data. Sem data, o
   contato aparece como "nao verificado".
-- Classificacao de telefone usa o plano de numeracao da Anatel: 11 digitos
-  com o 3o = 9 e celular (SMP, nono digito); 10 digitos com o 3o de 2 a 5 e
-  fixo (STFC); o resto fica "indeterminado".
+- Classificacao de telefone usa o plano de numeracao da Anatel: celular (SMP)
+  = 9 + numero de 8 digitos iniciado por 6-9 (ou so os 8 digitos, formato
+  anterior ao nono digito); fixo (STFC) = 8 digitos iniciados por 2-5; o resto
+  fica "indeterminado".
 - Podem ser corrigidos e removidos a qualquer momento; a remocao apaga o
   registro (a auditoria guarda so o tipo e o CNPJ, nunca o valor).
 - Retencao: contatos sem verificacao ha mais de CONTATOS_RETENCAO_DIAS podem
@@ -37,8 +38,11 @@ class ContatoInvalido(ValueError):
 
 
 def classificar_telefone(digitos: str) -> str:
-    if len(digitos) == 11 and digitos[2] == "9":
+    """Plano de numeracao da Anatel (mesmo criterio da base oficial)."""
+    if len(digitos) == 11 and digitos[2] == "9" and digitos[3] in "6789":
         return "celular"
+    if len(digitos) == 10 and digitos[2] in "6789":
+        return "celular"  # formato antigo, sem o nono digito
     if len(digitos) == 10 and digitos[2] in "2345":
         return "fixo"
     return "indeterminado"

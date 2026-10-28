@@ -738,3 +738,6 @@ select[multiple].select { background-image: none; padding-right: var(--space-1);
 .resultado-ferramentas .select, .paginacao .select, .inline-form .select, .selecao-barra .select { width: auto; min-width: 0; }
 .resultados td:nth-child(2) { min-width: 240px; }
 .resultados th { white-space: nowrap; }
+.sugestoes { background: linear-gradient(var(--color-popover), var(--color-popover)), var(--color-bg); }
+.filtros-acoes { background: linear-gradient(var(--color-popover), var(--color-popover)), var(--color-bg); }
+.resultados td.col-sel, .resultados th.col-sel { min-width: 0; width: 32px; padding-right: var(--space-1); }

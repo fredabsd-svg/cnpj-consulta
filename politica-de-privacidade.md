@@ -68,6 +68,15 @@ python -m app.cli limpar-historico
 
 As integracoes com chave ou certificado vem **desligadas** por padrao; o certificado A1 e a senha ficam apenas no `.env` local e nunca sao exibidos nem registrados em log. Nomes e documentos de socios **nunca** entram nessas consultas. Os resultados ficam em cache apenas na memoria do servidor local.
 
+## 4-B. Base local da Receita, busca avancada e contatos complementares
+
+- A base local e a copia dos **dados abertos oficiais do CNPJ** baixada do portal de arquivos da Receita Federal. Fica no computador da instalacao; as consultas a ela nao saem da maquina.
+- CPF de socio aparece **mascarado** como publicado pela Receita (`***.123.456-**`). A base publica nao traz CPF completo nem percentual de participacao; o app nao tenta obte-los nem reconstitui-los.
+- **Contatos complementares** (telefones, e-mails e sites obtidos fora da Receita) so entram por cadastro manual de um administrador, com **fonte** e **data de verificacao**. Nunca sao inferidos, completados ou raspados de sites. Podem ser corrigidos ou removidos a qualquer momento; contatos sem verificacao ha mais de `CONTATOS_RETENCAO_DIAS` (padrao 730) sao descartados pela acao de retencao do painel.
+- **Exportacoes** com telefones, e-mails ou nomes de socios exigem informar a finalidade e ficam registradas na trilha de auditoria (acao, quantidade de linhas, colunas e finalidade; nunca os dados exportados).
+- Nomes e documentos de socios nao entram no historico de buscas, nos logs de processamento, na auditoria nem nas pesquisas na internet; o log de acesso nao guarda a query string.
+- Funcoes administrativas exigem token de administrador e sao auditadas.
+
 ## 5. Base legal de tratamento
 
 - **LGPD** - Lei 13.709/2018, especialmente:
@@ -76,6 +85,8 @@ As integracoes com chave ou certificado vem **desligadas** por padrao; o certifi
   - Art. 18 (direitos do titular)
 - **LAI** - Lei 12.527/2011, art. 8&ordm; (dados publicos)
 - **CTN** - Lei 5.172/1966, art. 198 (sigilo de CPF de socios)
+
+Dados de acesso publico (como o QSA e os contatos declarados a Receita) devem ser tratados considerando a finalidade, a boa-fe e o interesse publico que justificaram sua disponibilizacao (LGPD, art. 7o, §§ 3o e 4o). A publicacao **nao** autoriza qualquer uso: defina a finalidade (diligencia cadastral, atendimento a clientes, prospeccao B2B com legitimo interesse), minimize os dados exportados e atenda pedidos de oposicao.
 
 ## 6. Direitos do titular (LGPD art. 18)
 

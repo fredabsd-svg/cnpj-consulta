@@ -47,6 +47,7 @@
                 <span class="cell-sub">
                     {% if o.tipo == "telefone" %}Telefone {{ {"principal": "principal", "secundario": "secundário"}[o.posicao] }} · {{ {"celular": "celular", "fixo": "fixo", "indeterminado": "tipo indeterminado"}[o.subtipo] }}{% elif o.tipo == "fax" %}Fax{% else %}E-mail{% if o.subtipo == "dominio_proprio" %} · domínio próprio provável{% elif o.subtipo == "webmail" %} · webmail{% endif %}{% endif %}
                     {% if not o.valido %} · <span class="badge badge-warning">formato inválido na fonte</span>{% endif %}
+                    {% if o.sem_nono_digito %} · <span class="badge badge-plain" title="A base pública da Receita traz o número com 8 dígitos; o app não acrescenta o 9">publicado sem o nono dígito</span>{% endif %}
                 </span>
                 <span class="cell-sub">{{ ui.origem_badge("oficial") }} referência {{ o.data_referencia }}</span>
             </div>

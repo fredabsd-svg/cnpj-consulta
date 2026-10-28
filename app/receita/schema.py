@@ -51,9 +51,13 @@ CREATE OR REPLACE TEMP MACRO digitos(x) AS regexp_replace(coalesce(x, ''), '[^0-
 CREATE OR REPLACE TEMP MACRO tel(ddd, num) AS
     CASE WHEN length(ltrim(digitos(ddd), '0')) = 2 AND length(digitos(num)) IN (8, 9)
          THEN ltrim(digitos(ddd), '0') || digitos(num) END;
+-- Plano de numeracao da Anatel: celular (SMP) = 9 + 8 digitos iniciados por 6-9;
+-- fixo (STFC) = 8 digitos iniciados por 2-5. A base publica traz o numero com 8
+-- digitos (sem o nono digito); o app classifica, mas nunca acrescenta o digito.
 CREATE OR REPLACE TEMP MACRO tipo_tel(t) AS
     CASE WHEN t IS NULL THEN NULL
-         WHEN length(t) = 11 AND substr(t, 3, 1) = '9' THEN 'celular'
+         WHEN length(t) = 11 AND substr(t, 3, 2) IN ('96', '97', '98', '99') THEN 'celular'
+         WHEN length(t) = 10 AND substr(t, 3, 1) IN ('6', '7', '8', '9') THEN 'celular'
          WHEN length(t) = 10 AND substr(t, 3, 1) IN ('2', '3', '4', '5') THEN 'fixo'
          ELSE 'indeterminado' END;
 CREATE OR REPLACE TEMP MACRO email_ok(x) AS

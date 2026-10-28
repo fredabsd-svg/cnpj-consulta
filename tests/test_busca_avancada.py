@@ -59,7 +59,7 @@ class TestFiltros:
         assert cnpjs({"cnpj": "1234"}) == sorted([CONTABIL, FILIAL])
 
     def test_celular_fixo_por_criterio_tecnico(self, base_local):
-        assert cnpjs({"tipo_telefone": ["celular"]}) == [CONTABIL]  # (63) 99234-5678
+        assert cnpjs({"tipo_telefone": ["celular"]}) == [CONTABIL]  # (63) 9234-5678: 8 digitos como a Receita publica
         assert cnpjs({"tipo_telefone_principal": ["fixo"]}) == [CONTABIL]  # (63) 3215-1234
         assert cnpjs({"tipo_telefone_principal": ["celular"]}) == []
         assert cnpjs({"ddd": ["63"]}) == [CONTABIL]

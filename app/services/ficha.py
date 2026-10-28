@@ -216,6 +216,8 @@ def _contatos_oficiais(e: dict, mes: str | None) -> list[dict]:
                 "tipo": "telefone", "posicao": posicao, "valor": t or bruto,
                 "formatado": formatar_telefone(t) or bruto, "subtipo": e.get(f"tipo_telefone_{i}") or "indeterminado",
                 "valido": bool(t),
+                # Publicado sem o nono digito: o app nao completa o numero.
+                "sem_nono_digito": bool(t) and len(t) == 10 and e.get(f"tipo_telefone_{i}") == "celular",
             })
     fax = " ".join(filter(None, [e.get("ddd_fax"), e.get("numero_fax")]))
     if fax:

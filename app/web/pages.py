@@ -374,6 +374,7 @@ async def privacidade(request: Request) -> HTMLResponse:
             "active": "privacidade",
             "contact_email": settings.app_contact_email,
             "cache_hours": settings.cache_ttl_seconds / 3600,
+            "retencao_dias": settings.contatos_retencao_dias,
         },
     )
 

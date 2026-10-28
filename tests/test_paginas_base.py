@@ -18,7 +18,7 @@ def test_ficha_completa_na_pagina_da_empresa(base_local):
     assert "CONTABIL TESTE LTDA" in html
     assert "***.123.456-**" in html  # CPF mascarado como publicado
     assert "Base local RFB" in html
-    assert "(63) 99234-5678" in html and "celular" in html
+    assert "(63) 9234-5678" in html and "celular" in html and "sem o nono dígito" in html
 
 
 def test_busca_avancada_pagina(base_local):
