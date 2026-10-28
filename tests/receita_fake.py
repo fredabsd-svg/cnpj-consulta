@@ -79,15 +79,18 @@ def dataset_padrao() -> dict[str, bytes]:
         ["87654321", "MERCADO EXEMPLO LTDA", "2062", "49", "250000,50", "03", ""],
         # duplicado de proposito (a consolidacao remove)
         ["87654321", "MERCADO EXEMPLO LTDA", "2062", "49", "250000,50", "03", ""],
+        # empresario individual / MEI: sem QSA, sem telefone e sem e-mail
+        ["11222333", "JOSE PEREIRA 12345678900", "2135", "50", "5000,00", "01", ""],
     ]))
     files["Estabelecimentos0.zip"] = zip_bytes("K3241.K03200Y0.D61010.ESTABELE", csv_bytes([
         estab("12345678", "0001", "95", fantasia="CONTA FACIL", ddd1="63", tel1="32151234",
               ddd2="63", tel2="992345678", email="CONTATO@CONTAFACIL.COM.BR", secundarios="6920602,8211300"),
-        estab("87654321", "0001", "10", fantasia="", cnae="4711302", uf="TO", municipio="9241",
+        estab("87654321", "0001", "98", fantasia="", cnae="4711302", uf="TO", municipio="9241",
               email="mercado@gmail.com"),
     ]))
     files["Estabelecimentos1.zip"] = zip_bytes("K3241.K03200Y1.D61010.ESTABELE", csv_bytes([
         estab("12345678", "0002", "76", matriz=False, uf="TO", municipio="9701", bairro="", cep="7700"),
+        estab("11222333", "0001", "81", cnae="9602501", uf="GO", municipio="9373", inicio="20250301"),
     ]))
     files["Socios0.zip"] = zip_bytes("K3241.K03200Y0.D61010.SOCIOCSV", csv_bytes([
         ["12345678", "2", "MARIA DA SILVA", "***123456**", "49", "20200115", "", "***000000**", "", "00", "5"],
@@ -100,6 +103,7 @@ def dataset_padrao() -> dict[str, bytes]:
     ]))
     files["Simples.zip"] = zip_bytes("F.K03200$W.SIMPLES.CSV.D61010", csv_bytes([
         ["12345678", "S", "20200115", "00000000", "N", "00000000", "00000000"],
+        ["11222333", "S", "20250301", "00000000", "S", "20250301", "00000000"],
     ]))
     return files
 

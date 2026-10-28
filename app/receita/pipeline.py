@@ -28,6 +28,7 @@ import logging
 import shutil
 import time
 import zipfile
+import zlib
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -478,7 +479,8 @@ class Atualizacao:
                         if inicio and inicio.isdigit() and int(inicio) != offset:
                             raise PipelineError(f"{a.nome}: resposta parcial inconsistente ({inicio} != {offset})")
                     with parcial.open("ab" if offset else "wb") as fh:
-                        for chunk in resp.iter_bytes(chunk_size=CHUNK):
+                        # Sem chunk_size: grava o que chega (numa queda, o que ja veio fica salvo)
+                        for chunk in resp.iter_bytes():
                             fh.write(chunk)
                             self._contabilizar(len(chunk))
                             self._checar()
@@ -621,9 +623,9 @@ class Atualizacao:
                             dst.write(bloco)
                             self._checar()
                     saida.append(alvo)
-        except zipfile.BadZipFile as e:
+        except (zipfile.BadZipFile, zlib.error, EOFError) as e:
             shutil.rmtree(destino, ignore_errors=True)
-            raise _ZipCorrompido(str(e)) from e
+            raise _ZipCorrompido(f"{type(e).__name__}: {e}") from e
         except Interrompido:
             shutil.rmtree(destino, ignore_errors=True)
             raise
@@ -651,7 +653,7 @@ class Atualizacao:
         rej = f"rej_{Path(a.nome).stem}"
         leitura = (
             f"read_csv({files}, delim=';', quote='\"', escape='\"', header=false, "
-            f"encoding='latin-1', columns={cols}, ignore_errors=true, store_rejects=true, "
+            f"encoding='latin-1', columns={cols}, auto_detect=false, ignore_errors=true, store_rejects=true, "
             f"rejects_table='{rej}', rejects_scan='{rej}_scan', parallel=true)"
         )
         with Vigia(conn, self._deve_parar):

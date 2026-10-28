@@ -672,14 +672,15 @@ COLUNAS: dict[str, tuple[str, str, bool]] = {
     "telefone_2": ("Telefone 2", "pg.telefone_2", True),
     "tipo_telefone_2": ("Tipo tel. 2", "pg.tipo_telefone_2", False),
     "email": ("E-mail", "pg.email", True),
-    "qtd_socios": ("Sócios", "pg.qtd_socios", False),
+    "qtd_socios": ("Qtd. de sócios", "pg.qtd_socios", False),
     "simples": ("Simples", "pg.opcao_simples", False),
     "mei": ("MEI", "pg.opcao_mei", False),
     "socios": ("Sócios (nomes)", "(SELECT string_agg(s.nome_socio, '; ' ORDER BY s.nome_socio) FROM socios s "
                                  "WHERE s.cnpj_basico = pg.cnpj_basico)", True),
 }
+# Padrao sem colunas restritas: contatos so saem quando escolhidos (com finalidade).
 COLUNAS_PADRAO = ["cnpj", "razao_social", "nome_fantasia", "situacao", "municipio", "uf",
-                  "cnae_principal", "abertura", "telefone_1", "email", "qtd_socios"]
+                  "cnae_principal", "cnae_descricao", "abertura", "porte", "qtd_socios"]
 COLUNAS_TELA = ["cnpj", "razao_social", "nome_fantasia", "matriz_filial", "situacao", "abertura",
                 "porte", "capital_social", "cnae_principal", "cnae_descricao", "municipio", "municipio_codigo", "uf",
                 "bairro", "telefone_1", "tipo_telefone_1", "telefone_2", "tipo_telefone_2", "email",
@@ -719,8 +720,12 @@ class Filtros:
                     raise FiltroInvalido("Construtor de filtros: JSON inválido.") from e
             elif k == "ordem":
                 f.ordem = str(vals[-1])
+                if f.ordem not in ORDENACOES:
+                    raise FiltroInvalido("Ordenação inválida.")
             elif k == "direcao":
-                f.direcao = str(vals[-1])
+                f.direcao = str(vals[-1]).lower()
+                if f.direcao not in ("asc", "desc"):
+                    raise FiltroInvalido("Direção de ordenação inválida.")
             elif k == "pagina":
                 f.pagina = _inteiro_param(vals[-1], 1, 1, 100_000)
             elif k == "por_pagina":

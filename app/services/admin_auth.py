@@ -64,7 +64,7 @@ def _chave() -> bytes:
 
 
 def criar_sessao(agora: float | None = None) -> str:
-    exp = int((agora or time.time()) + get_settings().admin_sessao_horas * 3600)
+    exp = int((time.time() if agora is None else agora) + get_settings().admin_sessao_horas * 3600)
     nonce = secrets.token_hex(8)
     msg = f"{exp}.{nonce}"
     sig = hmac.new(_chave(), msg.encode(), hashlib.sha256).hexdigest()
@@ -79,7 +79,7 @@ def sessao_valida(valor: str | None, agora: float | None = None) -> bool:
     if not hmac.compare_digest(esperado, sig):
         return False
     try:
-        return int(exp) > (agora or time.time())
+        return int(exp) > (time.time() if agora is None else agora)
     except ValueError:
         return False
 

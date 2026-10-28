@@ -162,7 +162,6 @@ class JobReporter:
             job.pid = os.getpid()
             job.iniciado_em = job.iniciado_em or _agora()
             job.heartbeat_em = _agora()
-            job.solicitacao = None if job.solicitacao == "pausar" else job.solicitacao
             s.commit()
             return _to_dict(job)
 

@@ -51,6 +51,8 @@ def mascarar_documento(doc: str | None, tipo: int | None) -> str | None:
     if not doc:
         return None
     d = doc.strip()
+    if d.strip("*0") == "":  # ***000000**: a Receita nao informou documento
+        return None
     if tipo == 1 and re.fullmatch(r"\d{14}", d):  # PJ: CNPJ e publico
         return f"{d[:2]}.{d[2:5]}.{d[5:8]}/{d[8:12]}-{d[12:]}"
     if re.fullmatch(r"\*{3}\d{6}\*{2}", d):  # padrao da Receita

@@ -270,7 +270,8 @@ async def buscas_salvas() -> list[dict]:
 @router.post("/buscas-salvas", status_code=201)
 async def salvar_busca(nome: str = Body(..., max_length=120), filtros: dict = Body(...)) -> dict:
     try:
-        ba.Filtros.de_params(filtros)  # valida antes de guardar
+        f = ba.Filtros.de_params(filtros)  # valida antes de guardar
+        ba.compilar(f)
         return await asyncio.to_thread(listas.salvar_busca, nome, filtros)
     except (ValueError, ba.FiltroInvalido) as e:
         raise HTTPException(400, str(e)) from e

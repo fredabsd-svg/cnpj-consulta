@@ -39,7 +39,10 @@ _SECURITY_HEADERS = {
     ),
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
-    "Referrer-Policy": "no-referrer",
+    # same-origin: nada vai para sites externos, e os formularios POST do
+    # proprio app mantem o cabecalho Origin (com no-referrer o navegador manda
+    # "Origin: null" e a protecao CSRF bloquearia o envio).
+    "Referrer-Policy": "same-origin",
 }
 
 
@@ -86,8 +89,11 @@ app = FastAPI(
 
 def _is_cross_site(request: Request) -> bool:
     """Detecta requisicao de outra origem (protecao CSRF para app sem login)."""
-    if request.headers.get("sec-fetch-site") == "cross-site":
+    site = request.headers.get("sec-fetch-site")
+    if site == "cross-site":
         return True
+    if site in ("same-origin", "none"):
+        return False
     origin = request.headers.get("origin")
     if origin and origin != "null":
         return urlsplit(origin).netloc != request.headers.get("host")
