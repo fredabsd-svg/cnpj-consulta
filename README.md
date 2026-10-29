@@ -156,6 +156,10 @@ O `setup` cria o ambiente virtual `.venv`, instala as dependências (`pip instal
 - **Ficha completa** (página da empresa, com a base local): abas Resumo, Endereço (com mapa), Contatos (oficiais e complementares, com origem e data), CNAEs, Sócios (qualificação, entrada, representante legal, faixa etária, CPF mascarado), Estabelecimentos e Histórico (inclui mudanças desde a versão anterior da base); exporta em Excel e PDF.
 - **Histórico e favoritos**: consultas recentes, favoritos e botão para apagar o histórico.
 
+### Assistentes de IA (MCP)
+
+O app tem um servidor **MCP** (`python -m app.mcp_server` ou `cnpj mcp`) para Claude Desktop, Claude Code, Cursor, VS Code e outros clientes: a IA consulta CNPJs, faz a diligência cadastral, monta listas de prospecção com a busca avançada, mapeia sócios, exporta planilhas e acompanha a base local. São 26 ferramentas de consulta (mais 4 administrativas opcionais), com as mesmas regras de LGPD da interface. Configuração passo a passo em [MCP.md](MCP.md).
+
 ### CLI
 
 ```bash
@@ -169,6 +173,7 @@ python -m app.cli base verificar                               # versão mais re
 python -m app.cli base atualizar                              # baixa, valida, importa e publica (retoma se interrompida)
 python -m app.cli base status | retomar | cancelar | validar | restaurar | limpar
 python -m app.cli admin-token                                 # token da área administrativa
+python -m app.cli mcp                                         # servidor MCP para assistentes de IA (ver MCP.md)
 python -m app.cli limpar-historico
 python -m app.cli limpar-cache
 python -m app.cli init-db

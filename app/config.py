@@ -71,6 +71,9 @@ class Settings(BaseSettings):
     admin_token: str = ""
     admin_sessao_horas: int = 8
 
+    # Servidor MCP: ferramentas que alteram dados so com true (ver MCP.md)
+    mcp_permitir_admin: bool = False
+
     # Busca avancada
     busca_timeout_segundos: float = 30.0
     busca_max_por_pagina: int = 100

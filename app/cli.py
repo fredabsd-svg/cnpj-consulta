@@ -375,6 +375,17 @@ def sync_receita(
 
 
 @app.command()
+def mcp(
+    http: bool = typer.Option(False, "--http", help="Streamable HTTP em vez de stdio"),
+    porta: int = typer.Option(8765, "--porta", help="Porta do modo HTTP"),
+) -> None:
+    """Servidor MCP para assistentes de IA (Claude, Cursor...). Ver MCP.md."""
+    from app.mcp_server import main as mcp_main
+
+    mcp_main(["--http", "--porta", str(porta)] if http else [])
+
+
+@app.command()
 def admin_token() -> None:
     """Mostra o token de acesso a area administrativa."""
     from app.services.admin_auth import token_admin

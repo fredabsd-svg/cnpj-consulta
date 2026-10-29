@@ -97,7 +97,7 @@ def search_partners(
             "  e.cnpj_completo AS cnpj,",
             "  em.razao_social,",
             "  e.situacao_cadastral AS situacao,",
-            f"  COALESCE({d_qual}, s.qualificacao_socio) AS qualificacao,",
+            f"  COALESCE({d_qual}, CAST(s.qualificacao_socio AS VARCHAR)) AS qualificacao,",
             "  s.data_entrada_sociedade AS data_entrada,",
             "  e.uf,",
             f"  {municipio_expr} AS municipio",
@@ -145,7 +145,7 @@ def companies_of_partner_document(documento: str, limit: int = 200) -> list[dict
             f"""
             SELECT e.cnpj_completo AS cnpj, em.razao_social,
                    e.situacao_cadastral AS situacao,
-                   COALESCE({d_qual}, s.qualificacao_socio) AS qualificacao,
+                   COALESCE({d_qual}, CAST(s.qualificacao_socio AS VARCHAR)) AS qualificacao,
                    s.data_entrada_sociedade AS data_entrada, e.uf
             FROM socios s
             JOIN empresas em ON em.cnpj_basico = s.cnpj_basico

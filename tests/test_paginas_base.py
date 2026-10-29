@@ -49,3 +49,14 @@ def test_painel_admin(base_local, admin_headers):
     r = c.get("/base", headers=admin_headers)
     assert r.status_code == 200, r.text[:3000]
     assert "Versão ativa" in r.text and "2026-10" in r.text
+
+
+def test_busca_por_socio_na_base_nova(base_local):
+    c = TestClient(app)
+    r = c.get("/socios?q=maria+silva&uf=TO")
+    assert r.status_code == 200, r.text[:500]
+    assert "CONTABIL TESTE LTDA" in r.text and "/socio/" in r.text
+    r = c.get("/api/partners/search?q=joao&limit=10")
+    assert r.status_code == 200 and r.json()
+    r = c.get("/api/partners/12345678000195/companies")
+    assert r.status_code == 200

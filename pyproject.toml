@@ -28,6 +28,8 @@ dependencies = [
     "python-dotenv>=1.0",
     # Exportacao Excel (modo write_only: linhas em fluxo, sem carregar tudo)
     "openpyxl>=3.1",
+    # Servidor MCP (assistentes de IA usam as funcoes do app); API MCPServer da v2
+    "mcp>=2.0,<3",
     # CLI
     "typer>=0.12",
     "rich>=13.7",
@@ -52,6 +54,7 @@ dev = [
 
 [project.scripts]
 cnpj = "app.cli:app"
+cnpj-mcp = "app.mcp_server:main"
 
 [tool.setuptools.packages.find]
 include = ["app*"]
