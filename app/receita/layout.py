@@ -67,7 +67,7 @@ GRUPO_POR_NOME = {g.nome: g for g in GRUPOS}
 ORDEM_GRUPOS = {g.nome: i for i, g in enumerate(GRUPOS)}
 
 _ZIP_RE = re.compile(r"^(?P<prefixo>[A-Za-z]+)(?P<parte>\d*)\.zip$")
-MES_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
+MES_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])\Z")
 
 
 def grupo_do_arquivo(nome: str) -> Grupo | None:

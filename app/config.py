@@ -208,12 +208,13 @@ def host_de_execucao(argv: list[str] | None = None) -> str | None:
     import sys
 
     args = sys.argv if argv is None else argv
-    for i, a in enumerate(args):
+    host = None
+    for i, a in enumerate(args):  # o uvicorn/click usa o ULTIMO --host repetido
         if a == "--host" and i + 1 < len(args):
-            return args[i + 1]
-        if a.startswith("--host="):
-            return a.split("=", 1)[1]
-    return os.environ.get("UVICORN_HOST") or None
+            host = args[i + 1]
+        elif a.startswith("--host="):
+            host = a.split("=", 1)[1]
+    return host or os.environ.get("UVICORN_HOST") or None
 
 
 def assert_bind_allowed(settings: Settings | None = None, host_real: str | None = None) -> None:

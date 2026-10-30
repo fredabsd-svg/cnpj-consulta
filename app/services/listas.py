@@ -83,6 +83,9 @@ def registrar_recente(filtros: dict, resumo: str, total: int | None) -> None:
     from app.services.busca_avancada import sem_dados_de_socio
 
     limpos = sem_dados_de_socio(filtros)
+    if limpos != filtros:
+        # Tinha criterio de socio: sem ele seria OUTRA busca (total e resumo errados). Nao grava.
+        return
     if not limpos:
         return
     init_database()
@@ -102,7 +105,16 @@ def registrar_recente(filtros: dict, resumo: str, total: int | None) -> None:
 def recentes(limite: int = 10) -> list[dict]:
     init_database()
     with get_session_factory()() as s:
-        return [_d(b) for b in s.scalars(select(BuscaRecente).order_by(BuscaRecente.id.desc()).limit(limite))]
+        from app.services.busca_avancada import sem_dados_de_socio
+
+        out = []
+        for b in s.scalars(select(BuscaRecente).order_by(BuscaRecente.id.desc()).limit(limite)):
+            d = _d(b)
+            # Linhas gravadas por versoes antigas podem ter dado de socio: nunca saem.
+            if sem_dados_de_socio(dict(d.get("filtros") or {})) != d.get("filtros"):
+                continue
+            out.append(d)
+        return out
 
 
 def limpar_recentes() -> int:
@@ -158,7 +170,8 @@ def renomear_lista(lista_id: int, nome: str, descricao: str | None) -> dict:
             raise LookupError(lista_id)
         if nome.strip():
             lst.nome = nome.strip()[:120]
-        lst.descricao = (descricao or "").strip()[:500] or None
+        if descricao is not None:  # None = mantem a descricao atual
+            lst.descricao = descricao.strip()[:500] or None
         s.commit()
         return _d(lst)
 

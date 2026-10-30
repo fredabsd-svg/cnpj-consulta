@@ -28,6 +28,7 @@ import dataclasses
 import logging
 import os
 import sys
+import uuid
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -334,7 +335,9 @@ async def exportar_busca(filtros: dict[str, Any] | None = None, formato: str = "
     limite = min(total, get_settings().exportacao_max_linhas)
     pasta = exportacoes_dir()
     pasta.mkdir(parents=True, exist_ok=True)
-    destino = pasta / f"{ORIGEM.get()}-{datetime.now().strftime('%Y%m%d-%H%M%S')}.{formato}"
+    # Sufixo aleatorio: duas exportacoes no mesmo segundo (o chat roda ferramentas em
+    # paralelo) nao podem gravar no mesmo arquivo.
+    destino = pasta / f"{ORIGEM.get()}-{datetime.now().strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}.{formato}"
     gravar = exportacao.gravar_xlsx if formato == "xlsx" else exportacao.gravar_csv
     n = await _rodar(gravar, f, cols, limite, destino)
     _auditar("busca.exportar", f"formato={formato} linhas={n} colunas={','.join(cols)} finalidade={finalidade.strip()[:200]}")
@@ -528,8 +531,9 @@ async def adicionar_a_lista(lista_id: int, cnpjs: list[str], observacao: str = "
 
 
 @mcp.tool(annotations=ESCRITA_LOCAL)
-async def editar_lista(lista_id: int, nome: str = "", descricao: str = "") -> dict:
-    """Renomeia uma lista e/ou troca a descricao (nome vazio = mantem)."""
+async def editar_lista(lista_id: int, nome: str = "", descricao: str | None = None) -> dict:
+    """Renomeia uma lista e/ou troca a descricao (nome vazio ou descricao omitida = mantem;
+    descricao "" apaga)."""
     from app.services import listas
 
     try:
@@ -553,18 +557,23 @@ async def anotar_item_da_lista(lista_id: int, cnpj: str, observacao: str) -> dic
 
 @mcp.tool(annotations=ESCRITA_LOCAL)
 async def remover_da_lista(lista_id: int, cnpjs: list[str]) -> dict:
-    """Tira empresas de uma lista."""
+    """Tira empresas de uma lista. CNPJs invalidos sao informados e nada e removido
+    antes de todos serem conferidos."""
+    from app.core.cnpj_validator import normalize_or_none
     from app.services import listas
 
-    removidos = []
-    for c in cnpjs:
-        n = _cnpj(c)
+    validos = [n for c in cnpjs if (n := normalize_or_none(c or ""))]
+    invalidos = [c for c in cnpjs if not normalize_or_none(c or "")]
+    if await asyncio.to_thread(listas.obter_lista, lista_id) is None:
+        raise ToolError("Lista não encontrada.")
+    removidos, ausentes = [], []
+    for n in validos:
         try:
             await asyncio.to_thread(listas.remover_item, lista_id, n)
             removidos.append(n)
         except LookupError:
-            continue
-    return {"removidos": removidos}
+            ausentes.append(n)
+    return {"removidos": removidos, "nao_estavam_na_lista": ausentes, "invalidos": invalidos}
 
 
 @mcp.tool(annotations=ToolAnnotations(read_only_hint=False, destructive_hint=True, open_world_hint=False))
@@ -689,8 +698,10 @@ def _registrar_admin() -> None:
                 job = await asyncio.to_thread(servico.retomar, job_id)
             else:
                 raise ToolError("Ação deve ser pausar, retomar ou cancelar.")
-        except (LookupError, ValueError, jobs.JobEmAndamento) as e:
-            raise ToolError(str(e) or "Tarefa não encontrada.") from e
+        except LookupError as e:
+            raise ToolError("Tarefa não encontrada.") from e
+        except (ValueError, jobs.JobEmAndamento) as e:
+            raise ToolError(str(e)) from e
         _auditar(f"base.{acao}", f"job={job_id}")
         return _json(job)
 

@@ -71,7 +71,7 @@ EXTRAS: list[dict[str, Any]] = [
     },
 ]
 _NOMES_EXTRAS = {e["nome"] for e in EXTRAS}
-_ARQUIVO_EXPORTADO = re.compile(r"^(mcp|chat)-\d{8}-\d{6}\.(xlsx|csv)$")
+_ARQUIVO_EXPORTADO = re.compile(r"^(mcp|chat)-\d{8}-\d{6}(-[0-9a-f]{8})?\.(xlsx|csv)$")
 
 _preparado = False
 _lock = threading.Lock()

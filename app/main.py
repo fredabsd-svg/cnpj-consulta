@@ -136,6 +136,12 @@ async def security_middleware(request: Request, call_next) -> Response:
         return PlainTextResponse(
             "Host nao permitido. Acesse por localhost ou pelo endereco IP, ou inclua o nome em "
             "APP_HOSTS_PERMITIDOS.", status_code=400)
+    caminho = request.url.path
+    efeito_em_get = caminho.startswith("/api/") or caminho.endswith((".csv", ".xlsx")) or "/exportar" in caminho
+    if request.headers.get("sec-fetch-site") == "cross-site" and efeito_em_get:
+        # Exportacao (contatos, auditoria, arquivo em disco) e API nao podem ser
+        # disparadas por <img>/link de outro site.
+        return PlainTextResponse("Requisicao de outra origem bloqueada.", status_code=403)
     if request.method not in _SAFE_METHODS and _is_cross_site(request):
         return PlainTextResponse("Requisicao de outra origem bloqueada.", status_code=403)
     response = await call_next(request)

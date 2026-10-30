@@ -132,10 +132,12 @@ async def limpar_historico_form() -> Response:
 
 
 def _parece_cnpj(texto: str) -> bool:
-    """Tentativa de digitar um CNPJ (mesmo errado): sem espacos, so letras, digitos e
-    a pontuacao do CNPJ, 14 caracteres e terminando nos 2 digitos verificadores.
-    "MERCADO CENTRAL" ou "CONTAFACILLTDA" sao nomes, nao CNPJ."""
+    """Tentativa clara de digitar um CNPJ (mesmo com digito errado): com a mascara
+    (. / -), sem espacos, 14 caracteres terminando nos 2 digitos verificadores.
+    Sem mascara ("MERCADINHO2024", "CONTAFACILLTDA") e nome: vai para a busca."""
     t = texto.strip()
+    if not any(c in "./-" for c in t):
+        return False
     if any(c.isspace() for c in t) or any(not (c.isalnum() or c in "./-") for c in t):
         return False
     s = strip(t)

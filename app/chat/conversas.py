@@ -47,6 +47,9 @@ def obter(conversa_id: int, *, com_historico: bool = False) -> dict[str, Any] | 
         return d
 
 
+TITULO_PADRAO = "Nova conversa"
+
+
 def salvar(conversa_id: int, *, historico: list, exibicao: list, titulo: str | None = None,
            tokens_entrada: int = 0, tokens_saida: int = 0) -> None:
     with get_session_factory()() as s:
@@ -56,7 +59,7 @@ def salvar(conversa_id: int, *, historico: list, exibicao: list, titulo: str | N
         # Listas novas: o SQLAlchemy so detecta troca do valor JSON, nao mutacao.
         c.historico = list(historico)
         c.exibicao = list(exibicao)
-        if titulo:
+        if titulo and c.titulo == TITULO_PADRAO:  # nao sobrescreve um titulo dado pelo usuario
             c.titulo = titulo[:160]
         c.tokens_entrada += tokens_entrada
         c.tokens_saida += tokens_saida

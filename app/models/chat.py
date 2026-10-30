@@ -18,6 +18,8 @@ from app.db import Base
 
 class ChatConversa(Base):
     __tablename__ = "chat_conversa"
+    # Ids nunca reaproveitados: uma resposta em andamento nao pode gravar numa conversa nova.
+    __table_args__ = {"sqlite_autoincrement": True}
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     titulo: Mapped[str] = mapped_column(String(160), default="Nova conversa")

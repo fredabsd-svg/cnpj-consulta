@@ -181,6 +181,12 @@ def salvar(pid: str, *, api_key: str | None = None, base_url: str | None = None,
     return resolver(pid)
 
 
+def url_api(base: str, caminho: str) -> str:
+    """base + caminho preservando a query (ex.: Azure OpenAI exige ?api-version=)."""
+    u = httpx.URL(base)
+    return str(u.copy_with(path=u.path.rstrip("/") + caminho))
+
+
 def validar_endereco(url: str) -> None:
     """Recusa endereco que o cliente HTTP nao conseguiria usar (porta invalida, IPv6 mal fechado)."""
     if not url.startswith(("http://", "https://")):
@@ -212,7 +218,8 @@ async def listar_modelos(prov: Provedor) -> list[str]:
         remotos = cache[1]
     else:
         remotos = await _modelos_remotos(prov)
-        _cache_modelos[prov.id] = (agora, remotos)
+        if remotos:  # falha (ex.: Ollama ainda fechado) nao fica em cache
+            _cache_modelos[prov.id] = (agora, remotos)
     return list(dict.fromkeys([*prov.modelos, *remotos]))
 
 
@@ -221,7 +228,7 @@ async def _modelos_remotos(prov: Provedor) -> list[str]:
     try:
         validar_endereco(prov.base_url)
         async with httpx.AsyncClient(timeout=8.0) as c:
-            r = await c.get(f"{prov.base_url}/models", headers=headers)
+            r = await c.get(url_api(prov.base_url, "/models"), headers=headers)
             r.raise_for_status()
             dados = r.json()
     except Exception as e:  # noqa: BLE001 -- um provedor com problema nao derruba a lista dos outros

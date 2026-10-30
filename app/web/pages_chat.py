@@ -121,8 +121,13 @@ async def alterar_conversa(conversa_id: int, dados: dict[str, Any] = Body(...)) 
     c = await asyncio.to_thread(conversas.obter, conversa_id)
     if c is None:
         raise HTTPException(status_code=404, detail="Conversa não encontrada.")
-    if dados.get("titulo"):
-        c = await asyncio.to_thread(conversas.renomear, conversa_id, str(dados["titulo"]))
+    if "titulo" in dados:
+        try:
+            c = await asyncio.to_thread(conversas.renomear, conversa_id, str(dados["titulo"] or ""))
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e)) from e
+        except LookupError as e:
+            raise HTTPException(status_code=404, detail="Conversa não encontrada.") from e
     if dados.get("provedor") or dados.get("modelo"):
         prov, modelo = await asyncio.to_thread(_validar_modelo, {"provedor": dados.get("provedor") or c["provedor"],
                                                                  "modelo": dados.get("modelo")})
@@ -136,6 +141,8 @@ async def alterar_conversa(conversa_id: int, dados: dict[str, Any] = Body(...)) 
 
 @router.delete("/chat/api/conversas/{conversa_id}", dependencies=api)
 async def apagar_conversa(conversa_id: int) -> dict:
+    if conversa_id in motor._em_andamento:
+        raise HTTPException(status_code=409, detail="A conversa ainda está respondendo. Pare a resposta antes de apagar.")
     if not await asyncio.to_thread(conversas.remover, conversa_id):
         raise HTTPException(status_code=404, detail="Conversa não encontrada.")
     return {"removida": conversa_id}

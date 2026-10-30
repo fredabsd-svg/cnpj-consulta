@@ -122,28 +122,38 @@ def limpar_falhas() -> None:
         _falhas.clear()
 
 
-def eh_admin(request: Request) -> bool:
+def _bearer(request: Request) -> str | None:
     auth = request.headers.get("authorization", "")
-    if auth.lower().startswith("bearer "):
-        return token_confere(auth[7:])
-    return sessao_valida(request.cookies.get(COOKIE))
+    return auth[7:] if auth.lower().startswith("bearer ") else None
+
+
+def eh_admin(request: Request) -> bool:
+    """Sessao (cookie) ou Bearer. Bearer errado conta como tentativa de login em
+    QUALQUER rota (API, paginas, /admin/entrar): limite por IP e auditoria, sem
+    servir de oraculo para adivinhar o token."""
+    tok = _bearer(request)
+    if tok is None:
+        return sessao_valida(request.cookies.get(COOKIE))
+    ip = ip_de(request)
+    if bloqueado(ip):
+        return False
+    if token_confere(tok):
+        return True
+    from app.receita import jobs
+
+    registrar_falha(ip)
+    jobs.auditar("admin.login", resultado="negado", detalhe="token Bearer incorreto", ip=ip)
+    return False
+
+
+def _bloqueado_por_bearer(request: Request) -> None:
+    if _bearer(request) is not None and bloqueado(ip_de(request)):
+        raise HTTPException(status_code=429, detail="Muitas tentativas. Aguarde 5 minutos.")
 
 
 def exigir_admin_api(request: Request) -> None:
-    """Dependencia das rotas /api/admin/* (e do chat). Bearer errado conta como
-    tentativa de login: entra no limite por IP e na auditoria."""
-    bearer = request.headers.get("authorization", "").lower().startswith("bearer ")
-    if bearer:
-        ip = ip_de(request)
-        if bloqueado(ip):
-            raise HTTPException(status_code=429, detail="Muitas tentativas. Aguarde 5 minutos.")
-        if not eh_admin(request):
-            from app.receita import jobs
-
-            registrar_falha(ip)
-            jobs.auditar("admin.login", resultado="negado", detalhe="token Bearer incorreto", ip=ip)
-            raise HTTPException(status_code=401, detail="Token de administrador incorreto.")
-        return
+    """Dependencia das rotas /api/admin/* (e do chat)."""
+    _bloqueado_por_bearer(request)
     if not eh_admin(request):
         raise HTTPException(status_code=401, detail="Acesso restrito ao administrador. Entre em /admin/entrar.")
 
@@ -155,5 +165,6 @@ class LoginNecessario(Exception):  # noqa: N818
 
 def exigir_admin_pagina(request: Request) -> None:
     """Dependencia das paginas administrativas: redireciona para o login."""
+    _bloqueado_por_bearer(request)
     if not eh_admin(request):
         raise LoginNecessario(request.url.path)

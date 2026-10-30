@@ -129,7 +129,7 @@ def nome_versao(mes: str) -> str:
     return f"receita-{mes}-{datetime.now(UTC).strftime('%Y%m%dT%H%M%S')}.duckdb"
 
 
-def publicar(arquivo_final: Path, mes: str, settings: Settings | None = None) -> Path:
+def publicar(arquivo_final: Path, mes: str, settings: Settings | None = None, *, podar: bool = True) -> Path:
     """Move a base validada para versoes/ e troca o ponteiro (atomico)."""
     settings = settings or get_settings()
     destino_dir = versoes_dir(settings)
@@ -148,7 +148,8 @@ def publicar(arquivo_final: Path, mes: str, settings: Settings | None = None) ->
         },
     )
     limpar_cache()
-    podar_versoes(settings)
+    if podar:
+        podar_versoes(settings)
     return destino
 
 

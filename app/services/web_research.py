@@ -28,6 +28,7 @@ import httpx
 
 from app import __version__
 from app.config import Settings, get_settings
+from app.core.normalizer import sem_cpf
 from app.schemas.company import CompanyUnified
 from app.services.official_docs import CCC_PORTAL_URL, SINTEGRA_URL, comprovante_url
 
@@ -100,15 +101,11 @@ def _q(value: str) -> str:
     return quote_plus(value, safe="")
 
 
-_CPF_NO_NOME = re.compile(r"(?<!\d)\d{3}\.?\d{3}\.?\d{3}-?\d{2}(?!\d)")
-
-
 def company_name(company: CompanyUnified) -> str:
     """Nome para as pesquisas. A razao social de empresario individual/MEI traz o
     CPF do titular: ele e retirado (dado pessoal nao vai para buscadores)."""
     nome = company.razao_social or company.nome_fantasia or ""
-    nome = " ".join(_CPF_NO_NOME.sub(" ", nome).split())
-    return nome or company.cnpj_formatado
+    return sem_cpf(nome) or company.cnpj_formatado
 
 
 def default_query(company: CompanyUnified) -> str:

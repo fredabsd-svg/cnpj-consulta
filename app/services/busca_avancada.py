@@ -33,6 +33,7 @@ from typing import Any
 import duckdb
 
 from app.config import get_settings
+from app.core.cnpj_validator import is_valid
 from app.core.normalizer import normalize_name_for_search
 from app.receita.armazenamento import base_ativa
 from app.receita.duck import SCHEMA_VERSAO, Vigia, conectar_leitura, metadados
@@ -123,7 +124,9 @@ def _num(valor: Any, nome: str) -> float | None:
     if isinstance(valor, list):
         valor = valor[-1]
     v = str(valor).strip()
-    if "," in v or re.fullmatch(r"\d{1,3}(\.\d{3})+", v):  # 1.234,56 ou 100.000 (milhar)
+    if "," in v and "." in v and v.rfind(".") > v.rfind(","):  # 20,000.00 (formato americano)
+        v = v.replace(",", "")
+    elif "," in v or re.fullmatch(r"\d{1,3}(\.\d{3})+", v):  # 1.234,56 ou 100.000 (milhar)
         v = v.replace(".", "").replace(",", ".")
     try:
         n = float(v)
@@ -171,6 +174,7 @@ def sem_dados_de_socio(params: dict[str, Any]) -> dict[str, Any]:
 
 def _palavras(valor: Any) -> list[str]:
     texto = " ".join(_lista(valor)) if isinstance(valor, list) else str(valor or "")
+    texto = re.sub(r"[ºª°]", "", texto)  # a base tira o ordinal ("2º OFICIO" -> "2 OFICIO")
     norm = normalize_name_for_search(texto) or ""
     palavras = [p for p in norm.split() if p]
     if len(palavras) > 10:
@@ -260,7 +264,7 @@ def _q_rapida(v) -> Sql | None:
             raise FiltroInvalido("Digite ao menos 2 dígitos do CNPJ.")
         return "e.cnpj_completo >= ? AND e.cnpj_completo < ?", [dig, dig + "~"]
     alfa = re.sub(r"[\s./-]", "", texto).upper()
-    if re.fullmatch(r"[A-Z0-9]{12}\d{2}", alfa) and any(c.isdigit() for c in alfa[:12]):
+    if re.fullmatch(r"[A-Z0-9]{12}\d{2}", alfa) and is_valid(alfa):
         return "e.cnpj_completo = ?", [alfa]  # CNPJ alfanumerico completo
     ps = _palavras(texto)
     if not ps or max(len(p) for p in ps) < 2:
@@ -320,7 +324,9 @@ def _municipio_nome(v) -> Sql | None:
     nomes = [n for n in nomes if n]
     if not nomes:
         return None
-    sub = " OR ".join("strip_accents(upper(m.descricao)) = ?" for _ in nomes)
+    # Mesma normalizacao dos dois lados: sem acento, sem pontuacao ("PAU D'ARCO" = "PAU D ARCO").
+    norm_sql = "trim(regexp_replace(strip_accents(upper(m.descricao)), '[^A-Z0-9]+', ' ', 'g'))"
+    sub = " OR ".join(f"{norm_sql} = ?" for _ in nomes)
     return f"e.municipio IN (SELECT m.codigo FROM municipios m WHERE {sub})", nomes
 
 
@@ -499,8 +505,8 @@ def _socio_documento(v) -> Sql | None:
         return None
     docs = []
     for x in vals:
-        d = re.sub(r"[.\-/\s]", "", x)
-        if re.fullmatch(r"\d{14}", d) or re.fullmatch(r"\*{3}\d{6}\*{2}", d):
+        d = re.sub(r"[.\-/\s]", "", x).upper()
+        if re.fullmatch(r"[0-9A-Z]{12}\d{2}", d) or re.fullmatch(r"\*{3}\d{6}\*{2}", d):
             docs.append(d)
         else:
             raise FiltroInvalido("Documento do sócio: CNPJ (14 dígitos) ou CPF como publicado (***123456**).")
@@ -577,7 +583,7 @@ _CAMPOS: list[Campo] = [
     Campo("idade_min", "Idade mínima (anos)", "identificacao", "numero",
           lambda v: (None if (n := _idade(v)) is None else ("e.data_inicio_atividade <= ?", [_anos_atras(n)]))),
     Campo("idade_max", "Idade máxima (anos)", "identificacao", "numero",
-          lambda v: (None if (n := _idade(v)) is None else ("e.data_inicio_atividade >= ?", [_anos_atras(n + 1)]))),
+          lambda v: (None if (n := _idade(v)) is None else ("e.data_inicio_atividade > ?", [_anos_atras(n + 1)]))),
     Campo("capital_min", "Capital social mínimo (R$)", "perfil", "numero",
           _cmp("e.capital_social", ">=", _num, "capital")),
     Campo("capital_max", "Capital social máximo (R$)", "perfil", "numero",
@@ -1039,7 +1045,7 @@ def _colunas_sql(colunas: list[str]) -> str:
 
 def buscar(f: Filtros, *, colunas: list[str] | None = None, cancelar: threading.Event | None = None,
            timeout: float | None = None, contar: bool = True) -> Resultado:
-    colunas = [c for c in (colunas or COLUNAS_TELA) if c in COLUNAS_TELA]
+    colunas = [c for c in (colunas or COLUNAS_TELA) if c in COLUNAS and (c in COLUNAS_TELA or not COLUNAS[c][2])]
     if "cnpj" not in colunas:
         colunas.insert(0, "cnpj")
     where, params = compilar(f)

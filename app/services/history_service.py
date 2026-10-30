@@ -7,6 +7,8 @@ from typing import Any
 
 from sqlalchemy import func, select
 
+from app.core.normalizer import sem_cpf
+
 
 def _utc_iso(value: datetime | None) -> str | None:
     """SQLite devolve datetime sem fuso; todos os registros sao gravados em UTC."""
@@ -31,7 +33,7 @@ def record_query(
     with factory() as s:
         row = History(
             cnpj=cnpj,
-            razao_social=razao_social,
+            razao_social=sem_cpf(razao_social),
             situacao=situacao,
             sources_used=sources,
             queried_at=datetime.now(UTC),
@@ -63,7 +65,7 @@ def recent_queries(limit: int = 20, *, distinct: bool = False) -> list[dict[str,
             {
                 "id": r.id,
                 "cnpj": r.cnpj,
-                "razao_social": r.razao_social,
+                "razao_social": sem_cpf(r.razao_social),  # inclui linhas antigas
                 "situacao": r.situacao,
                 "queried_at": _utc_iso(r.queried_at),
             }

@@ -285,10 +285,12 @@ class Atualizacao:
             self._consolidar()
             self._sair("consolidacao", t0)
 
+            self._checar(forcar=True)
             t0 = self._entrar("validacao")
             self._validar()
             self._sair("validacao", t0)
 
+            self._checar(forcar=True)  # cancelar/pausar pedido durante a validacao
             t0 = self._entrar("publicacao")
             self._publicar()
             self._sair("publicacao", t0)
@@ -310,9 +312,13 @@ class Atualizacao:
 
     def _concluir_publicada(self) -> dict:
         estado = self._estado()
+        for k, v in (estado.get("relatorio") or {}).items():  # relatorio da publicacao, nao um vazio
+            if hasattr(self.relatorio, k):
+                setattr(self.relatorio, k, v)
         self.relatorio.publicada = estado.get("publicada")
         self.relatorio.anterior = estado.get("anterior")
         self._log("Esta versao ja foi publicada na tentativa anterior; concluindo a limpeza.")
+        arm.podar_versoes(self.settings)
         t0 = self._entrar("limpeza")
         self._limpar(tudo=True)
         self._sair("limpeza", t0)
@@ -332,7 +338,7 @@ class Atualizacao:
             raise PipelineError(str(e)) from e
         v = self.versao
         self.relatorio.mes = v.mes
-        if not v.completa and not self.forcar:
+        if not v.completa:  # nem com --forcar: base sem uma parte nunca e publicada
             raise PipelineError(
                 f"A versao {v.mes} esta incompleta no portal (faltam: {', '.join(v.faltando)}). "
                 "Aguarde a Receita concluir a publicacao."
@@ -935,8 +941,11 @@ class Atualizacao:
     # ---------- consolidacao ----------
 
     def _consolidar(self) -> None:
-        importados = self._importados()
         assert self.versao
+        # So os arquivos da versao listada no portal: tabela de arquivo que saiu da
+        # listagem (republicacao) nao pode entrar na base.
+        na_versao = {a.nome for a in self.versao.arquivos}
+        importados = {n: i for n, i in self._importados().items() if n in na_versao}
         faltando = [a.nome for a in self.versao.arquivos if a.nome not in importados]
         if faltando:
             raise PipelineError(f"Importacao incompleta: faltam {', '.join(faltando)}")
@@ -1146,14 +1155,16 @@ class Atualizacao:
     def _publicar(self) -> None:
         assert self.mes
         anterior = arm.base_ativa(self.settings)
-        destino = arm.publicar(self.final_db, self.mes, self.settings)
+        destino = arm.publicar(self.final_db, self.mes, self.settings, podar=False)
         self.relatorio.publicada = destino.name
         self.relatorio.anterior = anterior.caminho.name if anterior else None
-        # Se o processo cair daqui ate o fim da limpeza, a retomada nao publica de novo
-        # (o que empurraria a versao anterior verdadeira para a poda).
+        # Grava "publicada" ANTES da poda: se o processo cair daqui ate o fim da
+        # limpeza, a retomada nao publica de novo (o que empurraria a versao
+        # anterior verdadeira para a poda).
         estado = self._estado()
-        estado.update(publicada=destino.name, anterior=self.relatorio.anterior)
+        estado.update(publicada=destino.name, anterior=self.relatorio.anterior, relatorio=self.relatorio.as_dict())
         self._salvar_estado(estado)
+        arm.podar_versoes(self.settings)
         self._log(f"Publicada {destino.name}" + (f"; anterior mantida: {anterior.caminho.name}" if anterior else ""))
 
     def _limpar(self, tudo: bool) -> None:

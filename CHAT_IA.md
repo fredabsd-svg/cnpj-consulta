@@ -27,7 +27,7 @@ os valores do `.env` têm prioridade sobre os cadastrados na tela.
 | xAI (Grok) | `XAI_API_KEY` | lista carregada da sua conta |
 | Ollama (local) | `OLLAMA_URL=http://localhost:11434/v1` | modelos instalados no Ollama |
 | LM Studio (local) | `LMSTUDIO_URL=http://localhost:1234/v1` | modelo carregado no LM Studio |
-| Personalizado | `CHAT_CUSTOM_URL`, `CHAT_CUSTOM_API_KEY`, `CHAT_CUSTOM_MODELOS` | qualquer servidor compatível com a API da OpenAI (vLLM, LiteLLM, Azure OpenAI…) |
+| Personalizado | `CHAT_CUSTOM_URL`, `CHAT_CUSTOM_API_KEY`, `CHAT_CUSTOM_MODELOS` | qualquer servidor compatível com a API da OpenAI (vLLM, LiteLLM, Azure OpenAI…). Parâmetros do endereço são mantidos (ex.: Azure: `https://RECURSO.openai.azure.com/openai/deployments/MODELO?api-version=AAAA-MM-DD`) |
 
 - A lista de modelos dos provedores compatíveis com OpenAI vem do próprio
   provedor (`/models`) e é atualizada a cada 10 minutos. O campo de modelo também

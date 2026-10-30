@@ -386,6 +386,10 @@
     }
 
     async function apagarConversa(c) {
+        if (estado.enviando && estado.atual && estado.atual.id === c.id) {
+            toast("Pare a resposta antes de apagar esta conversa.");
+            return;
+        }
         if (!confirm('Apagar a conversa "' + c.titulo + '"?')) return;
         try {
             await api("/chat/api/conversas/" + c.id, { method: "DELETE" });

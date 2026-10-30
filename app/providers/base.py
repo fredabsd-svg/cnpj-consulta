@@ -230,7 +230,8 @@ class Provider(abc.ABC):
                 await asyncio.sleep(wait)
                 continue
             try:
-                body = resp.json() if resp.content else {}
+                # 2xx sem corpo nao e uma resposta valida (vira erro em _raise_for_status)
+                body = resp.json() if resp.content else ({"_raw": ""} if 200 <= resp.status_code < 300 else {})
             except ValueError:
                 body = {"_raw": resp.text[:500]}
             if not isinstance(body, dict):

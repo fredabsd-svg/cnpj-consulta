@@ -219,7 +219,8 @@ GET    /api/batch                            ?cnpjs=A,B,C  consulta em lote (JSO
 GET    /api/batch/export.csv                 ?cnpjs=A,B,C&excel=true
 GET    /api/partners/search                  ?q=nome&uf=SP&municipio=...&limit=50  (requer a base local)
 GET    /api/partners/{cnpj}/companies        empresas em que um CNPJ (PJ) é sócio
-GET    /api/busca                            busca avançada (filtros na query string; ver /api/busca/campos)
+GET    /api/busca                            busca avançada (filtros na query string; ver /api/busca/campos;
+                                              telefones/e-mail só com &finalidade=..., auditado)
 GET    /api/busca/contar | /contadores       total e distribuição por UF, situação, porte, município, CNAE
 GET    /api/busca/exportar.csv|.xlsx         ?colunas=...&finalidade=...  (contatos exigem finalidade)
 GET    /api/base/empresa/{cnpj}              ficha completa da base local (+ contatos complementares)

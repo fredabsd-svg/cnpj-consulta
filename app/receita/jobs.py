@@ -139,7 +139,7 @@ def solicitar(job_id: int, pedido: str) -> dict:
 
 
 def preparar_retomada(job_id: int) -> dict:
-    with get_session_factory()() as s:
+    with trava.exclusivo("criar-tarefa"), get_session_factory()() as s:
         job = s.get(BaseJob, job_id)
         if job is None:
             raise LookupError(job_id)

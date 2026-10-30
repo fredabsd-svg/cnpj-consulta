@@ -25,7 +25,7 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from app.chat import conversas, ferramentas
-from app.chat.provedores import Provedor, resolver
+from app.chat.provedores import Provedor, resolver, url_api
 from app.config import get_settings
 from app.mcp_server import INSTRUCOES
 
@@ -299,6 +299,8 @@ class AdaptadorOpenAI:
         h = {"Content-Type": "application/json"}
         if self.prov.api_key:
             h["Authorization"] = f"Bearer {self.prov.api_key}"
+            if ".openai.azure.com" in self.prov.base_url:
+                h["api-key"] = self.prov.api_key  # Azure OpenAI usa este cabecalho
         if self.prov.id == "openrouter":
             h["X-Title"] = "CNPJ Consulta"
         return h
@@ -318,7 +320,7 @@ class AdaptadorOpenAI:
         timeout = httpx.Timeout(300.0, connect=15.0)
         try:
             async with httpx.AsyncClient(timeout=timeout) as cliente, cliente.stream(
-                    "POST", f"{self.prov.base_url}/chat/completions", json=corpo, headers=self._headers()) as resp:
+                    "POST", url_api(self.prov.base_url, "/chat/completions"), json=corpo, headers=self._headers()) as resp:
                 if resp.status_code >= 400:
                     raise ErroProvedor(_erro_http(self.prov, resp.status_code, (await resp.aread())[:2000]))
                 async for linha in resp.aiter_lines():
@@ -339,9 +341,18 @@ class AdaptadorOpenAI:
                         if (delta.get("reasoning_content") or delta.get("reasoning")) and not pensando:
                             pensando = True
                             yield {"tipo": "pensando"}
-                        if delta.get("content"):
-                            texto.append(delta["content"])
-                            yield {"tipo": "texto", "delta": delta["content"]}
+                        conteudo = delta.get("content")
+                        if isinstance(conteudo, list):
+                            # Partes tipadas (ex.: modelos de raciocinio da Mistral)
+                            if any(isinstance(p, dict) and p.get("type") == "thinking" for p in conteudo) \
+                                    and not pensando:
+                                pensando = True
+                                yield {"tipo": "pensando"}
+                            conteudo = "".join(str(p.get("text") or "") for p in conteudo
+                                               if isinstance(p, dict) and p.get("type") == "text")
+                        if isinstance(conteudo, str) and conteudo:
+                            texto.append(conteudo)
+                            yield {"tipo": "texto", "delta": conteudo}
                         for tc in delta.get("tool_calls") or []:
                             if isinstance(tc.get("index"), int):
                                 idx = tc["index"]
@@ -349,7 +360,12 @@ class AdaptadorOpenAI:
                                 # Sem `index` (ex.: Gemini manda cada chamada inteira num
                                 # pedaco): um `id` novo abre outra chamada.
                                 novo_id = tc.get("id")
-                                if atual is None or (novo_id and parciais[atual]["id"] not in ("", novo_id)):
+                                cur = parciais.get(atual) if atual is not None else None
+                                mesma = bool(novo_id) and cur is not None and cur["id"] == novo_id
+                                if (cur is None
+                                        or (novo_id and cur["id"] and not mesma)
+                                        # outro nome chegando para uma chamada ja nomeada = outra chamada
+                                        or ((tc.get("function") or {}).get("name") and cur["nome"] and not mesma)):
                                     atual = max(parciais, default=-1) + 1
                                 idx = atual
                             p = parciais.setdefault(idx, {"id": "", "nome": "", "args": ""})
@@ -520,6 +536,8 @@ async def _responder(conversa_id: int, texto_usuario: str) -> AsyncIterator[dict
                 await gravar()
                 break
             if r.parada == "limite":
+                if r.texto.strip():  # ja apareceu na tela: fica tambem na conversa salva
+                    exibicao.append({"tipo": "assistente", "texto": r.texto})
                 exibicao.append({"tipo": "aviso", "texto": r.aviso or ""})
                 await gravar()
                 break
