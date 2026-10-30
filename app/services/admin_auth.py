@@ -99,9 +99,15 @@ def ip_de(request: Request) -> str:
     """
     from app.config import get_settings
 
-    if request.headers.get("x-forwarded-for") and not get_settings().confiar_proxy:
-        return "127.0.0.1"
-    return request.client.host if request.client else "?"
+    host = request.client.host if request.client else "?"
+    xff = request.headers.get("x-forwarded-for")
+    if xff and not get_settings().confiar_proxy:
+        # O uvicorn so troca o IP quando a conexao vem de 127.0.0.1 (e entao o IP
+        # vira o ultimo valor do XFF). Fora isso, o IP da conexao e o verdadeiro.
+        ultimo = xff.split(",")[-1].strip()
+        if host == ultimo:
+            return "127.0.0.1"
+    return host
 
 
 def bloqueado(ip: str) -> bool:

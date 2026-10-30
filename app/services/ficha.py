@@ -53,7 +53,8 @@ def mascarar_documento(doc: str | None, tipo: int | None) -> str | None:
     d = doc.strip()
     if d.strip("*0") == "":  # ***000000**: a Receita nao informou documento
         return None
-    if tipo == 1 and re.fullmatch(r"\d{14}", d):  # PJ: CNPJ e publico
+    if tipo == 1 and re.fullmatch(r"[0-9A-Z]{12}\d{2}", d.upper()):  # PJ: CNPJ (inclusive alfanumerico) e publico
+        d = d.upper()
         return f"{d[:2]}.{d[2:5]}.{d[5:8]}/{d[8:12]}-{d[12:]}"
     if re.fullmatch(r"\*{3}\d{6}\*{2}", d):  # padrao da Receita
         return f"***.{d[3:6]}.{d[6:9]}-**"
@@ -424,7 +425,7 @@ def sugestoes(q: str, limite: int = 8) -> list[dict]:
                 [digitos, digitos + "~", limite],
             ).fetchall()
         else:
-            norm = normalize_name_for_search(q) or ""
+            norm = normalize_name_for_search(re.sub(r"[ºª°]", "", q)) or ""  # base tira o ordinal
             if len(norm) < 3:
                 return []
             rows = conn.execute(

@@ -479,6 +479,7 @@ class Atualizacao:
         else:
             self._log(f"Todos os {len(prontos)} arquivo(s) pendentes ja estao baixados")
         if not pend:
+            self._registrar_arquivos(total)
             return
 
         executor = ThreadPoolExecutor(max_workers=paralelos, thread_name_prefix="download") if a_baixar else None
@@ -538,9 +539,17 @@ class Atualizacao:
             if executor:
                 executor.shutdown(wait=True, cancel_futures=True)
             conn.close()
+        self._registrar_arquivos(total)
+
+    def _registrar_arquivos(self, total: int) -> None:
+        """Relatorio com os arquivos importados DESTA versao (tambem na retomada
+        em que tudo ja estava importado)."""
+        assert self.versao
+        na_versao = {a.nome for a in self.versao.arquivos}
         self.relatorio.bytes_baixados = total
         for nome, info in self._importados().items():
-            self.relatorio.arquivos[nome] = info
+            if nome in na_versao:
+                self.relatorio.arquivos[nome] = info
 
     def _fracao(self) -> float:
         with self._lock:

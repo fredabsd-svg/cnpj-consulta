@@ -77,14 +77,28 @@ def remover_busca(busca_id: int) -> None:
 # ---------- recentes ----------
 
 
+def _sem_cpf_nos_filtros(filtros: dict) -> dict:
+    from app.core.normalizer import sem_cpf
+
+    def limpar(v):
+        if isinstance(v, str):
+            return sem_cpf(v) or ""
+        if isinstance(v, list):
+            return [limpar(x) for x in v]
+        return v
+
+    return {k: limpar(v) for k, v in filtros.items()}
+
+
 def registrar_recente(filtros: dict, resumo: str, total: int | None) -> None:
     """Historico local. Criterios com nome/documento de socio nao sao guardados
     (o resumo ja os omite e os filtros sao gravados sem esses valores)."""
     from app.services.busca_avancada import sem_dados_de_socio
 
     limpos = sem_dados_de_socio(filtros)
-    if limpos != filtros:
-        # Tinha criterio de socio: sem ele seria OUTRA busca (total e resumo errados). Nao grava.
+    if limpos != filtros or _sem_cpf_nos_filtros(filtros) != filtros:
+        # Tinha criterio de socio ou CPF (razao social de MEI): sem ele seria OUTRA
+        # busca (total e resumo errados), e com ele guardaria dado pessoal. Nao grava.
         return
     if not limpos:
         return
@@ -92,7 +106,9 @@ def registrar_recente(filtros: dict, resumo: str, total: int | None) -> None:
     with get_session_factory()() as s:
         ultima = s.scalars(select(BuscaRecente).order_by(BuscaRecente.id.desc()).limit(1)).first()
         if ultima and ultima.filtros == limpos:
-            ultima.total, ultima.executada_em = total, datetime.now()
+            # Sem contagem (contar=false) nao apaga o total ja conhecido.
+            ultima.total = total if total is not None else ultima.total
+            ultima.executada_em = datetime.now()
         else:
             s.add(BuscaRecente(filtros=limpos, resumo=resumo[:500], total=total))
         s.flush()
@@ -111,7 +127,8 @@ def recentes(limite: int = 10) -> list[dict]:
         for b in s.scalars(select(BuscaRecente).order_by(BuscaRecente.id.desc()).limit(limite)):
             d = _d(b)
             # Linhas gravadas por versoes antigas podem ter dado de socio: nunca saem.
-            if sem_dados_de_socio(dict(d.get("filtros") or {})) != d.get("filtros"):
+            filtros = dict(d.get("filtros") or {})
+            if sem_dados_de_socio(filtros) != filtros or _sem_cpf_nos_filtros(filtros) != filtros:
                 continue
             out.append(d)
         return out

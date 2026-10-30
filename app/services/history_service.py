@@ -84,7 +84,10 @@ def clear_history() -> int:
     with factory() as s:
         result = s.execute(delete(History))
         s.commit()
-        return result.rowcount or 0
+    from app.services.listas import limpar_recentes
+
+    limpar_recentes()  # termos das buscas tambem sao historico (LGPD: precisam poder ser apagados)
+    return result.rowcount or 0
 
 
 def add_favorite(cnpj: str, label: str | None = None) -> None:

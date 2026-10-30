@@ -224,7 +224,14 @@ async def listar_modelos(prov: Provedor) -> list[str]:
 
 
 async def _modelos_remotos(prov: Provedor) -> list[str]:
-    headers = {"Authorization": f"Bearer {prov.api_key}"} if prov.api_key else {}
+    from app.chat.motor import eh_azure
+
+    if not prov.api_key:
+        headers = {}
+    elif eh_azure(prov.base_url):
+        headers = {"api-key": prov.api_key}
+    else:
+        headers = {"Authorization": f"Bearer {prov.api_key}"}
     try:
         validar_endereco(prov.base_url)
         async with httpx.AsyncClient(timeout=8.0) as c:

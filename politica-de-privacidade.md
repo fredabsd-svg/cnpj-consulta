@@ -47,6 +47,7 @@ Em respeito ao principio da **minimizacao** (LGPD art. 6&ordm;, VII), o aplicati
 | Dado | Finalidade | Retencao |
 |---|---|---|
 | Historico de CNPJs consultados | Permitir voltar a consultas recentes | Ate apagamento manual |
+| Historico de buscas avancadas (criterios, sem socio nem CPF) | Repetir buscas recentes | Ate apagamento manual (o mesmo "Apagar historico") |
 | Cache de respostas | Evitar refazer consultas identicas | `CACHE_TTL_SECONDS` (padrao 24h) |
 | Favoritos | Marcadores pessoais | Ate remocao manual |
 
@@ -75,6 +76,8 @@ As integracoes com chave ou certificado vem **desligadas** por padrao; o certifi
 - **Contatos complementares** (telefones, e-mails e sites obtidos fora da Receita) so entram por cadastro manual de um administrador, com **fonte** e **data de verificacao**. Nunca sao inferidos, completados ou raspados de sites. Podem ser corrigidos ou removidos a qualquer momento; contatos sem verificacao ha mais de `CONTATOS_RETENCAO_DIAS` (padrao 730) sao descartados pela acao de retencao do painel.
 - **Exportacoes** com telefones, e-mails ou nomes de socios exigem informar a finalidade e ficam registradas na trilha de auditoria (acao, quantidade de linhas, colunas e finalidade; nunca os dados exportados).
 - Nomes e documentos de socios nao entram no historico de buscas, nos logs de processamento, na auditoria nem nas pesquisas na internet; o log de acesso nao guarda a query string.
+- O CPF que aparece na razao social de empresario individual/MEI e retirado do historico de consultas, do historico de buscas e das pesquisas na internet.
+- Telefones e e-mails em quantidade (API JSON, ferramentas de IA e exportacao) so com a finalidade informada, registrada na auditoria sem os dados.
 - Funcoes administrativas exigem token de administrador e sao auditadas.
 
 ## 5. Base legal de tratamento

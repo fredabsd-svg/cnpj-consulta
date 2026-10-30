@@ -259,21 +259,33 @@ async def descrever_filtros() -> dict:
 @mcp.tool(annotations=LEITURA)
 async def buscar_empresas(filtros: dict[str, Any] | None = None, ordem: str = "razao",
                           direcao: str | None = None, pagina: int = 1, por_pagina: int = 20,
-                          colunas: list[str] | None = None) -> dict:
+                          colunas: list[str] | None = None, finalidade: str = "") -> dict:
     """Busca estabelecimentos na base local com filtros combinados (veja
     `descrever_filtros`). Ex.: {"uf": ["TO"], "situacao": ["2"],
     "atividade": ["contabilidade"], "contato": "telefone_e_email"}.
-    Retorna o total, a pagina pedida (ate 100 itens) e o mes de referencia."""
+    Retorna o total, a pagina pedida (ate 100 itens) e o mes de referencia.
+    Telefones e e-mail so vem com `finalidade` (min. 10 caracteres, informada pelo
+    usuario); o pedido fica na auditoria. Sem ela essas colunas sao omitidas."""
     from app.services import busca_avancada as ba
 
     f = _filtros(filtros, ordem=ordem, direcao=direcao)
     f.pagina = max(1, int(pagina))
     f.por_pagina = max(1, min(int(por_pagina), 100))
-    r = await _rodar(ba.buscar, f, colunas=colunas)
+    pedidas = [c for c in (colunas or ba.COLUNAS_TELA) if c in ba.COLUNAS_TELA]
+    restritas = [c for c in pedidas if ba.COLUNAS[c][2]]
+    aviso = None
+    if restritas and len(finalidade.strip()) < 10:
+        pedidas = [c for c in pedidas if c not in restritas]
+        aviso = ("Telefones e e-mail omitidos: peça ao usuário a finalidade (mínimo 10 caracteres) "
+                 "e chame de novo com `finalidade`.")
+    elif restritas:
+        _auditar("busca.contatos", f"colunas={','.join(restritas)} pagina={f.pagina} "
+                                   f"finalidade={finalidade.strip()[:200]}")
+    r = await _rodar(ba.buscar, f, colunas=pedidas or ["cnpj"])
     return {
         "total": r.total, "pagina": r.pagina, "paginas": r.paginas, "por_pagina": r.por_pagina,
         "mes_referencia": r.mes_referencia, "fonte": "Receita Federal — dados abertos do CNPJ (base local)",
-        "itens": _json(r.itens),
+        "itens": _json(r.itens), **({"aviso": aviso} if aviso else {}),
     }
 
 
@@ -480,9 +492,11 @@ async def salvar_busca(nome: str, filtros: dict[str, Any]) -> dict:
 
     _filtros(filtros)
     try:
-        return _json(await asyncio.to_thread(listas.salvar_busca, nome, filtros))
+        b = await asyncio.to_thread(listas.salvar_busca, nome, filtros)
     except ValueError as e:
         raise ToolError(str(e)) from e
+    _auditar("busca_salva.criar", f"busca={b.get('id')}")
+    return _json(b)
 
 
 @mcp.tool(annotations=LEITURA)
@@ -510,9 +524,11 @@ async def criar_lista(nome: str, descricao: str = "") -> dict:
     from app.services import listas
 
     try:
-        return _json(await asyncio.to_thread(listas.criar_lista, nome, descricao))
+        lst = await asyncio.to_thread(listas.criar_lista, nome, descricao)
     except ValueError as e:
         raise ToolError(str(e)) from e
+    _auditar("lista.criar", f"lista={lst.get('id')}")
+    return _json(lst)
 
 
 @mcp.tool(annotations=ESCRITA_LOCAL)
@@ -527,6 +543,7 @@ async def adicionar_a_lista(lista_id: int, cnpjs: list[str], observacao: str = "
         raise ToolError("Lista não encontrada.") from e
     except ValueError as e:
         raise ToolError(str(e)) from e
+    _auditar("lista.adicionar", f"lista={lista_id} adicionados={n}")
     return {"adicionados": n}
 
 
@@ -537,9 +554,11 @@ async def editar_lista(lista_id: int, nome: str = "", descricao: str | None = No
     from app.services import listas
 
     try:
-        return _json(await asyncio.to_thread(listas.renomear_lista, lista_id, nome, descricao))
+        lst = await asyncio.to_thread(listas.renomear_lista, lista_id, nome, descricao)
     except LookupError as e:
         raise ToolError("Lista não encontrada.") from e
+    _auditar("lista.editar", f"lista={lista_id}")
+    return _json(lst)
 
 
 @mcp.tool(annotations=ESCRITA_LOCAL)
@@ -552,6 +571,7 @@ async def anotar_item_da_lista(lista_id: int, cnpj: str, observacao: str) -> dic
         await asyncio.to_thread(listas.anotar, lista_id, n, observacao)
     except LookupError as e:
         raise ToolError("Empresa não está nessa lista.") from e
+    _auditar("lista.anotar", f"lista={lista_id} cnpj={n}")
     return {"lista_id": lista_id, "cnpj": n, "observacao": observacao.strip()[:1000]}
 
 
@@ -562,7 +582,7 @@ async def remover_da_lista(lista_id: int, cnpjs: list[str]) -> dict:
     from app.core.cnpj_validator import normalize_or_none
     from app.services import listas
 
-    validos = [n for c in cnpjs if (n := normalize_or_none(c or ""))]
+    validos = list(dict.fromkeys(n for c in cnpjs if (n := normalize_or_none(c or ""))))
     invalidos = [c for c in cnpjs if not normalize_or_none(c or "")]
     if await asyncio.to_thread(listas.obter_lista, lista_id) is None:
         raise ToolError("Lista não encontrada.")
@@ -573,6 +593,7 @@ async def remover_da_lista(lista_id: int, cnpjs: list[str]) -> dict:
             removidos.append(n)
         except LookupError:
             ausentes.append(n)
+    _auditar("lista.remover_itens", f"lista={lista_id} removidos={len(removidos)}")
     return {"removidos": removidos, "nao_estavam_na_lista": ausentes, "invalidos": invalidos}
 
 
@@ -597,6 +618,7 @@ async def remover_busca_salva(busca_id: int) -> dict:
     if await asyncio.to_thread(listas.obter_busca, busca_id) is None:
         raise ToolError("Busca salva não encontrada.")
     await asyncio.to_thread(listas.remover_busca, busca_id)
+    _auditar("busca_salva.remover", f"busca={busca_id}")
     return {"removida": busca_id}
 
 
@@ -628,8 +650,11 @@ async def favoritar(cnpj: str, rotulo: str = "", remover: bool = False) -> dict:
 
     n = _cnpj(cnpj)
     if remover:
-        return {"cnpj": n, "favorito": False, "existia": await asyncio.to_thread(hs.remove_favorite, n)}
+        existia = await asyncio.to_thread(hs.remove_favorite, n)
+        _auditar("favorito.remover", f"cnpj={n}")
+        return {"cnpj": n, "favorito": False, "existia": existia}
     await asyncio.to_thread(hs.add_favorite, n, rotulo.strip()[:120] or None)
+    _auditar("favorito.adicionar", f"cnpj={n}")
     return {"cnpj": n, "favorito": True}
 
 

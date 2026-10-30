@@ -95,11 +95,15 @@ async def busca(request: Request, colunas: list[str] = Query(None), contar: bool
     except ba.FiltroInvalido as e:
         raise HTTPException(400, str(e)) from e
     pedidas = [c for c in (colunas or ba.COLUNAS_TELA) if c in ba.COLUNAS]
-    restritas = [c for c in pedidas if ba.COLUNAS[c][2]]
     aviso = None
+    so_exportacao = [c for c in pedidas if ba.COLUNAS[c][2] and c not in ba.COLUNAS_TELA]
+    if so_exportacao:  # nomes de socios em massa: so pela exportacao (com finalidade e auditoria)
+        pedidas = [c for c in pedidas if c not in so_exportacao]
+        aviso = "Colunas disponíveis só na exportação: " + ", ".join(so_exportacao) + "."
+    restritas = [c for c in pedidas if ba.COLUNAS[c][2]]
     if restritas and len(finalidade.strip()) < 10:
         pedidas = [c for c in pedidas if c not in restritas]
-        aviso = ("Colunas de contato omitidas (" + ", ".join(restritas) + "): informe `finalidade` "
+        aviso = ((aviso + " ") if aviso else "") + ("Colunas de contato omitidas (" + ", ".join(restritas) + "): informe `finalidade` "
                  "(mínimo 10 caracteres) para recebê-las, como na exportação.")
     elif restritas:
         jobs.auditar("busca.api_contatos", ip=ip_de(request),
@@ -110,7 +114,8 @@ async def busca(request: Request, colunas: list[str] = Query(None), contar: bool
     except Exception as e:  # noqa: BLE001
         raise _erro(e) from e
     if f.pagina == 1 and not f.vazio():
-        await asyncio.to_thread(listas.registrar_recente, f.para_params(), ba.resumo_texto(f), r.total)
+        await asyncio.to_thread(listas.registrar_recente, f.para_params(), ba.resumo_texto(f),
+                                r.total if r.total >= 0 else None)
     return {
         "total": r.total, "pagina": r.pagina, "por_pagina": r.por_pagina, "paginas": r.paginas,
         "ordem": r.ordem, "direcao": r.direcao, "tempo_ms": r.tempo_ms,

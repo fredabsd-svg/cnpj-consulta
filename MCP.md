@@ -91,7 +91,7 @@ deve ser exposto na rede.
 | `consultar_cnpj` | Dados unificados com procedência, divergências entre fontes, sanções e checklist de diligência; `fontes_externas=true` compara com as APIs públicas | — |
 | `sugerir_empresas` | Autocompletar por razão social, nome fantasia ou início do CNPJ | base local |
 | `descrever_filtros` | Catálogo de filtros, ordenações, colunas e atalhos de atividade da busca avançada | — |
-| `buscar_empresas` | Busca avançada com filtros combinados, ordenação e paginação (até 100 por página) | base local |
+| `buscar_empresas` | Busca avançada com filtros combinados, ordenação e paginação (até 100 por página); telefones e e-mail só com `finalidade` (auditado) | base local |
 | `contar_empresas`, `distribuicao_resultados` | Total e distribuição por UF, situação, porte, município, CNAE… | base local |
 | `listar_codigos`, `listar_municipios` | Tabelas oficiais (CNAE, naturezas, motivos, qualificações, países) e municípios por UF | base local |
 | `exportar_busca` | Gera planilha xlsx/csv neste computador e devolve o caminho; colunas de contato exigem `finalidade` | base local |

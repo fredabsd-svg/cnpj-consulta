@@ -13,8 +13,10 @@ eventos neutros:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
+import re
 import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
@@ -77,6 +79,7 @@ class Chamada:
     nome: str
     entrada: Any
     erro_entrada: str | None = None
+    extra: dict | None = None  # campos do provedor na chamada (ex.: thought_signature do Gemini)
 
 
 @dataclass
@@ -298,9 +301,10 @@ class AdaptadorOpenAI:
     def _headers(self) -> dict[str, str]:
         h = {"Content-Type": "application/json"}
         if self.prov.api_key:
-            h["Authorization"] = f"Bearer {self.prov.api_key}"
-            if ".openai.azure.com" in self.prov.base_url:
-                h["api-key"] = self.prov.api_key  # Azure OpenAI usa este cabecalho
+            if eh_azure(self.prov.base_url):
+                h["api-key"] = self.prov.api_key  # Azure OpenAI usa este cabecalho, nao Bearer
+            else:
+                h["Authorization"] = f"Bearer {self.prov.api_key}"
         if self.prov.id == "openrouter":
             h["X-Title"] = "CNPJ Consulta"
         return h
@@ -308,10 +312,11 @@ class AdaptadorOpenAI:
     async def rodada(self, historico: list[dict], tools: list[dict], *,
                      sem_ferramentas: bool = False) -> AsyncIterator[dict]:
         corpo = {"model": self.modelo, "stream": True, "tools": tools,
-                 "messages": [{"role": "system", "content": sistema()}, *historico]}
+                 "messages": [{"role": "system", "content": sistema()}, *_para_envio(historico, self.prov.id)]}
         if sem_ferramentas:
             corpo["tool_choice"] = "none"
         texto: list[str] = []
+        raciocinio: list[str] = []
         parciais: dict[int, dict] = {}
         atual: int | None = None  # chamada em montagem quando o provedor nao manda `index`
         motivo = None
@@ -338,6 +343,8 @@ class AdaptadorOpenAI:
                     uso = pedaco.get("usage") or uso
                     for escolha in pedaco.get("choices") or []:
                         delta = escolha.get("delta") or {}
+                        if isinstance(delta.get("reasoning_content"), str):
+                            raciocinio.append(delta["reasoning_content"])  # DeepSeek exige de volta
                         if (delta.get("reasoning_content") or delta.get("reasoning")) and not pensando:
                             pensando = True
                             yield {"tipo": "pensando"}
@@ -368,8 +375,11 @@ class AdaptadorOpenAI:
                                         or ((tc.get("function") or {}).get("name") and cur["nome"] and not mesma)):
                                     atual = max(parciais, default=-1) + 1
                                 idx = atual
-                            p = parciais.setdefault(idx, {"id": "", "nome": "", "args": ""})
+                            p = parciais.setdefault(idx, {"id": "", "nome": "", "args": "", "extra": None})
                             p["id"] = tc.get("id") or p["id"]
+                            if isinstance(tc.get("extra_content"), dict):
+                                # Gemini 3: thought_signature tem de voltar intacta na proxima ida
+                                p["extra"] = {**(p["extra"] or {}), **tc["extra_content"]}
                             fn = tc.get("function") or {}
                             p["nome"] += fn.get("name") or ""
                             p["args"] += fn.get("arguments") or ""
@@ -386,13 +396,15 @@ class AdaptadorOpenAI:
             p = parciais[idx]
             if not p["nome"]:
                 continue
-            cid = p["id"] or f"call_{uuid.uuid4().hex[:12]}"
+            cid = p["id"] or f"call{uuid.uuid4().hex[:5]}"  # 9 caracteres alfanumericos (aceito pela Mistral)
             try:
                 entrada = json.loads(p["args"]) if p["args"].strip() else {}
-                r.chamadas.append(Chamada(cid, p["nome"], entrada))
+                c = Chamada(cid, p["nome"], entrada)
             except ValueError:
-                r.chamadas.append(Chamada(cid, p["nome"], p["args"],
-                                          erro_entrada="Argumentos JSON inválidos; gere a chamada de novo."))
+                c = Chamada(cid, p["nome"], p["args"],
+                            erro_entrada="Argumentos JSON inválidos; gere a chamada de novo.")
+            c.extra = p["extra"]
+            r.chamadas.append(c)
         if motivo == "content_filter":
             r.parada, r.aviso = "recusa", "O provedor bloqueou a resposta (filtro de conteúdo)."
         elif motivo == "length" and r.chamadas:
@@ -402,16 +414,69 @@ class AdaptadorOpenAI:
             r.aviso = "O modelo não devolveu resposta. Tente reformular ou peça para continuar."
         else:
             msg: dict[str, Any] = {"role": "assistant", "content": r.texto}
+            if raciocinio and "".join(raciocinio):
+                msg["reasoning_content"] = "".join(raciocinio)
             if r.chamadas:
-                msg["tool_calls"] = [{"id": c.id, "type": "function", "function": {
-                    "name": c.nome,
-                    "arguments": c.entrada if isinstance(c.entrada, str) else json.dumps(c.entrada, ensure_ascii=False),
-                }} for c in r.chamadas]
+                msg["tool_calls"] = []
+                for c in r.chamadas:
+                    tc: dict[str, Any] = {"id": c.id, "type": "function", "function": {
+                        "name": c.nome,
+                        # Argumentos ilegiveis nao vao para o historico (alguns servidores
+                        # recusam a conversa inteira); o erro fica no resultado da ferramenta.
+                        "arguments": "{}" if c.erro_entrada else json.dumps(c.entrada, ensure_ascii=False),
+                    }}
+                    if c.extra:
+                        tc["extra_content"] = c.extra
+                    msg["tool_calls"].append(tc)
                 r.parada = "ferramentas"
+            if "reasoning_content" in msg or any("extra_content" in t for t in msg.get("tool_calls", [])):
+                msg["_origem"] = self.prov.id  # campos proprios deste provedor (ver _para_envio)
             elif motivo == "length":
                 r.aviso = "Resposta cortada por tamanho. Peça para continuar."
             r.mensagens = [msg]
         yield {"tipo": "_rodada", "rodada": r}
+
+
+def eh_azure(base_url: str) -> bool:
+    try:
+        host = (httpx.URL(base_url).host or "").lower()
+    except (httpx.InvalidURL, ValueError, TypeError):
+        return False
+    return host.endswith(".azure.com") or "/openai/deployments/" in base_url
+
+
+_ID_MISTRAL = re.compile(r"[a-zA-Z0-9]{9}")
+
+
+def _id_mistral(cid: str) -> str:
+    """A Mistral so aceita ids de chamada com 9 caracteres alfanumericos: converte de
+    forma estavel (o mesmo id original vira sempre o mesmo)."""
+    if _ID_MISTRAL.fullmatch(cid or ""):
+        return cid
+    return "c" + hashlib.sha256((cid or "").encode()).hexdigest()[:8]
+
+
+def _para_envio(historico: list[dict], provedor: str) -> list[dict]:
+    """Historico como o provedor atual aceita, sem alterar o que esta gravado.
+
+    Campos proprios de um provedor (raciocinio do DeepSeek, assinatura do Gemini)
+    voltam so para ele; se a conversa trocou de provedor, ficam de fora.
+    """
+    out = []
+    for m in historico:
+        m = dict(m)
+        origem = m.pop("_origem", None)
+        if m.get("role") == "assistant" and origem != provedor:
+            m.pop("reasoning_content", None)
+            if m.get("tool_calls"):
+                m["tool_calls"] = [{k: v for k, v in t.items() if k != "extra_content"} for t in m["tool_calls"]]
+        if provedor == "mistral":
+            if m.get("tool_calls"):
+                m["tool_calls"] = [{**t, "id": _id_mistral(t.get("id", ""))} for t in m["tool_calls"]]
+            if m.get("role") == "tool":
+                m["tool_call_id"] = _id_mistral(m.get("tool_call_id", ""))
+        out.append(m)
+    return out
 
 
 def _msg_erro(err: Any) -> str:

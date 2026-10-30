@@ -186,6 +186,8 @@ def _idade(valor: Any) -> float | None:
     n = _num(valor, "idade")
     if n is not None and n > 200:
         raise FiltroInvalido("Idade: informe até 200 anos.")
+    if n is not None and n != int(n):
+        raise FiltroInvalido("Idade: informe anos inteiros (ex.: 2).")
     return n
 
 
@@ -870,7 +872,8 @@ def _resolver_comp(itens: list[tuple[str, Any]], ctx: _Ctx) -> Sql:
     return dentro, [cnpjs]
 
 
-def _compilar_folha(nome: str, valor: Any, ctx: _Ctx, agrupar_socios: list | None = None) -> Sql | None:
+def _compilar_folha(nome: str, valor: Any, ctx: _Ctx, agrupar_socios: list | None = None,
+                    agrupar_comp: list | None = None) -> Sql | None:
     campo = CAMPOS.get(nome)
     if campo is None:
         raise FiltroInvalido(f"Filtro desconhecido: {nome}.")
@@ -879,6 +882,9 @@ def _compilar_folha(nome: str, valor: Any, ctx: _Ctx, agrupar_socios: list | Non
         return None
     sql, params = r
     if sql == "__comp__":
+        if agrupar_comp is not None:
+            agrupar_comp.extend(params)
+            return None
         return _resolver_comp(params, ctx)
     if campo.socio:
         if agrupar_socios is not None:
@@ -928,11 +934,18 @@ def compilar(f: Filtros) -> Sql:
     partes: list[str] = []
     params: list[Any] = []
     socios_agrupados: list[Sql] = []
+    comp_agrupados: list[tuple[str, Any]] = []
     for nome, valor in f.campos.items():
-        r = _compilar_folha(nome, valor, ctx, socios_agrupados)
+        r = _compilar_folha(nome, valor, ctx, socios_agrupados, comp_agrupados)
         if r:
             partes.append(f"({r[0]})")
             params += r[1]
+    if comp_agrupados:
+        # Criterios de contato complementar do formulario valem para o MESMO contato
+        # ("telefone" + "verificado" = um telefone verificado).
+        r = _resolver_comp(comp_agrupados, ctx)
+        partes.append(f"({r[0]})")
+        params += r[1]
     if socios_agrupados:
         # Mesmo socio precisa atender a todos os criterios de socio do formulario.
         cond = " AND ".join(f"({s})" for s, _ in socios_agrupados)
