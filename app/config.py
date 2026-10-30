@@ -81,6 +81,36 @@ class Settings(BaseSettings):
     # Servidor MCP: ferramentas que alteram dados so com true (ver MCP.md)
     mcp_permitir_admin: bool = False
 
+    # Chat com IA (/chat, so administrador; ver CHAT_IA.md). As chaves tambem
+    # podem ser cadastradas na propria pagina do chat. Vazio = provedor desligado.
+    chat_habilitado: bool = True
+    chat_provedor_padrao: str = "anthropic"
+    chat_modelo_padrao: str = ""  # vazio = primeiro modelo do provedor
+    anthropic_api_key: str = ""
+    openai_api_key: str = ""
+    gemini_api_key: str = ""
+    openrouter_api_key: str = ""
+    deepseek_api_key: str = ""
+    groq_api_key: str = ""
+    mistral_api_key: str = ""
+    xai_api_key: str = ""
+    # Modelos locais (sem chave). Vazio = desligado; ex.: http://localhost:11434/v1
+    ollama_url: str = ""
+    lmstudio_url: str = ""
+    # Qualquer outro servidor compativel com a API da OpenAI (vLLM, LiteLLM, Azure...)
+    chat_custom_url: str = ""
+    chat_custom_api_key: str = ""
+    chat_custom_modelos: str = ""  # separados por virgula
+    # Esforco de raciocinio dos modelos Claude: low | medium | high | xhigh | max
+    chat_esforco: str = "medium"
+    chat_max_tokens: int = 64000
+    # Chamadas de ferramenta por mensagem (protege contra lacos sem fim)
+    chat_max_rodadas: int = 25
+    # Resultado de ferramenta maior que isto e cortado antes de ir ao modelo
+    chat_resultado_max_chars: int = 30000
+    chat_sql_max_linhas: int = 500
+    chat_sql_timeout_segundos: float = 30.0
+
     # Busca avancada
     busca_timeout_segundos: float = 30.0
     busca_max_por_pagina: int = 100

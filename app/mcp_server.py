@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextvars
 import dataclasses
 import logging
 import os
@@ -159,10 +160,15 @@ async def _rodar(fn, *args, **kwargs):
         raise ToolError(str(e)) from e
 
 
+# Quem chamou a ferramenta: "mcp" (assistente externo) ou "chat" (chat do app).
+ORIGEM: contextvars.ContextVar[str] = contextvars.ContextVar("cnpj_origem", default="mcp")
+
+
 def _auditar(acao: str, detalhe: str) -> None:
     from app.receita import jobs
 
-    jobs.auditar(acao, detalhe=f"origem=mcp {detalhe}", ip="mcp")
+    origem = ORIGEM.get()
+    jobs.auditar(acao, detalhe=f"origem={origem} {detalhe}", ip=origem)
 
 
 # ---------------------------------------------------------------- consulta
@@ -328,7 +334,7 @@ async def exportar_busca(filtros: dict[str, Any] | None = None, formato: str = "
     limite = min(total, get_settings().exportacao_max_linhas)
     pasta = exportacoes_dir()
     pasta.mkdir(parents=True, exist_ok=True)
-    destino = pasta / f"mcp-{datetime.now().strftime('%Y%m%d-%H%M%S')}.{formato}"
+    destino = pasta / f"{ORIGEM.get()}-{datetime.now().strftime('%Y%m%d-%H%M%S')}.{formato}"
     gravar = exportacao.gravar_xlsx if formato == "xlsx" else exportacao.gravar_csv
     n = await _rodar(gravar, f, cols, limite, destino)
     _auditar("busca.exportar", f"formato={formato} linhas={n} colunas={','.join(cols)} finalidade={finalidade.strip()[:200]}")
@@ -521,6 +527,103 @@ async def adicionar_a_lista(lista_id: int, cnpjs: list[str], observacao: str = "
     return {"adicionados": n}
 
 
+@mcp.tool(annotations=ESCRITA_LOCAL)
+async def editar_lista(lista_id: int, nome: str = "", descricao: str = "") -> dict:
+    """Renomeia uma lista e/ou troca a descricao (nome vazio = mantem)."""
+    from app.services import listas
+
+    try:
+        return _json(await asyncio.to_thread(listas.renomear_lista, lista_id, nome, descricao))
+    except LookupError as e:
+        raise ToolError("Lista não encontrada.") from e
+
+
+@mcp.tool(annotations=ESCRITA_LOCAL)
+async def anotar_item_da_lista(lista_id: int, cnpj: str, observacao: str) -> dict:
+    """Troca a observacao de uma empresa dentro de uma lista."""
+    from app.services import listas
+
+    n = _cnpj(cnpj)
+    try:
+        await asyncio.to_thread(listas.anotar, lista_id, n, observacao)
+    except LookupError as e:
+        raise ToolError("Empresa não está nessa lista.") from e
+    return {"lista_id": lista_id, "cnpj": n, "observacao": observacao.strip()[:1000]}
+
+
+@mcp.tool(annotations=ESCRITA_LOCAL)
+async def remover_da_lista(lista_id: int, cnpjs: list[str]) -> dict:
+    """Tira empresas de uma lista."""
+    from app.services import listas
+
+    removidos = []
+    for c in cnpjs:
+        n = _cnpj(c)
+        try:
+            await asyncio.to_thread(listas.remover_item, lista_id, n)
+            removidos.append(n)
+        except LookupError:
+            continue
+    return {"removidos": removidos}
+
+
+@mcp.tool(annotations=ToolAnnotations(read_only_hint=False, destructive_hint=True, open_world_hint=False))
+async def remover_lista(lista_id: int) -> dict:
+    """Apaga uma lista inteira com seus itens (confirme com o usuario antes)."""
+    from app.services import listas
+
+    try:
+        await asyncio.to_thread(listas.remover_lista, lista_id)
+    except LookupError as e:
+        raise ToolError("Lista não encontrada.") from e
+    _auditar("lista.remover", f"lista={lista_id}")
+    return {"removida": lista_id}
+
+
+@mcp.tool(annotations=ToolAnnotations(read_only_hint=False, destructive_hint=True, open_world_hint=False))
+async def remover_busca_salva(busca_id: int) -> dict:
+    """Apaga uma busca salva."""
+    from app.services import listas
+
+    if await asyncio.to_thread(listas.obter_busca, busca_id) is None:
+        raise ToolError("Busca salva não encontrada.")
+    await asyncio.to_thread(listas.remover_busca, busca_id)
+    return {"removida": busca_id}
+
+
+# ---------------------------------------------------------------- historico e favoritos
+
+
+@mcp.tool(annotations=LEITURA)
+async def historico_de_consultas(limite: int = 30, sem_repetir: bool = True) -> dict:
+    """Ultimas consultas de CNPJ feitas no app (e numeros do painel)."""
+    from app.services import history_service as hs
+
+    limite = max(1, min(limite, 500))
+    itens = await asyncio.to_thread(hs.recent_queries, limite, distinct=sem_repetir)
+    return {"estatisticas": await asyncio.to_thread(hs.history_stats), **_itens(itens)}
+
+
+@mcp.tool(annotations=LEITURA)
+async def listar_favoritos() -> dict:
+    """Empresas marcadas como favoritas."""
+    from app.services import history_service as hs
+
+    return _itens(await asyncio.to_thread(hs.list_favorites))
+
+
+@mcp.tool(annotations=ESCRITA_LOCAL)
+async def favoritar(cnpj: str, rotulo: str = "", remover: bool = False) -> dict:
+    """Marca (ou, com remover=true, desmarca) uma empresa como favorita."""
+    from app.services import history_service as hs
+
+    n = _cnpj(cnpj)
+    if remover:
+        return {"cnpj": n, "favorito": False, "existia": await asyncio.to_thread(hs.remove_favorite, n)}
+    await asyncio.to_thread(hs.add_favorite, n, rotulo.strip()[:120] or None)
+    return {"cnpj": n, "favorito": True}
+
+
 # ---------------------------------------------------------------- base local
 
 
@@ -566,7 +669,7 @@ def _registrar_admin() -> None:
         from app.receita import jobs, servico
 
         try:
-            job = await asyncio.to_thread(servico.iniciar_atualizacao, mes or None, forcar=forcar, origem="mcp")
+            job = await asyncio.to_thread(servico.iniciar_atualizacao, mes or None, forcar=forcar, origem=ORIGEM.get())
         except jobs.JobEmAndamento as e:
             raise ToolError(str(e)) from e
         except ValueError as e:

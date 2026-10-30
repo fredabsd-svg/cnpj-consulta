@@ -24,6 +24,7 @@ from app.services.admin_auth import LoginNecessario
 from app.services.official_docs import RECEITA_ORIGIN
 from app.web.pages import router as pages_router
 from app.web.pages_base import router as pages_base_router
+from app.web.pages_chat import router as pages_chat_router
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -125,6 +126,7 @@ if STATIC_DIR.exists():
 
 app.include_router(pages_router)
 app.include_router(pages_base_router)
+app.include_router(pages_chat_router)
 app.include_router(batch.router)
 app.include_router(companies.router)
 app.include_router(partners.router)

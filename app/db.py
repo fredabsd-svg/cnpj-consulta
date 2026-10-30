@@ -67,6 +67,7 @@ def init_database() -> None:
     from app.models import (
         base_cnpj,  # noqa: F401
         cached_query,  # noqa: F401
+        chat,  # noqa: F401
         favorite,  # noqa: F401
         history,  # noqa: F401 -- registrar modelos
     )

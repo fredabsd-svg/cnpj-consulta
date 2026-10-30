@@ -101,7 +101,9 @@ deve ser exposto na rede.
 | `consultar_inscricao_estadual` | IE na SEFAZ da UF | certificado A1 |
 | `pesquisar_na_internet` | Atalhos de pesquisa sobre a empresa e, se configurado, resultados da web | opcional: `WEB_SEARCH_PROVIDER` |
 | `listar_buscas_salvas`, `executar_busca_salva`, `salvar_busca` | Buscas salvas (critérios) | base local |
-| `listar_listas`, `ver_lista`, `criar_lista`, `adicionar_a_lista` | Listas de empresas com observações | — |
+| `listar_listas`, `ver_lista`, `criar_lista`, `adicionar_a_lista`, `editar_lista`, `anotar_item_da_lista`, `remover_da_lista`, `remover_lista` | Listas de empresas com observações | — |
+| `remover_busca_salva` | Apaga uma busca salva | — |
+| `historico_de_consultas`, `listar_favoritos`, `favoritar` | Histórico de consultas e favoritos | — |
 | `status_base_local`, `verificar_nova_versao` | Versão ativa, contagens, tarefa em andamento e versão mais recente no portal da Receita | — |
 
 **Administração (desligada por padrão).** Com `MCP_PERMITIR_ADMIN=true` no

@@ -156,9 +156,13 @@ O `setup` cria o ambiente virtual `.venv`, instala as dependências (`pip instal
 - **Ficha completa** (página da empresa, com a base local): abas Resumo, Endereço (com mapa), Contatos (oficiais e complementares, com origem e data), CNAEs, Sócios (qualificação, entrada, representante legal, faixa etária, CPF mascarado), Estabelecimentos e Histórico (inclui mudanças desde a versão anterior da base); exporta em Excel e PDF.
 - **Histórico e favoritos**: consultas recentes, favoritos e botão para apagar o histórico.
 
+### Chat com IA
+
+A página **Chat com IA** (`/chat`, exige login de administrador) conversa com o modelo de sua escolha: Claude (Anthropic), OpenAI, Google Gemini, OpenRouter, DeepSeek, Groq, Mistral, xAI, modelos locais (Ollama, LM Studio) ou qualquer servidor compatível com a API da OpenAI. O modelo usa **todas as funções do app** (as mesmas ferramentas do servidor MCP, inclusive as administrativas) e consulta as duas bases com **SQL somente-leitura**. Respostas em tempo real, conversas salvas e cada alteração registrada na auditoria com `origem=chat`. Configuração em [CHAT_IA.md](CHAT_IA.md).
+
 ### Assistentes de IA (MCP)
 
-O app tem um servidor **MCP** (`python -m app.mcp_server` ou `cnpj mcp`) para Claude Desktop, Claude Code, Cursor, VS Code e outros clientes: a IA consulta CNPJs, faz a diligência cadastral, monta listas de prospecção com a busca avançada, mapeia sócios, exporta planilhas e acompanha a base local. São 26 ferramentas de consulta (mais 4 administrativas opcionais), com as mesmas regras de LGPD da interface. Configuração passo a passo em [MCP.md](MCP.md).
+O app tem um servidor **MCP** (`python -m app.mcp_server` ou `cnpj mcp`) para Claude Desktop, Claude Code, Cursor, VS Code e outros clientes: a IA consulta CNPJs, faz a diligência cadastral, monta listas de prospecção com a busca avançada, mapeia sócios, exporta planilhas e acompanha a base local. São 34 ferramentas (mais 4 administrativas opcionais), com as mesmas regras de LGPD da interface. Configuração passo a passo em [MCP.md](MCP.md).
 
 ### CLI
 
