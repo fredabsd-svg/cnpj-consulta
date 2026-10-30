@@ -9,6 +9,7 @@ import logging
 import os
 import subprocess
 import sys
+import threading
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -18,6 +19,7 @@ from sqlalchemy import delete, select
 
 from app.db import get_session_factory, init_database
 from app.models.base_cnpj import AuditoriaAdmin, BaseConfig, BaseJob, BaseJobLog
+from app.receita import trava
 
 log = logging.getLogger(__name__)
 
@@ -43,13 +45,18 @@ def _to_dict(job: BaseJob) -> dict[str, Any]:
 
 
 def status_efetivo(job: BaseJob) -> str:
-    """'interrompido' quando o processo parou de dar sinal de vida."""
-    if job.status == "executando":
+    """'interrompido' quando o processo parou de dar sinal de vida.
+
+    Enquanto a trava de processo estiver presa, o processo de trabalho esta
+    vivo (mesmo que o batimento tenha atrasado): nunca e dado como interrompido.
+    """
+    if job.status in ("executando", "pendente"):
         ref = job.heartbeat_em or job.iniciado_em or job.criado_em
-        if ref and _agora() - ref > HEARTBEAT_LIMITE:
+        limite = HEARTBEAT_LIMITE if job.status == "executando" else HEARTBEAT_LIMITE * 2
+        if job.status == "pendente":
+            ref = job.criado_em
+        if ref and _agora() - ref > limite and trava.em_uso() is None:
             return "interrompido"
-    if job.status == "pendente" and job.criado_em and _agora() - job.criado_em > HEARTBEAT_LIMITE * 2:
-        return "interrompido"
     return job.status
 
 
@@ -138,6 +145,10 @@ def preparar_retomada(job_id: int) -> dict:
             raise ValueError("So tarefas pausadas, interrompidas ou com falha podem ser retomadas.")
         if (outro := job_ativo()) and outro["id"] != job_id:
             raise JobEmAndamento(f"Ja existe uma tarefa em andamento (#{outro['id']}).")
+        if (pid := trava.em_uso()) is not None:
+            raise JobEmAndamento(
+                f"A atualizacao ainda esta em execucao (processo {pid}). Aguarde terminar ou use Pausar."
+            )
         job.status, job.solicitacao, job.erro = "pendente", None, None
         job.criado_em = _agora()  # reinicia o prazo do batimento ate o processo subir
         job.finalizado_em = None
@@ -152,6 +163,8 @@ class JobReporter:
         self.job_id = job_id
         self._ultimo_flush = 0.0
         self._pendente: dict[str, Any] = {}
+        # O pipeline atualiza o progresso de varias threads (downloads paralelos).
+        self._lock = threading.RLock()
 
     def iniciar(self) -> dict:
         with get_session_factory()() as s:
@@ -166,10 +179,11 @@ class JobReporter:
             return _to_dict(job)
 
     def atualizar(self, forcar: bool = False, **campos: Any) -> None:
-        self._pendente.update(campos)
-        if not forcar and time.monotonic() - self._ultimo_flush < 1.0:
-            return
-        self._flush()
+        with self._lock:
+            self._pendente.update(campos)
+            if not forcar and time.monotonic() - self._ultimo_flush < 1.0:
+                return
+            self._flush()
 
     def _flush(self) -> None:
         campos, self._pendente = self._pendente, {}
@@ -182,6 +196,11 @@ class JobReporter:
             job.heartbeat_em = _agora()
             s.commit()
         self._ultimo_flush = time.monotonic()
+
+    def batimento(self) -> None:
+        """Sinal de vida independente do progresso (operacoes longas do DuckDB)."""
+        with self._lock:
+            self._flush()
 
     def solicitacao(self) -> str | None:
         with get_session_factory()() as s:

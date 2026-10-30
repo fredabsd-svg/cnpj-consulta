@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import shutil
+import threading
 import traceback
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -13,7 +14,7 @@ import duckdb
 
 from app.config import Settings, get_settings
 from app.receita import armazenamento as arm
-from app.receita import jobs
+from app.receita import jobs, trava
 from app.receita.duck import SCHEMA_VERSAO, conectar_leitura, metadados
 from app.receita.fonte import FonteError, FonteReceita
 from app.receita.pipeline import ETAPAS, Atualizacao, Interrompido, PipelineError, validar_base
@@ -147,9 +148,54 @@ def retomar(job_id: int, em_processo: bool = True) -> dict:
     return job
 
 
+class _Batimento:
+    """Renova o sinal de vida a cada 20 s enquanto o processo trabalha, mesmo
+    dentro de uma instrucao longa do DuckDB (sem isso, a importacao de um
+    arquivo grande parecia "interrompida" e o painel oferecia Retomar)."""
+
+    def __init__(self, rep: jobs.JobReporter, intervalo: float = 20.0) -> None:
+        self.rep, self.intervalo = rep, intervalo
+        self._fim = threading.Event()
+        self._thread = threading.Thread(target=self._loop, daemon=True, name="batimento")
+
+    def _loop(self) -> None:
+        while not self._fim.wait(self.intervalo):
+            try:
+                self.rep.batimento()
+            except Exception as e:  # noqa: BLE001 -- banco ocupado: tenta no proximo ciclo
+                log.debug("batimento falhou: %s", e)
+
+    def __enter__(self) -> _Batimento:
+        self._thread.start()
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self._fim.set()
+        self._thread.join(timeout=5)
+
+
 def executar_job(job_id: int, *, client=None, sleep=None) -> str:
-    """Corpo do processo de trabalho. Retorna o status final."""
-    rep = jobs.JobReporter(job_id)
+    """Corpo do processo de trabalho. Retorna o status final.
+
+    So um processo por vez: se outro ja estiver trabalhando (trava presa), este
+    sai sem tocar na tarefa nem nos arquivos.
+    """
+    t = trava.TravaProcesso()
+    if not t.adquirir():
+        pid = trava.em_uso()
+        log.warning("outro processo (%s) ja executa uma tarefa da base; saindo", pid)
+        jobs.JobReporter(job_id).log(
+            f"Pedido ignorado: a atualizacao ja esta em execucao no processo {pid}.", "aviso")
+        return "ocupado"
+    try:
+        rep = jobs.JobReporter(job_id)
+        with _Batimento(rep):
+            return _executar_job(rep, job_id, client=client, sleep=sleep)
+    finally:
+        t.liberar()
+
+
+def _executar_job(rep: jobs.JobReporter, job_id: int, *, client=None, sleep=None) -> str:
     job = rep.iniciar()
     if job.get("solicitacao") == "cancelar":
         rep.finalizar("cancelado", mensagem="Cancelada antes de iniciar.")
@@ -179,6 +225,14 @@ def executar_job(job_id: int, *, client=None, sleep=None) -> str:
     except (PipelineError, FonteError) as e:
         rep.log(str(e), "erro", atual._etapa)
         rep.finalizar("falhou", mensagem=f"Falhou em: {atual._etapa}.", erro=str(e), relatorio=atual.relatorio.as_dict())
+        return "falhou"
+    except duckdb.IOException as e:
+        msg = str(e)
+        if "lock" in msg.lower():
+            msg = ("Outro programa esta usando os arquivos de trabalho da base (" + msg.split("Conflicting lock")[-1][:120]
+                   + "). Feche outras copias do app ou reinicie o servidor e clique em Tentar novamente.")
+        rep.log(msg, "erro", atual._etapa)
+        rep.finalizar("falhou", mensagem=f"Falhou em: {atual._etapa}.", erro=msg, relatorio=atual.relatorio.as_dict())
         return "falhou"
     except Exception as e:  # noqa: BLE001 -- qualquer erro vira falha retomavel
         log.exception("erro inesperado na tarefa %s", job_id)

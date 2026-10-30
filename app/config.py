@@ -57,6 +57,13 @@ class Settings(BaseSettings):
     receita_duckdb_memoria: str = "4GB"
     receita_duckdb_threads: int = 0  # 0 = automatico
     receita_manter_zips: bool = False
+    # Conexoes simultaneas de download. Arquivos grandes sao baixados em partes
+    # em paralelo (o portal limita a velocidade por conexao). 1 = sequencial.
+    receita_downloads_paralelos: int = 4
+    # Pasta para os CSVs extraidos e o temporario do DuckDB. Vazio = area de
+    # trabalho dentro de RECEITA_DATA_DIR. Aponte para um disco local rapido
+    # (SSD) quando os dados ficam num disco externo ou de rede.
+    receita_temp_dir: str = ""
     receita_versoes_mantidas: int = 2  # ativa + anterior (para restaurar)
     # Validacao: recusa publicar se uma tabela principal encolher mais que isto
     # em relacao a versao ativa (protege contra arquivo truncado na origem).

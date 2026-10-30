@@ -202,10 +202,22 @@ class _Reporter:
         self.logs.append(mensagem)
 
 
+class _ReporterPausaAposImportar(_Reporter):
+    """Pede pausa depois que N arquivos foram importados."""
+
+    def __init__(self, depois: int) -> None:
+        super().__init__([""], "", 0)
+        self.limite = depois
+
+    def solicitacao(self):
+        feitos = sum(1 for m in self.logs if " registros" in m)
+        return "pausar" if feitos >= self.limite else None
+
+
 class TestRetomada:
     def test_pausa_na_importacao_e_retomada_sem_duplicar(self, db_initialized):
         portal = PortalFalso({"2026-10": dataset_padrao()})
-        rep = _Reporter([""], "importacao", depois=5)
+        rep = _ReporterPausaAposImportar(5)
         with respx.mock(assert_all_called=False) as router:
             portal.instalar(router)
             with pytest.raises(Interrompido):
@@ -240,11 +252,12 @@ class TestRetomada:
         """Erro dentro da transacao de um arquivo: os anteriores continuam importados."""
         portal = PortalFalso({"2026-10": dataset_padrao()})
         orig = Atualizacao._validar_estrutura
-        estado = {"n": 0}
+        estado = {"n": 0, "quebrou": None}
 
         def quebra(self, path, origem, esperadas):
-            if origem == "Socios0.zip" and estado["n"] == 0:
-                estado["n"] += 1
+            estado["n"] += 1
+            if estado["n"] == 6:
+                estado["quebrou"] = origem
                 raise OSError("queda simulada")
             return orig(self, path, origem, esperadas)
 
@@ -254,7 +267,7 @@ class TestRetomada:
             with pytest.raises(OSError):
                 Atualizacao("2026-10", sleep=lambda s: None).executar()
             feitos = Atualizacao("2026-10", sleep=lambda s: None)._importados()
-            assert "Empresas0.zip" in feitos and "Socios0.zip" not in feitos
+            assert len(feitos) == 5 and estado["quebrou"] not in feitos
             rel = Atualizacao("2026-10", sleep=lambda s: None).executar()
         assert rel["contagens"]["socios"] == 4
 
@@ -353,3 +366,121 @@ class TestIntegridade:
         assert rel["arquivos"]["Estabelecimentos1.zip"]["linhas"] == 9
         # o aviso traz so o tipo de erro, nunca o conteudo da linha
         assert not any("quebrada" in a for a in rel["avisos"])
+
+
+# ---------------------------------------------------------------- desempenho e concorrencia
+
+
+class TestDownloadParalelo:
+    @pytest.fixture(autouse=True)
+    def partes_pequenas(self, monkeypatch):
+        import app.receita.pipeline as pl
+
+        monkeypatch.setattr(pl, "SEGMENTO_MIN", 64)  # forca partes nos arquivos de teste
+
+    def test_arquivos_grandes_em_partes(self, db_initialized):
+        portal = PortalFalso({"2026-10": dataset_padrao()})
+        rel = _rodar(portal)
+        com_fim = [r for n, r in portal.gets if r and "-" in r and not r.endswith("-")]
+        assert com_fim, "nenhum download em partes (Range com inicio e fim)"
+        assert any("partes" in a for a in rel["avisos"]) is False
+        assert rel["contagens"]["estabelecimentos"] == 4 and rel["contagens"]["socios"] == 4
+
+    def test_queda_numa_parte_retoma_so_a_parte(self, db_initialized):
+        portal = PortalFalso({"2026-10": dataset_padrao()})
+        portal.falhas["Estabelecimentos0.zip"] = 2
+        rel = _rodar(portal)
+        assert any("parte" in a and "tentativa" in a for a in rel["avisos"])
+        assert rel["contagens"]["estabelecimentos"] == 4
+
+    def test_servidor_sem_partes_baixa_inteiro(self, db_initialized):
+        portal = PortalFalso({"2026-10": dataset_padrao()})
+        portal.ignorar_range = True
+        rel = _rodar(portal)
+        assert any("nao aceitou download em partes" in a for a in rel["avisos"])
+        assert rel["contagens"]["empresas"] == 3
+
+    def test_um_download_por_vez_tambem_funciona(self, db_initialized, monkeypatch):
+        monkeypatch.setenv("RECEITA_DOWNLOADS_PARALELOS", "1")
+        from app.config import get_settings
+
+        get_settings.cache_clear()
+        portal = PortalFalso({"2026-10": dataset_padrao()})
+        _rodar(portal)
+        assert all(r is None for _, r in portal.gets)
+
+    def test_pasta_temporaria_separada(self, db_initialized, monkeypatch, tmp_path):
+        temp = tmp_path / "ssd"
+        monkeypatch.setenv("RECEITA_TEMP_DIR", str(temp))
+        from app.config import get_settings
+
+        get_settings.cache_clear()
+        _rodar(PortalFalso({"2026-10": dataset_padrao()}))
+        assert arm.base_ativa().mes == "2026-10"
+        assert not (temp / "cnpj-consulta" / "2026-10").exists()  # limpa ao terminar
+
+
+class TestTravaDeProcesso:
+    def test_segundo_processo_nao_entra(self, db_initialized):
+        from app.receita import jobs, servico, trava
+
+        job = jobs.criar_job("atualizar", "2026-10")
+        t = trava.TravaProcesso()
+        assert t.adquirir()
+        try:
+            assert trava.em_uso() is not None
+            assert servico.executar_job(job["id"]) == "ocupado"
+            assert jobs.obter(job["id"])["status"] == "pendente"  # tarefa intacta
+        finally:
+            t.liberar()
+        assert trava.em_uso() is None
+
+    def test_batimento_atrasado_com_processo_vivo_nao_vira_interrompido(self, db_initialized):
+        from datetime import datetime, timedelta
+
+        from app.db import get_session_factory
+        from app.models.base_cnpj import BaseJob
+        from app.receita import jobs, trava
+
+        job = jobs.criar_job("atualizar", "2026-10")
+        jobs.JobReporter(job["id"]).iniciar()
+        with get_session_factory()() as s:
+            j = s.get(BaseJob, job["id"])
+            j.heartbeat_em = datetime.now() - timedelta(minutes=30)
+            s.commit()
+        t = trava.TravaProcesso()
+        assert t.adquirir()
+        try:
+            assert jobs.obter(job["id"])["status_efetivo"] == "executando"
+            with pytest.raises(jobs.JobEmAndamento):
+                jobs.criar_job("atualizar", "2026-10")
+        finally:
+            t.liberar()
+        assert jobs.obter(job["id"])["status_efetivo"] == "interrompido"
+        assert jobs.preparar_retomada(job["id"])["status"] == "pendente"
+
+    def test_retomar_recusado_enquanto_outro_processo_trabalha(self, db_initialized):
+        from app.receita import jobs, trava
+
+        job = jobs.criar_job("atualizar", "2026-10")
+        jobs.JobReporter(job["id"]).finalizar("falhou", erro="x")
+        t = trava.TravaProcesso()
+        assert t.adquirir()
+        try:
+            with pytest.raises(jobs.JobEmAndamento, match="em execucao"):
+                jobs.preparar_retomada(job["id"])
+        finally:
+            t.liberar()
+
+    def test_batimento_em_operacao_longa(self, db_initialized):
+        import time as _t
+
+        from app.receita import jobs, servico
+
+        job = jobs.criar_job("atualizar", "2026-10")
+        rep = jobs.JobReporter(job["id"])
+        rep.iniciar()
+        antes = jobs.obter(job["id"])["heartbeat_em"]
+        with servico._Batimento(rep, intervalo=0.05):
+            _t.sleep(0.3)  # simula uma instrucao longa sem progresso
+        assert jobs.obter(job["id"])["heartbeat_em"] > antes

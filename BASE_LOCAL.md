@@ -79,6 +79,20 @@ usam a **ordenação física** das tabelas (estatísticas mín./máx. por bloco)
 auditoria, contatos complementares, buscas salvas, listas). Um servidor
 PostgreSQL só se justificaria para uso multiusuário em rede.
 
+### Desempenho
+
+- Downloads: o portal limita a velocidade **por conexão**; com várias conexões e
+  partes em paralelo o download total cai na proporção (ex.: 4 conexões ≈ 4×,
+  enquanto o portal e a sua rede permitirem). Ajuste `RECEITA_DOWNLOADS_PARALELOS`
+  (1 = sequencial, até ~8).
+- Download e importação acontecem **ao mesmo tempo**: o tempo total fica perto do
+  maior dos dois, não da soma.
+- Disco: a extração e o temporário do DuckDB escrevem dezenas de GB. Se a base
+  fica num **disco externo/USB ou de rede**, aponte `RECEITA_TEMP_DIR` para um
+  disco local rápido (SSD); a base publicada continua em `RECEITA_DATA_DIR`.
+- Memória: `RECEITA_DUCKDB_MEMORIA` (padrão 4GB). Mais memória acelera a
+  consolidação; o excedente sempre vai para disco.
+
 ## 4. Instalação e primeira carga
 
 1. Instale o app normalmente (`setup.sh` / `setup.ps1`).
@@ -113,9 +127,7 @@ python -m app.cli base limpar               # apaga temporários de tentativas a
 |---|---|---|
 | Descoberta | versão e lista de arquivos no portal | — |
 | Espaço em disco | estimativa x espaço livre | — |
-| Download | um arquivo por vez, `Range` + `If-Range` (ETag), até 6 tentativas com espera crescente; progresso, velocidade e tempo restante | continua do byte em que parou |
-| Verificação | tamanho igual ao anunciado e ZIP legível | ZIP inválido é baixado de novo uma vez |
-| Extração e importação | por arquivo: extração protegida (sem caminhos maliciosos, sem ZIP-bomba, CRC conferido), validação de colunas/codificação numa amostra, importação numa **transação**, contagem de linhas rejeitadas (só o tipo do erro, nunca o conteúdo) | arquivos já importados (registrados na mesma transação) são pulados; um arquivo interrompido é refeito inteiro |
+| Download e importação | `RECEITA_DOWNLOADS_PARALELOS` conexões (padrão 4); arquivos grandes são divididos em **partes baixadas em paralelo** (`Range` + `If-Range`/ETag), até 6 tentativas por parte. Cada arquivo é conferido (tamanho, ZIP) e **importado assim que termina de baixar**, enquanto os outros continuam baixando: extração protegida (sem caminhos maliciosos, sem ZIP-bomba, CRC conferido), validação de colunas/codificação, importação numa **transação**, contagem de linhas rejeitadas (só o tipo do erro). Se o servidor não aceitar partes, baixa o arquivo inteiro numa conexão | cada parte continua do byte em que parou; arquivos já importados (registrados na mesma transação) são pulados; um arquivo interrompido é refeito inteiro |
 | Consolidação | tabelas tipadas, deduplicadas e ordenadas + tabelas auxiliares | cada tabela é uma etapa registrada |
 | Validação | colunas obrigatórias, contagens, queda em relação à versão ativa (`RECEITA_QUEDA_MAXIMA_PCT`), órfãos (`RECEITA_ORFAOS_MAX_PCT`), CNPJs repetidos, consultas de amostra | — |
 | Publicação | move para `versoes/` e troca o ponteiro `ATIVA.json` (atômico) | — |
@@ -130,10 +142,15 @@ Garantias:
 - **Pausar** e **Cancelar** são atendidos no próximo ponto seguro — inclusive no
   meio de uma instrução longa do DuckDB, que é interrompida e desfeita sem
   corromper o arquivo. Cancelar mantém os downloads concluídos.
-- Queda do processo (energia, travamento) é detectada pela falta de sinal de
-  vida (2 min) e a tarefa aparece como **interrompida**, pronta para retomar.
-- A importação roda num **processo separado** (o painel acompanha pelo banco),
-  então a interface nunca trava.
+- **Um processo por vez:** a tarefa roda num processo separado (a interface
+  nunca trava) que segura uma trava do sistema operacional. Enquanto ela estiver
+  presa, a tarefa nunca aparece como interrompida e *Retomar* / o agendamento
+  não sobem um segundo processo (era o que causava o erro `Conflicting lock` no
+  `bruto.duckdb`). O sinal de vida é renovado a cada 20 s numa thread própria,
+  mesmo durante a importação de um arquivo grande.
+- Queda real do processo (energia, container reiniciado) libera a trava sozinha;
+  depois de 2 min sem sinal de vida a tarefa aparece como **interrompida**,
+  pronta para retomar de onde parou.
 - Linhas rejeitadas acima de 1% num arquivo recusam o arquivo (o leiaute pode
   ter mudado); estrutura com número de colunas diferente do oficial também.
 
