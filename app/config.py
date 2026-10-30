@@ -83,6 +83,9 @@ class Settings(BaseSettings):
     # Vazio = token gerado no primeiro uso em data/admin_token.txt.
     admin_token: str = ""
     admin_sessao_horas: int = 8
+    # Chave (Fernet) do cofre de CPFs completos. Vazio = gerada em data/cpf.key.
+    # Guarde uma copia: sem ela os CPFs cadastrados nao podem ser lidos.
+    cpf_chave: str = ""
 
     # Servidor MCP: ferramentas que alteram dados so com true (ver MCP.md)
     mcp_permitir_admin: bool = False

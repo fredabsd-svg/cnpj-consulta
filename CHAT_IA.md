@@ -55,7 +55,9 @@ Anthropic (`fallbacks: "default"`; não existe para o Haiku).
 ## 2. O que o modelo consegue fazer
 
 O chat usa **as mesmas ferramentas do [servidor MCP](MCP.md)** (uma camada só para
-os dois), inclusive as administrativas, mais três ferramentas próprias:
+os dois), inclusive as administrativas (entre elas as de CPF completo do cofre,
+que a IA só usa quando você pede: `cpf_completo_dos_socios`, `buscar_por_cpf`,
+`cadastrar_cpf_socio`), mais três ferramentas próprias:
 
 | Ferramenta | O que faz |
 |---|---|

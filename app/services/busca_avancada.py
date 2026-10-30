@@ -713,6 +713,11 @@ ORDENACOES = {
 COLUNAS: dict[str, tuple[str, str, bool]] = {
     "cnpj": ("CNPJ", "pg.cnpj_completo", False),
     "razao_social": ("Razão social", "pg.razao_social", False),
+    # CPF do titular de empresario individual/MEI: publicado pela Receita no fim da
+    # razao social. Dado pessoal: so na exportacao, com finalidade e auditoria.
+    "cpf_titular": ("CPF do titular (empresário individual/MEI)",
+                    "CASE WHEN pg.natureza_juridica = 2135 THEN "
+                    "nullif(regexp_extract(pg.razao_social, '([0-9]{11})\\s*$', 1), '') END", True),
     "nome_fantasia": ("Nome fantasia", "pg.nome_fantasia", False),
     "matriz_filial": ("Matriz/filial", "pg.identificador_matriz_filial", False),
     "situacao": ("Situação", "pg.situacao_cadastral", False),

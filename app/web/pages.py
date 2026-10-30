@@ -21,8 +21,9 @@ from app.core.inbound_limit import check_company_lookup_limit, reserver_for
 from app.providers.registry import get_registry
 from app.receita.armazenamento import caminho_base_ativa
 from app.services import contatos, inscricao_estadual, official_docs, web_research
+from app.services import cpf as cpf_srv
 from app.services import listas as listas_srv
-from app.services.admin_auth import eh_admin
+from app.services.admin_auth import eh_admin, ip_de
 from app.services.batch import parse_cnpj_list, run_batch, summarize
 from app.services.company_query import query_company_async
 from app.services.diligence import STATUS_LABELS, build_diligence_checklist, build_diligence_verdict
@@ -62,6 +63,7 @@ def static_url(path: str) -> str:
 
 
 templates.env.globals["static_url"] = static_url
+templates.env.globals["chave_pessoa"] = cpf_srv.chave_pessoa
 for _name in ("brl", "data_br", "cep", "telefone", "cnae", "cnpj", "fonte", "fontes_no_texto", "idade"):
     templates.env.filters[_name] = getattr(formatting, _name)
 
@@ -105,6 +107,20 @@ async def _index(request: Request, *, error: str | None = None, value: str = "",
 @router.get("/", response_class=HTMLResponse)
 async def index(request: Request) -> HTMLResponse:
     return await _index(request)
+
+
+def _cpfs_visiveis(request: Request, cnpj: str, company, ficha) -> dict:
+    """CPFs completos do cofre para os socios desta empresa (so administrador).
+    Cada pagina que mostra algum fica na auditoria (sem os numeros)."""
+    pessoas = [(s.nome, s.documento_mascarado) for s in company.socios]
+    for s in (ficha or {}).get("socios") or []:
+        pessoas.append((s.get("nome"), s.get("documento")))
+    cpfs = cpf_srv.revelar(pessoas)
+    if cpfs:
+        from app.receita import jobs
+
+        jobs.auditar("cpf.visualizar", detalhe=f"cnpj={cnpj} quantidade={len(cpfs)}", ip=ip_de(request))
+    return cpfs
 
 
 def _volta_segura(destino: str, padrao: str) -> str:
@@ -192,6 +208,10 @@ async def empresa(
     )
     diligence = build_diligence_checklist(company, sanctions) if company.razao_social else []
     so_local = bool(company.fontes) and all(f.fonte == "receita_local" for f in company.fontes)
+    admin = eh_admin(request)
+    cpfs = await asyncio.to_thread(_cpfs_visiveis, request, normalized, company, ficha) if admin else {}
+    natureza = 2135 if "213-5" in (company.natureza_juridica or "") or "2135" in (company.natureza_juridica or "") else None
+    cpf_titular = cpf_srv.cpf_do_titular(company.razao_social, natureza) if natureza else None
     return _render(
         request,
         "company.html",
@@ -205,7 +225,9 @@ async def empresa(
             "ficha": ficha,
             "complementares": complementares,
             "so_local": so_local,
-            "admin": eh_admin(request),
+            "admin": admin,
+            "cpfs": cpfs,
+            "cpf_titular": cpf_titular,
             "erro_contato": erro_contato,
             "listas": await asyncio.to_thread(listas_srv.listas),
             **_research_ctx(company),

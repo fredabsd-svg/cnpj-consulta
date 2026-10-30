@@ -73,20 +73,19 @@ EXTRAS: list[dict[str, Any]] = [
 _NOMES_EXTRAS = {e["nome"] for e in EXTRAS}
 _ARQUIVO_EXPORTADO = re.compile(r"^(mcp|chat)-\d{8}-\d{6}(-[0-9a-f]{8})?\.(xlsx|csv)$")
 
-_preparado = False
 _lock = threading.Lock()
 
 
 def _preparar_sync() -> None:
-    global _preparado
     with _lock:
-        if not _preparado:
+        if not mcp_server._admin_registrado:  # idempotente; religa se alguem desligou
             mcp_server.configurar(True)
-            _preparado = True
 
 
 async def _preparar() -> None:
-    if not _preparado:
+    # Confere sempre (custo zero quando ja esta pronto): as ferramentas
+    # administrativas podem ter sido desligadas no servidor MCP deste processo.
+    if not mcp_server._admin_registrado:
         await asyncio.to_thread(_preparar_sync)
 
 

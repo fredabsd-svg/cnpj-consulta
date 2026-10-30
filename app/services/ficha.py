@@ -27,6 +27,7 @@ from app.receita.layout import (
     SITUACOES,
     TIPOS_SOCIO,
 )
+from app.services.cpf import cpf_do_titular
 
 ORIGEM_RFB = "Receita Federal — dados abertos do CNPJ"
 
@@ -174,6 +175,7 @@ def ficha_local(cnpj: str) -> dict[str, Any] | None:
             "data_abertura": e["data_inicio_atividade"],
             "idade_anos": _idade(e["data_inicio_atividade"]),
             "natureza_codigo": e["natureza_juridica"],
+            "cpf_titular": cpf_do_titular(e["razao_social"], e["natureza_juridica"]),
             "natureza": e["natureza_descricao"],
             "porte_codigo": e["porte_empresa"],
             "porte": PORTES.get(e["porte_empresa"]) if e["porte_empresa"] is not None else None,

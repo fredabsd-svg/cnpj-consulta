@@ -109,8 +109,10 @@ deve ser exposto na rede.
 **Administração (desligada por padrão).** Com `MCP_PERMITIR_ADMIN=true` no
 `.env` (ou no bloco `"env"` da configuração do cliente) aparecem também
 `atualizar_base`, `controlar_tarefa` (pausar, retomar, cancelar),
-`cadastrar_contato_complementar` e `remover_contato_complementar`. Todas ficam
-registradas na trilha de auditoria com `origem=mcp`. Os clientes MCP costumam
+`cadastrar_contato_complementar`, `remover_contato_complementar` e as de CPF
+completo: `cpf_completo_dos_socios` (CPFs do cofre e do titular de MEI),
+`buscar_por_cpf` e `cadastrar_cpf_socio` (ver "CPF completo" no README). Todas
+ficam registradas na trilha de auditoria com `origem=mcp`. Os clientes MCP costumam
 pedir sua confirmação antes de rodar ferramentas marcadas como de escrita.
 
 **Recursos:** `cnpj://busca/filtros`, `cnpj://base/status` e `cnpj://empresa/{cnpj}`.

@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+
+{% block title %}CPFs (cofre){% endblock %}
+
+{% block content %}
+<header class="page-header">
+    <div>
+        <div class="eyebrow">{{ ui.icon('lock') }} Administração</div>
+        <h1>CPFs completos (cofre)</h1>
+        <p class="lead">A Receita publica o CPF de sócio pessoa física <strong>mascarado</strong> (só os dígitos 4 a 9). O app nunca deduz o número: o CPF completo só existe aqui quando você o cadastra a partir de documentos do cliente ou quando uma fonte consultada o devolve. Fica criptografado, só o administrador vê e cada visualização vai para a <a href="/admin/auditoria">auditoria</a>.</p>
+    </div>
+</header>
+
+{% if msg %}<div class="alert alert-info" role="status">{{ ui.icon('info') }}<div><p>{{ msg }}</p></div></div>{% endif %}
+{% if erro %}<div class="alert alert-danger" role="alert">{{ ui.icon('falha') }}<div><p>{{ erro }}</p></div></div>{% endif %}
+
+<div class="grid-2">
+    <section class="card" aria-labelledby="t-buscar">
+        <h2 id="t-buscar">{{ ui.icon('search') }} Buscar por CPF completo</h2>
+        <form method="get" action="/admin/cpfs">
+            <div class="field"><label for="b-cpf">CPF</label>
+                <input class="input mono" id="b-cpf" name="cpf" value="{{ cpf }}" inputmode="numeric" maxlength="14" required placeholder="000.000.000-00" autocomplete="off"></div>
+            <button type="submit" class="btn btn-primary">{{ ui.icon('search') }} Buscar</button>
+        </form>
+        <p class="hint section">Acha: empresas em que a pessoa é <strong>titular</strong> (empresário individual/MEI, CPF publicado na razão social: certo), o <strong>cadastro no cofre</strong> (certo) e sócios com os <strong>mesmos dígitos visíveis</strong> (provável: outras pessoas podem ter os mesmos 6 dígitos; confira o nome).</p>
+    </section>
+
+    <section class="card" aria-labelledby="t-cadastrar">
+        <h2 id="t-cadastrar">{{ ui.icon('plus') }} Cadastrar CPF completo</h2>
+        <form method="post" action="/admin/cpfs">
+            <div class="field"><label for="c-nome">Nome (como publicado)</label>
+                <input class="input" id="c-nome" name="nome" maxlength="200" required></div>
+            <div class="field"><label for="c-doc">Documento publicado pela Receita <span class="faint">(opcional, ex.: ***.456.789-**)</span></label>
+                <input class="input mono" id="c-doc" name="documento_publicado" maxlength="20" placeholder="***.456.789-**"></div>
+            <div class="field"><label for="c-cpf">CPF completo</label>
+                <input class="input mono" id="c-cpf" name="cpf" inputmode="numeric" maxlength="14" required placeholder="000.000.000-00" autocomplete="off"></div>
+            <div class="field"><label for="c-fonte">Fonte</label>
+                <input class="input" id="c-fonte" name="fonte" maxlength="300" required placeholder="ex.: contrato social do cliente"></div>
+            <div class="field"><label for="c-fin">Finalidade</label>
+                <input class="input" id="c-fin" name="finalidade" maxlength="300" required minlength="10" placeholder="ex.: cadastro do sócio no eSocial do cliente"></div>
+            <button type="submit" class="btn btn-primary">{{ ui.icon('save') }} Guardar no cofre</button>
+        </form>
+        <p class="hint section">Mais prático: abra a página do sócio (a partir da ficha da empresa) e use “Cadastrar o CPF completo” — nome e documento publicado já vêm preenchidos e o app confere os dígitos.</p>
+    </section>
+</div>
+
+{% if resultado %}
+{% set r = resultado %}
+<section class="card section" aria-labelledby="t-res">
+    <h2 id="t-res">Resultado para <span class="mono">{{ r.cpf_mascarado }}</span></h2>
+    {% if r.cadastrado %}
+    <p>{{ ui.icon('ok') }} No cofre: <strong>{{ r.cadastrado.nome }}</strong> · fonte: {{ r.cadastrado.fonte }}</p>
+    {% endif %}
+    <h3>Titular de empresário individual / MEI</h3>
+    {% if r.titular %}
+    <ul class="quick-list">
+        {% for e in r.titular %}
+        <li><a href="/empresa/{{ e.cnpj }}"><span class="quick-title">{{ e.razao_social }}</span><span class="quick-meta mono">{{ e.cnpj | cnpj }} · {{ e.uf or "" }}</span></a></li>
+        {% endfor %}
+    </ul>
+    {% else %}<p class="muted">Nenhuma empresa individual com esse CPF na razão social.</p>{% endif %}
+    <h3>Sócios com os mesmos dígitos visíveis</h3>
+    {% if r.socios %}
+    <div class="table-wrap">
+        <table class="data-table">
+            <thead><tr><th scope="col">Nome</th><th scope="col">Documento publicado</th><th scope="col">Empresas</th><th scope="col">Identificação</th></tr></thead>
+            <tbody>
+            {% for s in r.socios %}
+            <tr>
+                <td><a class="cell-title" href="/socio/{{ s.chave }}">{{ s.nome }}</a></td>
+                <td class="mono">{{ s.documento }}</td>
+                <td>{{ s.qtd_empresas }}</td>
+                <td>{% if s.confirmado %}<span class="badge badge-success">confirmada (cofre)</span>{% else %}<span class="badge badge-warning">provável — confira o nome</span>{% endif %}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}<p class="muted">Nenhum sócio pessoa física com esses dígitos.</p>{% endif %}
+</section>
+{% endif %}
+
+<section class="card section" aria-labelledby="t-lista">
+    <h2 id="t-lista">{{ ui.icon('lock') }} No cofre <span class="count">{{ registros | length }}</span></h2>
+    {% if registros %}
+    <div class="table-wrap">
+        <table class="data-table">
+            <thead><tr><th scope="col">Nome</th><th scope="col">CPF</th><th scope="col">Fonte</th><th scope="col">Finalidade</th><th scope="col">Conferido</th><th scope="col"><span class="visually-hidden">Ações</span></th></tr></thead>
+            <tbody>
+            {% for c in registros %}
+            <tr>
+                <td>{{ c.nome }}<span class="cell-sub">{{ "cadastro manual" if c.origem == "manual" else "fonte externa" }} · {{ c.criado_em | data_br }}</span></td>
+                <td class="mono">{{ c.cpf_mascarado }}</td>
+                <td>{{ c.fonte }}</td>
+                <td>{{ c.finalidade }}</td>
+                <td>{% if c.conferido %}<span class="badge badge-success">sim</span>{% else %}<span class="badge badge-plain">sem dígitos publicados</span>{% endif %}</td>
+                <td class="num"><form method="post" action="/admin/cpfs/{{ c.id }}/remover"><button type="submit" class="btn btn-sm btn-ghost btn-danger" aria-label="Remover CPF de {{ c.nome }}">{{ ui.icon('trash') }} Remover</button></form></td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <p class="hint">Na lista o CPF aparece mascarado; o número completo aparece na ficha da empresa e na página do sócio (só para o administrador, com registro na auditoria).</p>
+    {% else %}
+    <p class="empty-state">Nenhum CPF no cofre.</p>
+    {% endif %}
+</section>
+{% endblock %}

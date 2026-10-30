@@ -156,6 +156,16 @@ O `setup` cria o ambiente virtual `.venv`, instala as dependências (`pip instal
 - **Ficha completa** (página da empresa, com a base local): abas Resumo, Endereço (com mapa), Contatos (oficiais e complementares, com origem e data), CNAEs, Sócios (qualificação, entrada, representante legal, faixa etária, CPF mascarado), Estabelecimentos e Histórico (inclui mudanças desde a versão anterior da base); exporta em Excel e PDF.
 - **Histórico e favoritos**: consultas recentes, favoritos e botão para apagar o histórico.
 
+### CPF completo (cofre, só administrador)
+
+A Receita publica o CPF de sócio pessoa física **mascarado** (só os dígitos 4 a 9); o app nunca deduz o número. Em **CPFs (cofre)** (`/admin/cpfs`) o administrador:
+
+- **cadastra** o CPF completo de um sócio a partir de documentos do cliente (com fonte e finalidade). O app confere se ele bate com os dígitos publicados.
+- **busca por CPF completo:** acha a empresa do titular (empresário individual/MEI) e os sócios com os mesmos dígitos visíveis (identificação provável).
+- **guarda automaticamente** o CPF completo quando uma fonte externa consultada o devolve.
+
+O CPF completo aparece só para o administrador, na ficha da empresa e na página do sócio, e cada visualização vai para a auditoria. Ele fica criptografado no banco do app, com a chave em `data/cpf.key` ou em `CPF_CHAVE`. **Guarde uma cópia dessa chave junto com o backup.** O CPF do titular de empresário individual/MEI, que a Receita publica na razão social, aparece como campo próprio na ficha e na exportação (coluna `cpf_titular`, com finalidade).
+
 ### Chat com IA
 
 A página **Chat com IA** (`/chat`, exige login de administrador) conversa com o modelo de sua escolha: Claude (Anthropic), OpenAI, Google Gemini, OpenRouter, DeepSeek, Groq, Mistral, xAI, modelos locais (Ollama, LM Studio) ou qualquer servidor compatível com a API da OpenAI. O modelo usa **todas as funções do app** (as mesmas ferramentas do servidor MCP, inclusive as administrativas) e consulta as duas bases com **SQL somente-leitura**. Respostas em tempo real, conversas salvas e cada alteração registrada na auditoria com `origem=chat`. Configuração em [CHAT_IA.md](CHAT_IA.md).
