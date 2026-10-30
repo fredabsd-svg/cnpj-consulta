@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+
+{% block title %}Chat com IA{% endblock %}
+
+{% block content %}
+<header class="page-header chat-cabecalho">
+    <div>
+        <div class="eyebrow">{{ ui.icon('sparkles') }} Inteligência</div>
+        <h1>Chat com IA</h1>
+        <p class="lead">Peça em linguagem natural o que o sistema faz: consultar e comparar CNPJs, montar listas de prospecção, mapear sócios, exportar planilhas, cruzar dados com SQL e acompanhar a base.</p>
+    </div>
+    <div class="actions">
+        <button type="button" class="btn btn-ghost" data-chat="configurar">{{ ui.icon('settings') }} Configurar provedores</button>
+    </div>
+</header>
+
+<noscript><div class="alert alert-warning">{{ ui.icon('alerta') }}<div><p>O chat precisa de JavaScript ativado.</p></div></div></noscript>
+
+<div class="alert alert-info chat-aviso-privacidade">{{ ui.icon('shield') }}
+    <div><p><strong>Privacidade:</strong> suas mensagens e os resultados das ferramentas (inclusive dados de empresas e sócios) são enviados ao provedor de IA escolhido. Com modelos locais (Ollama, LM Studio) nada sai do computador. O modelo pode alterar dados do app (listas, contatos, atualização da base); cada alteração fica na <a href="/admin/auditoria">auditoria</a> com <code>origem=chat</code>.</p></div>
+</div>
+
+<div class="chat-layout" data-chat-app data-algum="{{ 'sim' if algum_configurado else 'nao' }}">
+    <aside class="chat-lateral card" aria-label="Conversas">
+        <button type="button" class="btn btn-primary btn-block" data-chat="nova">{{ ui.icon('plus') }} Nova conversa</button>
+        <ul class="chat-conversas" data-chat-lista aria-label="Conversas anteriores"></ul>
+    </aside>
+
+    <section class="chat-principal card" aria-label="Conversa">
+        <div class="chat-topo">
+            <div class="chat-modelo">
+                <label for="chat-provedor" class="visually-hidden">Provedor</label>
+                <select class="select select-sm" id="chat-provedor" data-chat-provedor></select>
+                <label for="chat-modelo" class="visually-hidden">Modelo</label>
+                <input class="input chat-input-modelo" id="chat-modelo" list="chat-modelos" data-chat-modelo
+                       autocomplete="off" spellcheck="false" placeholder="modelo">
+                <datalist id="chat-modelos" data-chat-modelos></datalist>
+            </div>
+            <span class="faint small" data-chat-uso></span>
+        </div>
+
+        <div class="chat-mensagens" data-chat-mensagens aria-live="polite">
+            <div class="chat-vazio" data-chat-vazio>
+                {% if not algum_configurado %}
+                <p><strong>Nenhum provedor de IA configurado.</strong></p>
+                <p class="muted">Clique em <em>Configurar provedores</em> e cadastre uma chave (Anthropic, OpenAI, Google Gemini, OpenRouter, DeepSeek, Groq, Mistral, xAI) ou o endereço de um modelo local (Ollama, LM Studio).</p>
+                {% else %}
+                <p><strong>Exemplos do que pedir</strong></p>
+                <ul class="chat-exemplos">
+                    <li><button type="button" class="chip" data-exemplo>Faça a diligência cadastral do CNPJ 12.345.678/0001-95</button></li>
+                    <li><button type="button" class="chip" data-exemplo>Quantos escritórios de contabilidade ativos há no Tocantins, por município?</button></li>
+                    <li><button type="button" class="chip" data-exemplo>Liste 20 empresas de construção em Palmas abertas nos últimos 12 meses, com telefone</button></li>
+                    <li><button type="button" class="chip" data-exemplo>Em que outras empresas aparecem os sócios da empresa X?</button></li>
+                    <li><button type="button" class="chip" data-exemplo>A base local está atualizada? Existe versão nova no portal da Receita?</button></li>
+                    <li><button type="button" class="chip" data-exemplo>Quais os 10 CNAEs com mais empresas abertas em 2026 em Goiás?</button></li>
+                </ul>
+                {% endif %}
+            </div>
+        </div>
+
+        <form class="chat-composer" data-chat-form>
+            <label for="chat-texto" class="visually-hidden">Mensagem</label>
+            <textarea class="textarea" id="chat-texto" rows="2" maxlength="20000" data-chat-texto
+                      placeholder="Escreva o que precisa… (Enter envia, Shift+Enter quebra linha)"></textarea>
+            <div class="chat-composer-acoes">
+                <button type="button" class="btn btn-ghost" data-chat="parar" hidden>{{ ui.icon('x') }} Parar</button>
+                <button type="submit" class="btn btn-primary" data-chat="enviar">{{ ui.icon('send') }} Enviar</button>
+            </div>
+        </form>
+    </section>
+</div>
+
+<dialog class="chat-config" data-chat-dialogo aria-labelledby="t-config">
+    <div class="chat-config-cabecalho">
+        <h2 id="t-config">{{ ui.icon('settings') }} Provedores de IA</h2>
+        <button type="button" class="icon-btn" data-chat="fechar" aria-label="Fechar">{{ ui.icon('x') }}</button>
+    </div>
+    <p class="hint">As chaves ficam só neste computador (banco do app) e nunca voltam para o navegador. Valores do arquivo <code>.env</code> têm prioridade. Veja <code>CHAT_IA.md</code>.</p>
+    <div class="chat-config-lista" data-chat-config-lista></div>
+</dialog>
+
+<script src="{{ static_url('js/chat.js') }}" defer></script>
+{% endblock %}

@@ -67,11 +67,38 @@ def init_database() -> None:
     from app.models import (
         base_cnpj,  # noqa: F401
         cached_query,  # noqa: F401
+        chat,  # noqa: F401
         favorite,  # noqa: F401
         history,  # noqa: F401 -- registrar modelos
     )
 
-    Base.metadata.create_all(bind=get_engine())
+    engine = get_engine()
+    Base.metadata.create_all(bind=engine)
+    _migrar_chat_autoincrement(engine)
+
+
+def _migrar_chat_autoincrement(engine) -> None:
+    """chat_conversa criada antes da v0.5 nao tem AUTOINCREMENT (id de conversa
+    apagada era reaproveitado). Recria a tabela uma vez, preservando os dados."""
+    if engine.dialect.name != "sqlite":
+        return
+    from sqlalchemy import text
+
+    with engine.begin() as conn:
+        ddl = conn.execute(text("SELECT sql FROM sqlite_master WHERE type='table' AND name='chat_conversa'")).scalar()
+        if not ddl or "AUTOINCREMENT" in ddl.upper():
+            return
+        conn.execute(text("ALTER TABLE chat_conversa RENAME TO _chat_conversa_antiga"))
+        # Os indices mantem o nome ao renomear a tabela: liberam o nome para a nova.
+        for (idx,) in conn.execute(text("SELECT name FROM sqlite_master WHERE type='index' "
+                                        "AND tbl_name='_chat_conversa_antiga' AND sql IS NOT NULL")).all():
+            conn.execute(text(f'DROP INDEX "{idx}"'))
+        from app.models.chat import ChatConversa
+
+        ChatConversa.__table__.create(bind=conn)
+        cols = ", ".join(c.name for c in ChatConversa.__table__.columns)
+        conn.execute(text(f"INSERT INTO chat_conversa ({cols}) SELECT {cols} FROM _chat_conversa_antiga"))
+        conn.execute(text("DROP TABLE _chat_conversa_antiga"))
 
 
 def get_session() -> Iterator[Session]:

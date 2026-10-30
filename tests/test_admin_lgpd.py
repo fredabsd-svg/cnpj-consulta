@@ -356,7 +356,11 @@ class TestDadosPessoais:
 
         TestClient(app).get("/api/busca?socio_nome=maria&uf=TO")
         rec = listas.recentes()
-        assert rec and "socio_nome" not in rec[0]["filtros"] and "MARIA" not in rec[0]["resumo"].upper()
+        # Busca com criterio de socio nao vai para o historico (sem ele seria outra
+        # busca, com total errado -- achado D2-8 do Gauntlet Loop); nada de socio gravado.
+        assert all("socio_nome" not in r["filtros"] and "MARIA" not in r["resumo"].upper() for r in rec)
+        TestClient(app).get("/api/busca?uf=TO")
+        assert listas.recentes()[0]["filtros"] == {"uf": ["TO"]} or listas.recentes()[0]["filtros"].get("uf")
 
     def test_logs_da_importacao_sem_dados_pessoais(self, db_initialized):
         job = jobs.criar_job("atualizar", "2026-10")

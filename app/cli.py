@@ -184,8 +184,10 @@ def providers_list() -> None:
 @consulta_app.command("historico")
 def consulta_historico(limit: int = typer.Option(20, "--limit", "-n")) -> None:
     """Mostra as ultimas consultas realizadas."""
+    from app.db import init_database
     from app.services.history_service import recent_queries
 
+    init_database()
     rows = recent_queries(limit=limit)
     if not rows:
         console.print("Nenhuma consulta registrada.")
@@ -253,6 +255,9 @@ def base_atualizar(
         job = iniciar_atualizacao(mes, forcar=forcar, origem="cli", em_processo=segundo_plano)
     except jobs.JobEmAndamento as e:
         err_console.print(f"[red]Erro:[/red] {e} Use `cnpj base retomar` ou `cnpj base cancelar`.")
+        raise typer.Exit(code=2) from e
+    except ValueError as e:
+        err_console.print(f"[red]Erro:[/red] {e}")
         raise typer.Exit(code=2) from e
     jobs.auditar("base.atualizar", detalhe=f"cli job={job['id']} mes={mes or 'mais recente'}")
     if segundo_plano:
@@ -375,6 +380,17 @@ def sync_receita(
 
 
 @app.command()
+def mcp(
+    http: bool = typer.Option(False, "--http", help="Streamable HTTP em vez de stdio"),
+    porta: int = typer.Option(8765, "--porta", help="Porta do modo HTTP"),
+) -> None:
+    """Servidor MCP para assistentes de IA (Claude, Cursor...). Ver MCP.md."""
+    from app.mcp_server import main as mcp_main
+
+    mcp_main(["--http", "--porta", str(porta)] if http else [])
+
+
+@app.command()
 def admin_token() -> None:
     """Mostra o token de acesso a area administrativa."""
     from app.services.admin_auth import token_admin
@@ -385,8 +401,10 @@ def admin_token() -> None:
 @app.command()
 def limpar_historico() -> None:
     """Apaga o historico local de consultas."""
+    from app.db import init_database
     from app.services.history_service import clear_history
 
+    init_database()
     n = clear_history()
     console.print(f"[green]{n} entradas removidas.[/green]")
 
@@ -394,8 +412,10 @@ def limpar_historico() -> None:
 @app.command()
 def limpar_cache() -> None:
     """Apaga o cache local de respostas."""
+    from app.db import init_database
     from app.services.cache import clear_cache
 
+    init_database()
     n = clear_cache()
     console.print(f"[green]{n} entradas removidas do cache.[/green]")
 

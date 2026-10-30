@@ -180,11 +180,18 @@ class PortalFalso:
         if rng and not self.ignorar_range:
             if_range = request.headers.get("if-range", "").strip('"')
             if not if_range or if_range == self.etag(self.versoes[mes][nome]):
-                inicio = int(rng.removeprefix("bytes=").split("-")[0])
+                ini_txt, _, fim_txt = rng.removeprefix("bytes=").partition("-")
+                inicio = int(ini_txt)
+                fim = min(int(fim_txt), len(data) - 1) if fim_txt else len(data) - 1
                 if inicio >= len(data):
                     return httpx.Response(416)
                 status = 206
-                headers["Content-Range"] = f"bytes {inicio}-{len(data) - 1}/{len(data)}"
+                headers["Content-Range"] = f"bytes {inicio}-{fim}/{len(data)}"
+                corpo = data[inicio:fim + 1]
+                if self.falhas.get(nome):
+                    self.falhas[nome] -= 1
+                    return httpx.Response(status, headers=headers, content=_cortado(corpo))
+                return httpx.Response(status, headers=headers, content=corpo)
         corpo = data[inicio:]
         if self.falhas.get(nome):
             self.falhas[nome] -= 1

@@ -70,7 +70,7 @@ class TestDiligenceHelpers:
         items = build_diligence_checklist(_base_company())
         by_id = {i.id: i for i in items}
         assert by_id["situacao_ativa"].status == "ok"
-        assert by_id["simples_mei"].status == "ok"
+        assert by_id["simples_mei"].status == "info"  # cadastral: nao pesa no veredito
         assert by_id["capital"].status == "ok"
         assert by_id["qsa"].status == "ok"
         assert by_id["divergencias"].status == "ok"

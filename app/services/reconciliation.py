@@ -55,6 +55,7 @@ _LABELS = {
     "situacao_cadastral": "Situacao cadastral",
     "data_situacao_cadastral": "Data da situacao",
     "motivo_situacao": "Motivo da situacao",
+    "situacao_especial": "Situacao especial",
     "data_abertura": "Data de abertura",
     "porte": "Porte",
     "natureza_juridica": "Natureza juridica",
@@ -185,6 +186,12 @@ def _cnae_code(value: Any) -> str | None:
 # ---------------------------------------------------------------------------
 
 
+def _especial(valor: Any) -> str | None:
+    """Situacao especial (recuperacao judicial, falencia...); vazio/'*' = nenhuma."""
+    texto = normalize_text(valor if isinstance(valor, str) else None)
+    return texto if texto and texto.strip("*- ") else None
+
+
 def _scalar_fields(raw: dict[str, Any], provider: str) -> dict[str, Any]:
     if provider == "receitaws":
         simples = raw.get("simples") or {}
@@ -196,6 +203,7 @@ def _scalar_fields(raw: dict[str, Any], provider: str) -> dict[str, Any]:
             "situacao_cadastral": _coerce_situacao(raw.get("situacao")),
             "data_situacao_cadastral": parse_date(raw.get("data_situacao")),
             "motivo_situacao": _descricao(raw.get("motivo_situacao")),
+            "situacao_especial": _especial(raw.get("situacao_especial")),
             "porte": _coerce_porte(raw.get("porte")),
             "natureza_juridica": _coerce_natureza(raw.get("natureza_juridica")),
             "capital_social": parse_decimal(raw.get("capital_social")),
@@ -214,6 +222,7 @@ def _scalar_fields(raw: dict[str, Any], provider: str) -> dict[str, Any]:
             "situacao_cadastral": _coerce_situacao(est.get("situacao_cadastral")),
             "data_situacao_cadastral": parse_date(est.get("data_situacao_cadastral")),
             "motivo_situacao": _descricao(est.get("motivo_situacao_cadastral")),
+            "situacao_especial": _especial(est.get("situacao_especial")),
             "porte": _coerce_porte(_descricao(raw.get("porte"))),
             "natureza_juridica": _coerce_natureza(raw.get("natureza_juridica")),
             "capital_social": parse_decimal(raw.get("capital_social")),
@@ -230,6 +239,7 @@ def _scalar_fields(raw: dict[str, Any], provider: str) -> dict[str, Any]:
             "situacao_cadastral": _coerce_situacao(raw.get("situacao_cadastral")),
             "data_situacao_cadastral": parse_date(raw.get("data_situacao_cadastral")),
             "motivo_situacao": _descricao(raw.get("motivo_situacao_descricao")),
+            "situacao_especial": _especial(raw.get("situacao_especial")),
             "porte": _coerce_porte(raw.get("porte_empresa")),
             "natureza_juridica": _coerce_natureza(
                 raw.get("natureza_juridica_descricao") or raw.get("natureza_juridica")
@@ -250,6 +260,7 @@ def _scalar_fields(raw: dict[str, Any], provider: str) -> dict[str, Any]:
         ),
         "data_situacao_cadastral": parse_date(raw.get("data_situacao_cadastral")),
         "motivo_situacao": _descricao(raw.get("descricao_motivo_situacao_cadastral")),
+        "situacao_especial": _especial(raw.get("situacao_especial")),
         "porte": _coerce_porte(raw.get("porte") or raw.get("codigo_porte")),
         "natureza_juridica": _coerce_natureza(raw.get("natureza_juridica")),
         "capital_social": parse_decimal(raw.get("capital_social")),
@@ -384,6 +395,27 @@ def _cnaes_secundarios_from(raw: dict[str, Any], provider: str) -> list[CNAE]:
     return out
 
 
+def _doc_socio(valor: Any) -> str | None:
+    """Documento do socio como a Receita publica: CPF SEMPRE mascarado.
+
+    Se uma fonte devolver o CPF completo (11 digitos, com ou sem pontuacao), ele
+    e mascarado aqui no mesmo padrao da Receita (***456789**) e o numero
+    completo nunca sai do app (LGPD). CNPJ de socio pessoa juridica e publico.
+    """
+    d = normalize_text(valor)
+    if not d:
+        return None
+    digitos = re.sub(r"\D", "", d)
+    if re.fullmatch(r"[\d.\-/ ]+", d) and len(digitos) == 11:
+        return f"***{digitos[3:9]}**"
+    return d
+
+
+def _chave_doc(doc: str | None) -> str:
+    """Digitos visiveis do documento (para comparar mascarado com mascarado)."""
+    return re.sub(r"\D", "", doc or "")
+
+
 def _partners_from(raw: dict[str, Any], provider: str) -> list[PartnerPublic]:
     out: list[PartnerPublic] = []
     if provider == "receita_local":
@@ -396,7 +428,7 @@ def _partners_from(raw: dict[str, Any], provider: str) -> list[PartnerPublic]:
                         s.get("qualificacao_socio_descricao") or s.get("qualificacao_socio")
                     ),
                     data_entrada=parse_date(s.get("data_entrada_sociedade")),
-                    documento_mascarado=normalize_text(s.get("cpf_cnpj_socio")),
+                    documento_mascarado=_doc_socio(s.get("cpf_cnpj_socio")),
                     fonte=provider,
                 )
             )
@@ -417,7 +449,7 @@ def _partners_from(raw: dict[str, Any], provider: str) -> list[PartnerPublic]:
                     tipo=normalize_text(s.get("tipo")),
                     qualificacao=_descricao(s.get("qualificacao_socio")),
                     data_entrada=parse_date(s.get("data_entrada")),
-                    documento_mascarado=normalize_text(s.get("cpf_cnpj_socio")),
+                    documento_mascarado=_doc_socio(s.get("cpf_cnpj_socio")),
                     fonte=provider,
                 )
             )
@@ -429,7 +461,7 @@ def _partners_from(raw: dict[str, Any], provider: str) -> list[PartnerPublic]:
                     tipo=TIPOS_SOCIO.get(code_to_int(s.get("identificador_de_socio")) or 0),
                     qualificacao=normalize_text(s.get("qualificacao_socio")),
                     data_entrada=parse_date(s.get("data_entrada_sociedade")),
-                    documento_mascarado=normalize_text(s.get("cnpj_cpf_do_socio")),
+                    documento_mascarado=_doc_socio(s.get("cnpj_cpf_do_socio")),
                     fonte=provider,
                 )
             )
@@ -437,25 +469,34 @@ def _partners_from(raw: dict[str, Any], provider: str) -> list[PartnerPublic]:
 
 
 def _merge_partners(valid: list[ProviderResult]) -> list[PartnerPublic]:
-    """Une o QSA de todas as fontes, deduplicando pelo NOME normalizado.
+    """Une o QSA de todas as fontes.
 
-    ReceitaWS nao informa data de entrada nem documento; por isso a chave e
-    so o nome. Campos faltantes sao completados pelas demais fontes.
+    Mesmo nome com documentos (mascarados) diferentes sao pessoas diferentes
+    (homonimos). Fonte sem documento (ReceitaWS) completa o socio de mesmo nome
+    quando ha um so candidato; com homonimos, nao da para saber qual e qual.
     """
-    merged: dict[str, PartnerPublic] = {}
+    merged: list[PartnerPublic] = []
     for r in valid:  # ja ordenado por prioridade
         for p in _partners_from(r.raw, r.provider):
-            key = comparable(p.nome) or ""
-            current = merged.get(key)
+            nome = comparable(p.nome) or ""
+            doc = _chave_doc(p.documento_mascarado)
+            mesmos = [m for m in merged if (comparable(m.nome) or "") == nome]
+            if doc:
+                current = next((m for m in mesmos if _chave_doc(m.documento_mascarado) == doc), None) \
+                    or next((m for m in mesmos if not m.documento_mascarado), None)
+            else:
+                current = mesmos[0] if len(mesmos) == 1 else None
+                if len(mesmos) > 1:
+                    continue  # homonimos ja listados com documento: nada a acrescentar
             if current is None:
-                merged[key] = p
+                merged.append(p)
                 continue
             for attr in ("tipo", "qualificacao", "data_entrada", "documento_mascarado"):
                 if getattr(current, attr) is None and getattr(p, attr) is not None:
                     setattr(current, attr, getattr(p, attr))
             if r.provider not in current.fonte.split(", "):
                 current.fonte = f"{current.fonte}, {r.provider}"
-    return list(merged.values())
+    return merged
 
 
 # ---------------------------------------------------------------------------
@@ -791,6 +832,7 @@ def reconcile(cnpj: str, results: list[ProviderResult]) -> CompanyUnified:
         situacao_cadastral=resolved["situacao_cadastral"],
         data_situacao_cadastral=resolved["data_situacao_cadastral"],
         motivo_situacao=resolved["motivo_situacao"],
+        situacao_especial=resolved["situacao_especial"],
         data_abertura=resolved["data_abertura"],
         natureza_juridica=resolved["natureza_juridica"],
         porte=resolved["porte"],

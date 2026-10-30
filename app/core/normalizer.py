@@ -156,3 +156,14 @@ def comparable(value: Any) -> str | None:
         return f"{value:.2f}"
     s = normalize_name_for_search(str(value))
     return s or None
+
+
+_CPF_NO_TEXTO = re.compile(r"(?<!\d)\d{3}\.?\d{3}\.?\d{3}-?\d{2}(?!\d)")
+
+
+def sem_cpf(texto: str | None) -> str | None:
+    """Tira CPF de um texto livre. A razao social de empresario individual/MEI
+    traz o CPF do titular: em historico, logs e pesquisas ele nao entra (LGPD)."""
+    if not texto:
+        return texto
+    return " ".join(_CPF_NO_TEXTO.sub(" ", texto).split()) or None

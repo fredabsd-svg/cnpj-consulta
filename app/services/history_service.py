@@ -7,6 +7,8 @@ from typing import Any
 
 from sqlalchemy import func, select
 
+from app.core.normalizer import sem_cpf
+
 
 def _utc_iso(value: datetime | None) -> str | None:
     """SQLite devolve datetime sem fuso; todos os registros sao gravados em UTC."""
@@ -31,7 +33,7 @@ def record_query(
     with factory() as s:
         row = History(
             cnpj=cnpj,
-            razao_social=razao_social,
+            razao_social=sem_cpf(razao_social),
             situacao=situacao,
             sources_used=sources,
             queried_at=datetime.now(UTC),
@@ -63,7 +65,7 @@ def recent_queries(limit: int = 20, *, distinct: bool = False) -> list[dict[str,
             {
                 "id": r.id,
                 "cnpj": r.cnpj,
-                "razao_social": r.razao_social,
+                "razao_social": sem_cpf(r.razao_social),  # inclui linhas antigas
                 "situacao": r.situacao,
                 "queried_at": _utc_iso(r.queried_at),
             }
@@ -82,21 +84,35 @@ def clear_history() -> int:
     with factory() as s:
         result = s.execute(delete(History))
         s.commit()
-        return result.rowcount or 0
+    from app.services.listas import limpar_recentes
+
+    limpar_recentes()  # termos das buscas tambem sao historico (LGPD: precisam poder ser apagados)
+    return result.rowcount or 0
 
 
 def add_favorite(cnpj: str, label: str | None = None) -> None:
+    from sqlalchemy.exc import IntegrityError
+
     from app.db import get_session_factory
     from app.models.favorite import Favorite
 
     factory = get_session_factory()
-    with factory() as s:
-        existing = s.execute(select(Favorite).where(Favorite.cnpj == cnpj)).scalar_one_or_none()
-        if existing is not None:
-            existing.label = label or existing.label
-        else:
-            s.add(Favorite(cnpj=cnpj, label=label))
-        s.commit()
+    # Duas tentativas: se outro pedido (ex.: clique duplo) inserir o mesmo CNPJ
+    # entre a leitura e a gravacao, a 2a volta so atualiza o rotulo.
+    for tentativa in range(2):
+        with factory() as s:
+            existing = s.execute(select(Favorite).where(Favorite.cnpj == cnpj)).scalar_one_or_none()
+            if existing is not None:
+                existing.label = label or existing.label
+            else:
+                s.add(Favorite(cnpj=cnpj, label=label))
+            try:
+                s.commit()
+                return
+            except IntegrityError:
+                s.rollback()
+                if tentativa:
+                    raise
 
 
 def remove_favorite(cnpj: str) -> bool:

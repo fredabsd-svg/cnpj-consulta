@@ -9,6 +9,7 @@ from typing import Any
 
 from sqlalchemy import delete, func, select
 
+from app.core.cnpj_validator import is_valid
 from app.db import get_session_factory, init_database
 from app.models.base_cnpj import BuscaRecente, BuscaSalva, ListaEmpresas, ListaItem
 
@@ -76,17 +77,38 @@ def remover_busca(busca_id: int) -> None:
 # ---------- recentes ----------
 
 
+def _sem_cpf_nos_filtros(filtros: dict) -> dict:
+    from app.core.normalizer import sem_cpf
+
+    def limpar(v):
+        if isinstance(v, str):
+            return sem_cpf(v) or ""
+        if isinstance(v, list):
+            return [limpar(x) for x in v]
+        return v
+
+    return {k: limpar(v) for k, v in filtros.items()}
+
+
 def registrar_recente(filtros: dict, resumo: str, total: int | None) -> None:
     """Historico local. Criterios com nome/documento de socio nao sao guardados
     (o resumo ja os omite e os filtros sao gravados sem esses valores)."""
-    limpos = {k: v for k, v in filtros.items() if k not in ("socio_nome", "socio_documento", "excluir_socio_nome")}
+    from app.services.busca_avancada import sem_dados_de_socio
+
+    limpos = sem_dados_de_socio(filtros)
+    if limpos != filtros or _sem_cpf_nos_filtros(filtros) != filtros:
+        # Tinha criterio de socio ou CPF (razao social de MEI): sem ele seria OUTRA
+        # busca (total e resumo errados), e com ele guardaria dado pessoal. Nao grava.
+        return
     if not limpos:
         return
     init_database()
     with get_session_factory()() as s:
         ultima = s.scalars(select(BuscaRecente).order_by(BuscaRecente.id.desc()).limit(1)).first()
         if ultima and ultima.filtros == limpos:
-            ultima.total, ultima.executada_em = total, datetime.now()
+            # Sem contagem (contar=false) nao apaga o total ja conhecido.
+            ultima.total = total if total is not None else ultima.total
+            ultima.executada_em = datetime.now()
         else:
             s.add(BuscaRecente(filtros=limpos, resumo=resumo[:500], total=total))
         s.flush()
@@ -99,7 +121,17 @@ def registrar_recente(filtros: dict, resumo: str, total: int | None) -> None:
 def recentes(limite: int = 10) -> list[dict]:
     init_database()
     with get_session_factory()() as s:
-        return [_d(b) for b in s.scalars(select(BuscaRecente).order_by(BuscaRecente.id.desc()).limit(limite))]
+        from app.services.busca_avancada import sem_dados_de_socio
+
+        out = []
+        for b in s.scalars(select(BuscaRecente).order_by(BuscaRecente.id.desc()).limit(limite)):
+            d = _d(b)
+            # Linhas gravadas por versoes antigas podem ter dado de socio: nunca saem.
+            filtros = dict(d.get("filtros") or {})
+            if sem_dados_de_socio(filtros) != filtros or _sem_cpf_nos_filtros(filtros) != filtros:
+                continue
+            out.append(d)
+        return out
 
 
 def limpar_recentes() -> int:
@@ -155,7 +187,8 @@ def renomear_lista(lista_id: int, nome: str, descricao: str | None) -> dict:
             raise LookupError(lista_id)
         if nome.strip():
             lst.nome = nome.strip()[:120]
-        lst.descricao = (descricao or "").strip()[:500] or None
+        if descricao is not None:  # None = mantem a descricao atual
+            lst.descricao = descricao.strip()[:500] or None
         s.commit()
         return _d(lst)
 
@@ -182,10 +215,13 @@ def adicionar(lista_id: int, itens: list[dict]) -> int:
         n = 0
         for it in itens:
             cnpj = re.sub(r"[^0-9A-Za-z]", "", str(it.get("cnpj", ""))).upper()
-            if not _CNPJ.fullmatch(cnpj) or cnpj in existentes:
+            if not _CNPJ.fullmatch(cnpj) or not is_valid(cnpj) or cnpj in existentes:
                 continue
-            s.add(ListaItem(lista_id=lista_id, cnpj=cnpj, razao_social=(it.get("razao_social") or None),
-                            observacao=(it.get("observacao") or "").strip()[:1000] or None))
+            razao = it.get("razao_social")
+            obs = it.get("observacao")
+            s.add(ListaItem(lista_id=lista_id, cnpj=cnpj,
+                            razao_social=str(razao).strip()[:200] or None if isinstance(razao, str | int) else None,
+                            observacao=str(obs).strip()[:1000] or None if isinstance(obs, str | int | float) else None))
             existentes.add(cnpj)
             n += 1
         lst.atualizado_em = datetime.now()

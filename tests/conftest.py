@@ -18,6 +18,7 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[No
     monkeypatch.setenv("APP_ENV", "development")
     monkeypatch.setenv("APP_DEBUG", "true")
     monkeypatch.setenv("APP_HOST", "127.0.0.1")
+    monkeypatch.setenv("APP_HOSTS_PERMITIDOS", "testserver")  # host padrao do TestClient
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'data' / 'app.db'}")
     monkeypatch.setenv("RECEITA_LOCAL_PATH", str(tmp_path / "data" / "receita" / "receita.db"))
     monkeypatch.setenv("RECEITA_DATA_DIR", str(tmp_path / "data" / "receita"))

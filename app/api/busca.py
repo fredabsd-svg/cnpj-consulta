@@ -20,6 +20,7 @@ from app.receita import jobs
 from app.services import busca_avancada as ba
 from app.services import contatos as contatos_srv
 from app.services import exportacao, ficha, listas
+from app.services.admin_auth import ip_de
 
 router = APIRouter(prefix="/api", tags=["busca"])
 
@@ -78,22 +79,49 @@ async def campos() -> dict:
 
 
 @router.get("/busca")
-async def busca(request: Request, colunas: list[str] = Query(None), contar: bool = True) -> dict:
+async def busca(request: Request, colunas: list[str] = Query(None), contar: bool = True,
+                finalidade: str = Query("", max_length=300)) -> dict:
     """Busca avancada. Os filtros vao na query string (ver /api/busca/campos);
     valores repetidos do mesmo filtro sao OU; filtros diferentes sao E;
-    `excluir_<filtro>` nega; `arvore` recebe o construtor E/OU/NAO em JSON."""
-    f = _filtros(request)
+    `excluir_<filtro>` nega; `arvore` recebe o construtor E/OU/NAO em JSON.
+
+    Colunas de contato (telefones, e-mail) seguem a regra da exportacao: so com
+    `finalidade` (min. 10 caracteres), e o pedido fica na auditoria (sem os dados).
+    Sem finalidade elas saem da resposta, com um aviso."""
+    params = params_de(request)
+    params.pop("finalidade", None)
+    try:
+        f = ba.Filtros.de_params(params)
+    except ba.FiltroInvalido as e:
+        raise HTTPException(400, str(e)) from e
+    pedidas = [c for c in (colunas or ba.COLUNAS_TELA) if c in ba.COLUNAS]
+    aviso = None
+    so_exportacao = [c for c in pedidas if ba.COLUNAS[c][2] and c not in ba.COLUNAS_TELA]
+    if so_exportacao:  # nomes de socios em massa: so pela exportacao (com finalidade e auditoria)
+        pedidas = [c for c in pedidas if c not in so_exportacao]
+        aviso = "Colunas disponíveis só na exportação: " + ", ".join(so_exportacao) + "."
+    restritas = [c for c in pedidas if ba.COLUNAS[c][2]]
+    if restritas and len(finalidade.strip()) < 10:
+        pedidas = [c for c in pedidas if c not in restritas]
+        aviso = ((aviso + " ") if aviso else "") + ("Colunas de contato omitidas (" + ", ".join(restritas) + "): informe `finalidade` "
+                 "(mínimo 10 caracteres) para recebê-las, como na exportação.")
+    elif restritas:
+        jobs.auditar("busca.api_contatos", ip=ip_de(request),
+                     detalhe=f"colunas={','.join(restritas)} pagina={f.pagina} finalidade={finalidade.strip()[:200]}")
+    colunas = pedidas or ["cnpj"]
     try:
         r = await cancelavel(request, lambda ev: ba.buscar(f, colunas=colunas, cancelar=ev, contar=contar))
     except Exception as e:  # noqa: BLE001
         raise _erro(e) from e
     if f.pagina == 1 and not f.vazio():
-        await asyncio.to_thread(listas.registrar_recente, f.para_params(), ba.resumo_texto(f), r.total)
+        await asyncio.to_thread(listas.registrar_recente, f.para_params(), ba.resumo_texto(f),
+                                r.total if r.total >= 0 else None)
     return {
         "total": r.total, "pagina": r.pagina, "por_pagina": r.por_pagina, "paginas": r.paginas,
         "ordem": r.ordem, "direcao": r.direcao, "tempo_ms": r.tempo_ms,
         "mes_referencia": r.mes_referencia, "fonte": "Receita Federal — dados abertos do CNPJ (base local)",
         "itens": r.itens,
+        **({"aviso": aviso} if aviso else {}),
     }
 
 
@@ -154,7 +182,7 @@ async def busca_exportar(
     jobs.auditar(
         "busca.exportar",
         detalhe=f"formato={formato} linhas={limite} colunas={','.join(cols)} finalidade={finalidade.strip()[:200]}",
-        ip=request.client.host if request.client else None,
+        ip=ip_de(request),
     )
     if total > settings.exportacao_sincrona_max:
         exp = await asyncio.to_thread(exportacao.criar_exportacao, f, cols, formato, finalidade, limite)

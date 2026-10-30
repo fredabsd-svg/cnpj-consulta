@@ -74,6 +74,8 @@ def criar_sessao(agora: float | None = None) -> str:
 def sessao_valida(valor: str | None, agora: float | None = None) -> bool:
     if not valor or valor.count(".") != 2:
         return False
+    if not valor.isascii():
+        return False
     exp, nonce, sig = valor.split(".")
     esperado = hmac.new(_chave(), f"{exp}.{nonce}".encode(), hashlib.sha256).hexdigest()
     if not hmac.compare_digest(esperado, sig):
@@ -89,7 +91,23 @@ def token_confere(candidato: str) -> bool:
 
 
 def ip_de(request: Request) -> str:
-    return request.client.host if request.client else "?"
+    """IP do cliente para limite de tentativas e auditoria.
+
+    O uvicorn troca o IP pelo X-Forwarded-For quando a conexao vem de 127.0.0.1;
+    como todo cliente local vem de la, qualquer um inventaria um IP novo a cada
+    tentativa. Sem CONFIAR_PROXY=true, o cabecalho e ignorado.
+    """
+    from app.config import get_settings
+
+    host = request.client.host if request.client else "?"
+    xff = request.headers.get("x-forwarded-for")
+    if xff and not get_settings().confiar_proxy:
+        # O uvicorn so troca o IP quando a conexao vem de 127.0.0.1 (e entao o IP
+        # vira o ultimo valor do XFF). Fora isso, o IP da conexao e o verdadeiro.
+        ultimo = xff.split(",")[-1].strip()
+        if host == ultimo:
+            return "127.0.0.1"
+    return host
 
 
 def bloqueado(ip: str) -> bool:
@@ -110,15 +128,38 @@ def limpar_falhas() -> None:
         _falhas.clear()
 
 
-def eh_admin(request: Request) -> bool:
+def _bearer(request: Request) -> str | None:
     auth = request.headers.get("authorization", "")
-    if auth.lower().startswith("bearer "):
-        return token_confere(auth[7:])
-    return sessao_valida(request.cookies.get(COOKIE))
+    return auth[7:] if auth.lower().startswith("bearer ") else None
+
+
+def eh_admin(request: Request) -> bool:
+    """Sessao (cookie) ou Bearer. Bearer errado conta como tentativa de login em
+    QUALQUER rota (API, paginas, /admin/entrar): limite por IP e auditoria, sem
+    servir de oraculo para adivinhar o token."""
+    tok = _bearer(request)
+    if tok is None:
+        return sessao_valida(request.cookies.get(COOKIE))
+    ip = ip_de(request)
+    if bloqueado(ip):
+        return False
+    if token_confere(tok):
+        return True
+    from app.receita import jobs
+
+    registrar_falha(ip)
+    jobs.auditar("admin.login", resultado="negado", detalhe="token Bearer incorreto", ip=ip)
+    return False
+
+
+def _bloqueado_por_bearer(request: Request) -> None:
+    if _bearer(request) is not None and bloqueado(ip_de(request)):
+        raise HTTPException(status_code=429, detail="Muitas tentativas. Aguarde 5 minutos.")
 
 
 def exigir_admin_api(request: Request) -> None:
-    """Dependencia das rotas /api/admin/*."""
+    """Dependencia das rotas /api/admin/* (e do chat)."""
+    _bloqueado_por_bearer(request)
     if not eh_admin(request):
         raise HTTPException(status_code=401, detail="Acesso restrito ao administrador. Entre em /admin/entrar.")
 
@@ -130,5 +171,6 @@ class LoginNecessario(Exception):  # noqa: N818
 
 def exigir_admin_pagina(request: Request) -> None:
     """Dependencia das paginas administrativas: redireciona para o login."""
+    _bloqueado_por_bearer(request)
     if not eh_admin(request):
         raise LoginNecessario(request.url.path)

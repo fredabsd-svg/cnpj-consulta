@@ -4,10 +4,12 @@ Etapas (cada uma retomavel; uma falha nunca obriga a recomecar do zero):
 
   descoberta   versao mais recente (ou a pedida) e lista de arquivos no portal
   espaco       estimativa de disco necessaria x espaco livre
-  download     ZIPs com retomada (Range + If-Range/ETag), novas tentativas
-  verificacao  tamanho igual ao anunciado e ZIP legivel
-  importacao   por arquivo: extrai (CRC conferido), valida colunas/codificacao,
-               importa numa transacao e apaga o CSV
+  download     ZIPs com retomada (Range + If-Range/ETag) e novas tentativas,
+               varias conexoes em paralelo e arquivos grandes em partes;
+               cada arquivo e verificado (tamanho, ZIP) e IMPORTADO assim que
+               termina de baixar, enquanto os outros continuam baixando:
+               extrai (CRC conferido), valida colunas/codificacao, importa
+               numa transacao e apaga o CSV
   consolidacao tabelas tipadas, deduplicadas e ordenadas + tabelas auxiliares
   validacao    contagens, comparacao com a versao ativa, orfaos, rejeitadas
   publicacao   move para versoes/ e troca o ponteiro (a versao ativa segue
@@ -23,13 +25,17 @@ inteiro e desfeito e refeito; os demais nao.
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import logging
+import queue
 import shutil
+import threading
 import time
 import zipfile
 import zlib
 from collections.abc import Callable
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -63,9 +69,7 @@ ETAPAS: list[tuple[str, str, float]] = [
     # (codigo, rotulo, peso no progresso geral)
     ("descoberta", "Descoberta da versão", 1),
     ("espaco", "Espaço em disco", 1),
-    ("download", "Download", 38),
-    ("verificacao", "Verificação dos arquivos", 2),
-    ("importacao", "Extração e importação", 30),
+    ("download", "Download e importação", 70),
     ("consolidacao", "Consolidação", 22),
     ("validacao", "Validação", 4),
     ("publicacao", "Publicação", 1),
@@ -81,6 +85,12 @@ FATOR_FINAL = 2.0  # base publicada x total de ZIPs
 MAX_REJEITADAS_PCT = 1.0  # acima disto o arquivo e recusado (leiaute mudou?)
 TENTATIVAS_DOWNLOAD = 6
 CHUNK = 1024 * 1024
+# Arquivos a partir de 2x este tamanho sao baixados em partes paralelas.
+SEGMENTO_MIN = 32 * 1024 * 1024
+
+
+TABELAS_COMPARADAS = ("empresas", "estabelecimentos", "socios", "simples", "cnaes", "motivos", "municipios",
+                      "naturezas", "paises", "qualificacoes")
 
 
 class PipelineError(RuntimeError):
@@ -156,6 +166,14 @@ class Atualizacao:
         self._etapa = "descoberta"
         self._ultima_checagem = 0.0
         self._pedido: str | None = None
+        # Downloads paralelos: contadores e estado compartilhados entre threads.
+        self._lock = threading.RLock()
+        self._parar = threading.Event()
+        self._dl: dict[str, Any] = {"total": 0, "feito": 0, "janela": [(time.monotonic(), 0)]}
+        self._imp = {"total": 0, "feito": 0}
+        self._fila: queue.Queue[ArquivoRemoto] = queue.Queue()
+        self._restantes: dict[str, int] = {}
+        self._sem_range: set[str] = set()
 
     # ---------- caminhos ----------
 
@@ -169,8 +187,14 @@ class Atualizacao:
         return self.dir / "zips"
 
     @property
+    def temp_base(self) -> Path:
+        """CSVs extraidos e temporario do DuckDB (RECEITA_TEMP_DIR, se definido)."""
+        t = self.settings.receita_temp_dir.strip()
+        return Path(t).expanduser() / "cnpj-consulta" / (self.mes or "") if t else self.dir
+
+    @property
     def extraido(self) -> Path:
-        return self.dir / "extraido"
+        return self.temp_base / "extraido"
 
     @property
     def bruto_db(self) -> Path:
@@ -187,17 +211,25 @@ class Atualizacao:
     # ---------- controle ----------
 
     def _checar(self, forcar: bool = False) -> None:
-        """Atende pedido de pausa/cancelamento (consulta o banco a cada 2 s)."""
-        if self._pedido is None and (forcar or time.monotonic() - self._ultima_checagem > 2):
-            self._ultima_checagem = time.monotonic()
-            self._pedido = self.rep.solicitacao()
-        if self._pedido in ("pausar", "cancelar"):
-            raise Interrompido(self._pedido)
+        """Atende pedido de pausa/cancelamento (consulta o banco a cada 2 s).
+        Chamado tambem pelas threads de download."""
+        if self._parar.is_set():
+            raise Interrompido(self._pedido or "pausar")
+        with self._lock:
+            if self._pedido is None and (forcar or time.monotonic() - self._ultima_checagem > 2):
+                self._ultima_checagem = time.monotonic()
+                self._pedido = self.rep.solicitacao()
+            pedido = self._pedido
+        if pedido in ("pausar", "cancelar"):
+            raise Interrompido(pedido)
 
     def _deve_parar(self) -> bool:
-        if self._pedido is None:
-            self._pedido = self.rep.solicitacao()
-        return self._pedido in ("pausar", "cancelar")
+        if self._parar.is_set():
+            return True
+        with self._lock:
+            if self._pedido is None:
+                self._pedido = self.rep.solicitacao()
+            return self._pedido in ("pausar", "cancelar")
 
     def _progresso(self, frac_etapa: float, **campos: Any) -> None:
         frac_etapa = max(0.0, min(1.0, frac_etapa))
@@ -233,34 +265,32 @@ class Atualizacao:
 
     def executar(self) -> dict:
         try:
+            if self.mes and self._ja_publicada():
+                return self._concluir_publicada()
             t0 = self._entrar("descoberta", "Consultando o portal oficial da Receita Federal")
             self._descobrir()
             self._sair("descoberta", t0)
+            if self._ja_publicada():
+                return self._concluir_publicada()
 
             t0 = self._entrar("espaco")
             self._checar_espaco()
             self._sair("espaco", t0)
 
             t0 = self._entrar("download")
-            self._baixar_todos()
+            self._baixar_e_importar()
             self._sair("download", t0)
-
-            t0 = self._entrar("verificacao")
-            self._verificar_todos()
-            self._sair("verificacao", t0)
-
-            t0 = self._entrar("importacao")
-            self._importar_todos()
-            self._sair("importacao", t0)
 
             t0 = self._entrar("consolidacao", "Consolidando tabelas (pode levar de 20 a 60 minutos)")
             self._consolidar()
             self._sair("consolidacao", t0)
 
+            self._checar(forcar=True)
             t0 = self._entrar("validacao")
             self._validar()
             self._sair("validacao", t0)
 
+            self._checar(forcar=True)  # cancelar/pausar pedido durante a validacao
             t0 = self._entrar("publicacao")
             self._publicar()
             self._sair("publicacao", t0)
@@ -272,6 +302,27 @@ class Atualizacao:
             self.relatorio.fim = datetime.now(UTC).isoformat()
             self.fonte.close() if self._client is None else None
         self._log(f"Base {self.mes} publicada: {self.relatorio.publicada}")
+        return self.relatorio.as_dict()
+
+    def _ja_publicada(self) -> bool:
+        """A tentativa anterior publicou esta versao e caiu antes de terminar a limpeza."""
+        publicada = self._estado().get("publicada") if self.estado_path.exists() else None
+        ativa = arm.base_ativa(self.settings)
+        return bool(publicada and ativa and ativa.caminho.name == publicada)
+
+    def _concluir_publicada(self) -> dict:
+        estado = self._estado()
+        for k, v in (estado.get("relatorio") or {}).items():  # relatorio da publicacao, nao um vazio
+            if hasattr(self.relatorio, k):
+                setattr(self.relatorio, k, v)
+        self.relatorio.publicada = estado.get("publicada")
+        self.relatorio.anterior = estado.get("anterior")
+        self._log("Esta versao ja foi publicada na tentativa anterior; concluindo a limpeza.")
+        arm.podar_versoes(self.settings)
+        t0 = self._entrar("limpeza")
+        self._limpar(tudo=True)
+        self._sair("limpeza", t0)
+        self.relatorio.fim = datetime.now(UTC).isoformat()
         return self.relatorio.as_dict()
 
     # ---------- descoberta ----------
@@ -287,7 +338,7 @@ class Atualizacao:
             raise PipelineError(str(e)) from e
         v = self.versao
         self.relatorio.mes = v.mes
-        if not v.completa and not self.forcar:
+        if not v.completa:  # nem com --forcar: base sem uma parte nunca e publicada
             raise PipelineError(
                 f"A versao {v.mes} esta incompleta no portal (faltam: {', '.join(v.faltando)}). "
                 "Aguarde a Receita concluir a publicacao."
@@ -303,6 +354,8 @@ class Atualizacao:
                 self._log(f"{a.nome} mudou no portal desde a ultima tentativa; sera baixado de novo", "aviso")
                 (self.zips / a.nome).unlink(missing_ok=True)
                 (self.zips / (a.nome + ".part")).unlink(missing_ok=True)
+                for seg in self.zips.glob(f"{a.nome}.seg*"):
+                    seg.unlink(missing_ok=True)
                 atual = None
             if not atual:
                 arquivos[a.nome] = {"etag": a.etag, "tamanho": a.tamanho, "grupo": a.grupo,
@@ -372,7 +425,7 @@ class Atualizacao:
         for p in (self.zips / a.nome, self.zips / (a.nome + ".part")):
             if p.exists():
                 return p.stat().st_size
-        return 0
+        return sum(p.stat().st_size for p in self.zips.glob(f"{a.nome}.seg*")) if self.zips.exists() else 0
 
     def _checar_espaco(self) -> None:
         e = self.estimar_espaco()
@@ -395,51 +448,275 @@ class Atualizacao:
     def client(self) -> httpx.Client:
         return self.fonte.client
 
-    def _baixar_todos(self) -> None:
+    # ---------- download + importacao em paralelo ----------
+
+    def _estado_atualizar(self, nome: str, **campos: Any) -> None:
+        with self._lock:
+            estado = self._estado()
+            estado.setdefault("arquivos", {}).setdefault(nome, {}).update(campos)
+            self._salvar_estado(estado)
+
+    def _baixar_e_importar(self) -> None:
+        """Baixa com varias conexoes e importa cada arquivo assim que ele fica
+        pronto (a importacao roda nesta thread; os downloads, em outras)."""
         assert self.versao
         self.zips.mkdir(parents=True, exist_ok=True)
-        estado = self._estado()
-        pend = self._pendentes_importacao()
-        a_baixar = [a for a in pend if not estado["arquivos"][a.nome].get("baixado") or not (self.zips / a.nome).exists()]
+        pend = sorted(self._pendentes_importacao(), key=lambda a: (ORDEM_GRUPOS[a.grupo], a.nome))
+        prontos, a_baixar = [], []
+        for a in pend:
+            path = self.zips / a.nome
+            (prontos if path.exists() and not self._problema_zip(path, a) else a_baixar).append(a)
         total = sum(a.tamanho for a in a_baixar)
-        feito_base = sum(self._tamanho_local(a) for a in a_baixar)
-        self._dl = {"total": total, "feito": feito_base, "janela": [(time.monotonic(), feito_base)]}
-        if not a_baixar:
-            self._log("Todos os arquivos ja estao baixados")
+        ja = sum(self._tamanho_local(a) for a in a_baixar)
+        self._dl = {"total": total, "feito": ja, "janela": [(time.monotonic(), ja)]}
+        self._imp = {"total": sum(a.tamanho for a in pend) or 1, "feito": 0}
+        for a in prontos:
+            self._fila.put(a)
+        paralelos = max(1, int(self.settings.receita_downloads_paralelos))
+        if a_baixar:
+            self._log(f"{len(a_baixar)} arquivo(s) para baixar ({total / 1024**3:.2f} GB) com "
+                      f"{paralelos} conexao(oes); {len(prontos)} ja baixado(s)")
+        else:
+            self._log(f"Todos os {len(prontos)} arquivo(s) pendentes ja estao baixados")
+        if not pend:
+            self._registrar_arquivos(total)
             return
-        self._log(f"{len(a_baixar)} arquivo(s) para baixar ({total / 1024**3:.2f} GB)")
-        for i, a in enumerate(a_baixar, 1):
-            self._checar(forcar=True)
-            self.rep.atualizar(arquivo_atual=a.nome, mensagem=f"Baixando {a.nome} ({i}/{len(a_baixar)})")
-            self._baixar(a)
-            estado = self._estado()
-            estado["arquivos"][a.nome].update(baixado=True, verificado=False)
-            self._salvar_estado(estado)
+
+        executor = ThreadPoolExecutor(max_workers=paralelos, thread_name_prefix="download") if a_baixar else None
+        futuros: list[Future] = []
+        if executor:
+            # Pequenos primeiro (dominios entram logo na importacao), depois os
+            # grandes, do maior para o menor: o mais demorado comeca cedo.
+            ordem = sorted(a_baixar, key=lambda a: (a.tamanho > SEGMENTO_MIN, -a.tamanho))
+            for a in ordem:
+                plano = self._plano(a)
+                self._restantes[a.nome] = len(plano) if plano else 1
+                if plano:
+                    for idx, ini, fim in plano:
+                        futuros.append(executor.submit(self._tarefa_segmento, a, plano, idx, ini, fim))
+                else:
+                    futuros.append(executor.submit(self._tarefa_arquivo, a))
+
+        conn = self._conectar(self.bruto_db)
+        restantes = {a.nome for a in pend}
+        try:
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS _importados (nome VARCHAR PRIMARY KEY, etag VARCHAR, "
+                "tabela VARCHAR, linhas BIGINT, rejeitadas BIGINT, em TIMESTAMP)"
+            )
+            while restantes:
+                self._checar()
+                try:
+                    a = self._fila.get(timeout=0.5)
+                except queue.Empty:
+                    a = None
+                if a is None:
+                    for f in futuros:
+                        if f.done() and (erro := f.exception()) is not None:
+                            raise erro
+                    if all(f.done() for f in futuros) and self._fila.empty():
+                        raise PipelineError(f"Download terminou sem os arquivos: {', '.join(sorted(restantes))}")
+                    continue
+                self._checar(forcar=True)
+                self.rep.atualizar(arquivo_atual=a.nome, mensagem=f"Importando {a.nome}")
+                info = self._importar_arquivo(conn, a)
+                restantes.discard(a.nome)
+                with self._lock:
+                    self._imp["feito"] += a.tamanho
+                self.rep.atualizar(registros=self._total_bruto(conn))
+                self._progresso(self._fracao(), forcar=True)
+                self._log(
+                    f"{a.nome}: {info['linhas']:,} registros"
+                    + (f", {info['rejeitadas']:,} linha(s) rejeitada(s)" if info["rejeitadas"] else "")
+                    + (f" ({len(restantes)} restante(s))" if restantes else "")
+                )
+                if not self.settings.receita_manter_zips:
+                    (self.zips / a.nome).unlink(missing_ok=True)
+        except BaseException:
+            self._parar.set()  # as threads de download param no proximo bloco
+            raise
+        finally:
+            if executor:
+                executor.shutdown(wait=True, cancel_futures=True)
+            conn.close()
+        self._registrar_arquivos(total)
+
+    def _registrar_arquivos(self, total: int) -> None:
+        """Relatorio com os arquivos importados DESTA versao (tambem na retomada
+        em que tudo ja estava importado)."""
+        assert self.versao
+        na_versao = {a.nome for a in self.versao.arquivos}
         self.relatorio.bytes_baixados = total
+        for nome, info in self._importados().items():
+            if nome in na_versao:
+                self.relatorio.arquivos[nome] = info
+
+    def _fracao(self) -> float:
+        with self._lock:
+            dl = self._dl["feito"] / self._dl["total"] if self._dl["total"] else 1.0
+            imp = self._imp["feito"] / self._imp["total"] if self._imp["total"] else 1.0
+            return imp if not self._dl["total"] else 0.5 * min(1.0, dl) + 0.5 * imp
+
+    def _plano(self, a: ArquivoRemoto) -> list[tuple[int, int, int]] | None:
+        """Partes (indice, inicio, fim) de um arquivo grande; None = fluxo unico.
+        O plano fica no estado.json para a retomada reaproveitar as partes."""
+        paralelos = max(1, int(self.settings.receita_downloads_paralelos))
+        info = self._estado().get("arquivos", {}).get(a.nome, {})
+        if (info.get("sem_range") or paralelos == 1 or a.tamanho < 2 * SEGMENTO_MIN
+                or (self.zips / (a.nome + ".part")).exists()):
+            return None
+        plano = info.get("segmentos")
+        if not plano or sum(f - i + 1 for _, i, f in plano) != a.tamanho:
+            n = max(2, min(paralelos, a.tamanho // SEGMENTO_MIN))
+            passo = -(-a.tamanho // n)
+            plano = [[k, k * passo, min(a.tamanho, (k + 1) * passo) - 1] for k in range(n)]
+            self._estado_atualizar(a.nome, segmentos=plano)
+        return [tuple(x) for x in plano]
+
+    def _tarefa_arquivo(self, a: ArquivoRemoto) -> None:
+        self._checar(forcar=True)
+        self._baixar(a)
+        self._concluir_download(a, None)
+
+    def _tarefa_segmento(self, a: ArquivoRemoto, plano, idx: int, ini: int, fim: int) -> None:
+        self._checar(forcar=True)
+        try:
+            self._baixar_faixa(a, idx, ini, fim)
+        except _SemRange:
+            with self._lock:
+                primeiro = a.nome not in self._sem_range
+                self._sem_range.add(a.nome)
+            if not primeiro:
+                return
+            # Servidor nao aceitou partes: baixa o arquivo inteiro numa conexao.
+            self._log(f"{a.nome}: o servidor nao aceitou download em partes; baixando inteiro", "aviso")
+            for seg in self.zips.glob(f"{a.nome}.seg*"):
+                self._contabilizar(-seg.stat().st_size)
+                seg.unlink(missing_ok=True)
+            self._estado_atualizar(a.nome, sem_range=True, segmentos=None)
+            self._baixar(a)
+            self._concluir_download(a, None)
+            return
+        with self._lock:
+            if a.nome in self._sem_range:
+                return
+            self._restantes[a.nome] -= 1
+            ultimo = self._restantes[a.nome] == 0
+        if ultimo:
+            self._concluir_download(a, plano)
+
+    def _concluir_download(self, a: ArquivoRemoto, plano) -> None:
+        """Junta as partes, confere o ZIP e entrega o arquivo para a importacao."""
+        destino = self.zips / a.nome
+        if plano:
+            juntando = self.zips / (a.nome + ".juntando")
+            with juntando.open("wb") as out:
+                for idx, _, _ in plano:
+                    with (self.zips / f"{a.nome}.seg{idx}").open("rb") as src:
+                        shutil.copyfileobj(src, out, CHUNK * 8)
+                    self._checar()
+            juntando.replace(destino)
+            for idx, _, _ in plano:
+                (self.zips / f"{a.nome}.seg{idx}").unlink(missing_ok=True)
+            self._log(f"{a.nome} baixado ({destino.stat().st_size / 1024**2:.1f} MB, {len(plano)} partes)")
+        problema = self._problema_zip(destino, a)
+        if problema:
+            destino.unlink(missing_ok=True)
+            self._log(f"{a.nome} invalido ({problema}); baixando de novo", "aviso")
+            self._contabilizar(-a.tamanho)
+            self._estado_atualizar(a.nome, segmentos=None, sem_range=True)
+            self._baixar(a)
+            problema = self._problema_zip(destino, a)
+            if problema:
+                raise PipelineError(f"{a.nome} continua invalido apos novo download: {problema}")
+        self._estado_atualizar(a.nome, baixado=True, verificado=True)
+        self._fila.put(a)
 
     def _contabilizar(self, n: int) -> None:
-        d = self._dl
-        d["feito"] += n
-        agora = time.monotonic()
-        janela = d["janela"]
-        janela.append((agora, d["feito"]))
-        while len(janela) > 2 and agora - janela[0][0] > 15:
-            janela.pop(0)
-        dt = agora - janela[0][0]
-        vel = (d["feito"] - janela[0][1]) / dt if dt > 0.5 else 0.0
-        restante = max(0, d["total"] - d["feito"])
-        self._progresso(
-            d["feito"] / d["total"] if d["total"] else 1.0,
-            bytes_total=d["total"],
-            bytes_feitos=d["feito"],
-            velocidade_bps=round(vel, 1),
-            eta_segundos=round(restante / vel, 0) if vel > 0 else None,
+        with self._lock:
+            d = self._dl
+            d["feito"] += n
+            agora = time.monotonic()
+            janela = d["janela"]
+            janela.append((agora, d["feito"]))
+            while len(janela) > 2 and agora - janela[0][0] > 15:
+                janela.pop(0)
+            dt = agora - janela[0][0]
+            vel = (d["feito"] - janela[0][1]) / dt if dt > 0.5 else 0.0
+            restante = max(0, d["total"] - d["feito"])
+            campos = {
+                "bytes_total": d["total"],
+                "bytes_feitos": max(0, min(d["feito"], d["total"])),
+                "velocidade_bps": round(max(0.0, vel), 1),
+                "eta_segundos": round(restante / vel, 0) if vel > 0 else None,
+            }
+        self._progresso(self._fracao(), **campos)
+
+    def _get(self, a: ArquivoRemoto, headers: dict):
+        return self.client.stream("GET", a.url, headers=headers, auth=self.fonte.auth)
+
+    def _esperar_nova_tentativa(self, nome: str, tentativa: int, erro: str) -> None:
+        espera = min(60, 2**tentativa)
+        self._log(
+            f"{nome}: falha ({erro}); tentativa {tentativa}/{TENTATIVAS_DOWNLOAD}, "
+            f"nova tentativa em {espera}s (o download continua de onde parou)",
+            "aviso",
         )
+        for _ in range(int(espera)):
+            self._checar()
+            self.sleep(1)
+
+    def _baixar_faixa(self, a: ArquivoRemoto, idx: int, ini: int, fim: int) -> None:
+        """Uma parte do arquivo (bytes ini..fim), com retomada e novas tentativas."""
+        seg = self.zips / f"{a.nome}.seg{idx}"
+        esperado = fim - ini + 1
+        ultimo_erro = ""
+        for tentativa in range(1, TENTATIVAS_DOWNLOAD + 1):
+            feito = seg.stat().st_size if seg.exists() else 0
+            if feito > esperado:
+                seg.unlink()
+                self._contabilizar(-feito)
+                feito = 0
+            if feito == esperado:
+                return
+            headers = {"Range": f"bytes={ini + feito}-{fim}"}
+            if a.etag:
+                headers["If-Range"] = f'"{a.etag}"'
+            try:
+                with self._get(a, headers) as resp:
+                    if resp.status_code == 404:
+                        raise PipelineError(f"{a.nome} nao esta mais no portal (404). Rode a atualizacao de novo.")
+                    if resp.status_code == 200:
+                        raise _SemRange()
+                    resp.raise_for_status()
+                    inicio = resp.headers.get("content-range", "").removeprefix("bytes ").split("-")[0]
+                    if not inicio.isdigit() or int(inicio) != ini + feito:
+                        raise PipelineError(f"{a.nome}: resposta parcial inconsistente ({inicio} != {ini + feito})")
+                    falta = esperado - feito
+                    with seg.open("ab") as fh:
+                        for chunk in resp.iter_bytes():
+                            if len(chunk) > falta:
+                                chunk = chunk[:falta]
+                            fh.write(chunk)
+                            falta -= len(chunk)
+                            self._contabilizar(len(chunk))
+                            self._checar()
+                            if falta <= 0:
+                                break
+                if seg.stat().st_size != esperado:
+                    raise httpx.ReadError(f"parte {idx}: recebidos {seg.stat().st_size} de {esperado} bytes")
+                return
+            except (PipelineError, Interrompido, _SemRange):
+                raise
+            except (httpx.HTTPError, OSError) as e:
+                ultimo_erro = f"{type(e).__name__}: {e}"
+                self._esperar_nova_tentativa(f"{a.nome} (parte {idx + 1})", tentativa, ultimo_erro)
+        raise PipelineError(f"Nao foi possivel baixar {a.nome} apos {TENTATIVAS_DOWNLOAD} tentativas: {ultimo_erro}")
 
     def _baixar(self, a: ArquivoRemoto) -> None:
-        """Download com retomada. If-Range garante que, se o arquivo mudou no
-        portal, o servidor devolve o arquivo inteiro (200) em vez de um pedaco
-        da versao nova colado no pedaco da antiga."""
+        """Download em fluxo unico com retomada. If-Range garante que, se o arquivo
+        mudou no portal, o servidor devolve o arquivo inteiro (200) em vez de um
+        pedaco da versao nova colado no pedaco da antiga."""
         destino = self.zips / a.nome
         parcial = self.zips / (a.nome + ".part")
         ultimo_erro = ""
@@ -458,7 +735,7 @@ class Atualizacao:
                 if a.etag:
                     headers["If-Range"] = f'"{a.etag}"'
             try:
-                with self.client.stream("GET", a.url, headers=headers, auth=self.fonte.auth) as resp:
+                with self._get(a, headers) as resp:
                     if resp.status_code == 404:
                         raise PipelineError(
                             f"{a.nome} nao esta mais no portal (404). A Receita pode ter "
@@ -494,45 +771,8 @@ class Atualizacao:
                 raise
             except (httpx.HTTPError, OSError) as e:
                 ultimo_erro = f"{type(e).__name__}: {e}"
-                espera = min(60, 2**tentativa)
-                self._log(
-                    f"{a.nome}: falha ({ultimo_erro}); tentativa {tentativa}/{TENTATIVAS_DOWNLOAD}, "
-                    f"nova tentativa em {espera}s (o download continua de onde parou)",
-                    "aviso",
-                )
-                for _ in range(int(espera)):
-                    self._checar()
-                    self.sleep(1)
+                self._esperar_nova_tentativa(a.nome, tentativa, ultimo_erro)
         raise PipelineError(f"Nao foi possivel baixar {a.nome} apos {TENTATIVAS_DOWNLOAD} tentativas: {ultimo_erro}")
-
-    # ---------- verificacao ----------
-
-    def _verificar_todos(self) -> None:
-        assert self.versao
-        pend = self._pendentes_importacao()
-        estado = self._estado()
-        for i, a in enumerate(pend, 1):
-            self._checar()
-            info = estado["arquivos"][a.nome]
-            path = self.zips / a.nome
-            if info.get("verificado") and path.exists():
-                continue
-            self.rep.atualizar(arquivo_atual=a.nome, mensagem=f"Verificando {a.nome}")
-            problema = self._problema_zip(path, a)
-            if problema:
-                path.unlink(missing_ok=True)
-                info.update(baixado=False, verificado=False)
-                self._salvar_estado(estado)
-                self._log(f"{a.nome} invalido ({problema}); baixando de novo", "aviso")
-                self._dl = {"total": a.tamanho, "feito": 0, "janela": [(time.monotonic(), 0)]}
-                self._baixar(a)
-                problema = self._problema_zip(path, a)
-                if problema:
-                    raise PipelineError(f"{a.nome} continua invalido apos novo download: {problema}")
-            info.update(baixado=True, verificado=True)
-            self._salvar_estado(estado)
-            self._progresso(i / len(pend))
-        self._log(f"{len(pend)} arquivo(s) verificados (tamanho e formato ZIP)")
 
     @staticmethod
     def _problema_zip(path: Path, a: ArquivoRemoto) -> str | None:
@@ -556,38 +796,8 @@ class Atualizacao:
 
     def _conectar(self, path: Path) -> duckdb.DuckDBPyConnection:
         conn = duckdb.connect(str(path))
-        configurar(conn, self.dir / "tmp", self.settings)
+        configurar(conn, self.temp_base / "tmp", self.settings)
         return conn
-
-    def _importar_todos(self) -> None:
-        assert self.versao
-        pend = sorted(self._pendentes_importacao(), key=lambda a: (ORDEM_GRUPOS[a.grupo], a.nome))
-        total = sum(a.tamanho for a in self.versao.arquivos) or 1
-        feito = total - sum(a.tamanho for a in pend)
-        conn = self._conectar(self.bruto_db)
-        try:
-            conn.execute(
-                "CREATE TABLE IF NOT EXISTS _importados (nome VARCHAR PRIMARY KEY, etag VARCHAR, "
-                "tabela VARCHAR, linhas BIGINT, rejeitadas BIGINT, em TIMESTAMP)"
-            )
-            for a in pend:
-                self._checar(forcar=True)
-                self.rep.atualizar(arquivo_atual=a.nome, mensagem=f"Importando {a.nome}")
-                self._progresso(feito / total)
-                info = self._importar_arquivo(conn, a)
-                feito += a.tamanho
-                self.rep.atualizar(registros=self._total_bruto(conn))
-                self._progresso(feito / total, forcar=True)
-                self._log(
-                    f"{a.nome}: {info['linhas']:,} registros"
-                    + (f", {info['rejeitadas']:,} linha(s) rejeitada(s)" if info["rejeitadas"] else "")
-                )
-                if not self.settings.receita_manter_zips:
-                    (self.zips / a.nome).unlink(missing_ok=True)
-        finally:
-            conn.close()
-        for nome, info in self._importados().items():
-            self.relatorio.arquivos[nome] = info
 
     @staticmethod
     def _total_bruto(conn) -> int:
@@ -639,7 +849,6 @@ class Atualizacao:
             # CRC errado: o arquivo local esta corrompido. Baixa de novo uma vez.
             self._log(f"{a.nome}: falha de integridade ao extrair ({e}); baixando de novo", "aviso")
             (self.zips / a.nome).unlink(missing_ok=True)
-            self._dl = {"total": a.tamanho, "feito": 0, "janela": [(time.monotonic(), 0)]}
             self._baixar(a)
             try:
                 csvs = self._extrair(a)
@@ -741,8 +950,11 @@ class Atualizacao:
     # ---------- consolidacao ----------
 
     def _consolidar(self) -> None:
-        importados = self._importados()
         assert self.versao
+        # So os arquivos da versao listada no portal: tabela de arquivo que saiu da
+        # listagem (republicacao) nao pode entrar na base.
+        na_versao = {a.nome for a in self.versao.arquivos}
+        importados = {n: i for n, i in self._importados().items() if n in na_versao}
         faltando = [a.nome for a in self.versao.arquivos if a.nome not in importados]
         if faltando:
             raise PipelineError(f"Importacao incompleta: faltam {', '.join(faltando)}")
@@ -762,11 +974,27 @@ class Atualizacao:
         fmt = {f"bruto_{g.nome}": bruto(g.nome) for g in GRUPOS}
         webmail = "[" + ", ".join(sql_str(d) for d in WEBMAIL) + "]"
 
+        # Etapas ja consolidadas so valem para os MESMOS arquivos importados: se algum
+        # arquivo mudou no portal e foi reimportado, a consolidacao recomeca do zero.
+        assinatura = hashlib.sha256("|".join(
+            f"{n}:{i.get('etag')}:{i.get('linhas')}" for n, i in sorted(importados.items())).encode()).hexdigest()
+        if self.final_db.exists():
+            conn = self._conectar(self.final_db)
+            try:
+                conn.execute("CREATE TABLE IF NOT EXISTS _etapas (nome VARCHAR PRIMARY KEY, info VARCHAR, em TIMESTAMP)")
+                anterior = conn.execute("SELECT info FROM _etapas WHERE nome = '_assinatura'").fetchone()
+            finally:
+                conn.close()
+            if anterior is None or anterior[0] != assinatura:
+                self._log("Arquivos importados mudaram desde a consolidacao anterior; consolidando de novo.", "aviso")
+                self._apagar_final()
+
         conn = self._conectar(self.final_db)
         try:
             conn.execute(f"ATTACH {sql_str(self.bruto_db.as_posix())} AS bruto (READ_ONLY)")
             conn.execute(MACROS)
             conn.execute("CREATE TABLE IF NOT EXISTS _etapas (nome VARCHAR PRIMARY KEY, info VARCHAR, em TIMESTAMP)")
+            conn.execute("INSERT OR REPLACE INTO _etapas VALUES ('_assinatura', ?, now())", [assinatura])
             feitas = {r[0] for r in conn.execute("SELECT nome FROM _etapas").fetchall()}
 
             dup_emp = self._duplicados(conn, fmt["bruto_empresas"], "trim(cnpj_basico)")
@@ -881,6 +1109,10 @@ class Atualizacao:
         conn = duckdb.connect(str(self.final_db))
         try:
             resultado = validar_base(conn, self.settings)
+            novas = {t: conn.execute(f"SELECT count(*) FROM {t}").fetchone()[0]
+                     for t in TABELAS_COMPARADAS
+                     if conn.execute("SELECT count(*) FROM information_schema.tables "
+                                     "WHERE table_schema = 'main' AND table_name = ?", [t]).fetchone()[0]}
         finally:
             conn.close()
         self.relatorio.contagens = resultado["contagens"]
@@ -894,9 +1126,13 @@ class Atualizacao:
             try:
                 anterior = duckdb.connect(str(ativa.caminho), read_only=True)
                 try:
+                    existentes = {r[0] for r in anterior.execute(
+                        "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'").fetchall()}
+                    # Todas as tabelas da Receita: um Simples.zip ou Cnaes.zip truncado
+                    # tambem nao pode ser publicado.
                     antes = {
                         t: anterior.execute(f"SELECT count(*) FROM {t}").fetchone()[0]
-                        for t in ("empresas", "estabelecimentos", "socios")
+                        for t in TABELAS_COMPARADAS if t in existentes
                     }
                 finally:
                     anterior.close()
@@ -904,7 +1140,7 @@ class Atualizacao:
                 antes = {}
                 self._log(f"Nao foi possivel comparar com a versao ativa: {e}", "aviso")
             for t, n_antes in antes.items():
-                n_novo = self.relatorio.contagens.get(t, 0)
+                n_novo = novas.get(t, self.relatorio.contagens.get(t, 0))
                 var = 100 * (n_novo - n_antes) / n_antes if n_antes else 0.0
                 self.relatorio.comparacao[t] = {"anterior": n_antes, "nova": n_novo, "variacao_pct": round(var, 2)}
                 if var < -self.settings.receita_queda_maxima_pct:
@@ -928,9 +1164,16 @@ class Atualizacao:
     def _publicar(self) -> None:
         assert self.mes
         anterior = arm.base_ativa(self.settings)
-        destino = arm.publicar(self.final_db, self.mes, self.settings)
+        destino = arm.publicar(self.final_db, self.mes, self.settings, podar=False)
         self.relatorio.publicada = destino.name
         self.relatorio.anterior = anterior.caminho.name if anterior else None
+        # Grava "publicada" ANTES da poda: se o processo cair daqui ate o fim da
+        # limpeza, a retomada nao publica de novo (o que empurraria a versao
+        # anterior verdadeira para a poda).
+        estado = self._estado()
+        estado.update(publicada=destino.name, anterior=self.relatorio.anterior, relatorio=self.relatorio.as_dict())
+        self._salvar_estado(estado)
+        arm.podar_versoes(self.settings)
         self._log(f"Publicada {destino.name}" + (f"; anterior mantida: {anterior.caminho.name}" if anterior else ""))
 
     def _limpar(self, tudo: bool) -> None:
@@ -940,19 +1183,32 @@ class Atualizacao:
             shutil.rmtree(destino, ignore_errors=True)
             shutil.move(str(self.zips), destino)
         shutil.rmtree(self.dir, ignore_errors=True)
+        if self.temp_base != self.dir:
+            shutil.rmtree(self.temp_base, ignore_errors=True)
+
+    def _apagar_final(self) -> None:
+        self.final_db.unlink(missing_ok=True)
+        Path(str(self.final_db) + ".wal").unlink(missing_ok=True)
 
     def descartar_trabalho(self, manter_downloads: bool = True) -> None:
-        """Cancelamento: apaga o que foi importado; ZIPs verificados podem ficar."""
-        for p in (self.bruto_db, self.final_db):
-            p.unlink(missing_ok=True)
-            Path(str(p) + ".wal").unlink(missing_ok=True)
-        for d in (self.extraido, self.dir / "tmp"):
+        """Cancelamento: descarta a consolidacao. Com manter_downloads, o que ja foi
+        baixado e importado (ZIPs e bruto.duckdb) fica para a proxima tentativa,
+        como o painel promete; sem ele, apaga a area de trabalho inteira."""
+        self._apagar_final()
+        if not manter_downloads:
+            self.bruto_db.unlink(missing_ok=True)
+            Path(str(self.bruto_db) + ".wal").unlink(missing_ok=True)
+        for d in (self.extraido, self.temp_base / "tmp"):
             shutil.rmtree(d, ignore_errors=True)
         if not manter_downloads:
             shutil.rmtree(self.dir, ignore_errors=True)
 
 
 class _ZipCorrompido(Exception):
+    pass
+
+
+class _SemRange(Exception):  # noqa: N818 -- servidor respondeu 200 a um pedido de parte
     pass
 
 

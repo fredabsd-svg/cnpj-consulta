@@ -57,7 +57,9 @@ def reset_inbound_limiter() -> None:
 
 
 def _client_key(request: Request) -> str:
-    return request.client.host if request.client else "unknown"
+    from app.services.admin_auth import ip_de  # ignora X-Forwarded-For forjado
+
+    return ip_de(request)
 
 
 def reserver_for(request: Request) -> Callable[[], float]:

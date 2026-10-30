@@ -24,8 +24,10 @@
                     <td><a href="/empresa/{{ f.cnpj }}">{{ f.label or "Sem nome" }}</a></td>
                     <td class="mono nowrap">{{ f.cnpj | cnpj }}</td>
                     <td class="nowrap">{{ f.created_at | data_br }}</td>
-                    <td class="num"><button type="button" class="btn btn-sm btn-ghost btn-danger" data-delete-url="/api/favorites/{{ f.cnpj }}"
-                        aria-label="Remover {{ f.label or f.cnpj }} dos favoritos">{{ ui.icon('trash') }} Remover</button></td>
+                    <td class="num"><form method="post" action="/favoritos/{{ f.cnpj }}" class="form-favorito">
+                        <input type="hidden" name="acao" value="remover"><input type="hidden" name="voltar" value="/historico">
+                        <button type="submit" class="btn btn-sm btn-ghost btn-danger" data-delete-url="/api/favorites/{{ f.cnpj }}"
+                        aria-label="Remover {{ f.label or f.cnpj }} dos favoritos">{{ ui.icon('trash') }} Remover</button></form></td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -40,8 +42,10 @@
     <div class="card-header">
         <h2 id="titulo-hist">{{ ui.icon('history') }} Consultas recentes <span class="count">{{ queries | length }}</span></h2>
         {% if queries %}
-        <button type="button" class="btn btn-sm btn-danger" data-delete-url="/api/history"
-                data-confirm="Apagar todo o histórico de consultas? Os favoritos serão mantidos.">{{ ui.icon('trash') }} Apagar histórico</button>
+        <form method="post" action="/historico/limpar" class="form-favorito">
+            <button type="submit" class="btn btn-sm btn-danger" data-delete-url="/api/history"
+                    data-confirm="Apagar todo o histórico de consultas? Os favoritos serão mantidos.">{{ ui.icon('trash') }} Apagar histórico</button>
+        </form>
         {% endif %}
     </div>
     {% if queries %}

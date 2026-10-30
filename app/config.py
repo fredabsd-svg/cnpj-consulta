@@ -29,6 +29,12 @@ class Settings(BaseSettings):
     # Mantenha 127.0.0.1: o app nao tem login. Em production/nao-debug,
     # host nao-loopback e recusado na inicializacao (ver assert_bind_allowed).
     app_host: str = "127.0.0.1"
+    # Nomes de host (alem de localhost e enderecos IP) aceitos no cabecalho Host,
+    # separados por virgula: ex. "meuservidor.local". Protege contra DNS rebinding.
+    app_hosts_permitidos: str = ""
+    # So true atras de um proxy reverso seu: passa a usar o X-Forwarded-For como IP
+    # do cliente (limite de login e auditoria). Sem proxy, o cabecalho e ignorado.
+    confiar_proxy: bool = False
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     # Contato do responsavel pela instalacao (exibido na politica de privacidade)
     app_contact_email: str = ""
@@ -57,6 +63,13 @@ class Settings(BaseSettings):
     receita_duckdb_memoria: str = "4GB"
     receita_duckdb_threads: int = 0  # 0 = automatico
     receita_manter_zips: bool = False
+    # Conexoes simultaneas de download. Arquivos grandes sao baixados em partes
+    # em paralelo (o portal limita a velocidade por conexao). 1 = sequencial.
+    receita_downloads_paralelos: int = 4
+    # Pasta para os CSVs extraidos e o temporario do DuckDB. Vazio = area de
+    # trabalho dentro de RECEITA_DATA_DIR. Aponte para um disco local rapido
+    # (SSD) quando os dados ficam num disco externo ou de rede.
+    receita_temp_dir: str = ""
     receita_versoes_mantidas: int = 2  # ativa + anterior (para restaurar)
     # Validacao: recusa publicar se uma tabela principal encolher mais que isto
     # em relacao a versao ativa (protege contra arquivo truncado na origem).
@@ -70,6 +83,39 @@ class Settings(BaseSettings):
     # Vazio = token gerado no primeiro uso em data/admin_token.txt.
     admin_token: str = ""
     admin_sessao_horas: int = 8
+
+    # Servidor MCP: ferramentas que alteram dados so com true (ver MCP.md)
+    mcp_permitir_admin: bool = False
+
+    # Chat com IA (/chat, so administrador; ver CHAT_IA.md). As chaves tambem
+    # podem ser cadastradas na propria pagina do chat. Vazio = provedor desligado.
+    chat_habilitado: bool = True
+    chat_provedor_padrao: str = "anthropic"
+    chat_modelo_padrao: str = ""  # vazio = primeiro modelo do provedor
+    anthropic_api_key: str = ""
+    openai_api_key: str = ""
+    gemini_api_key: str = ""
+    openrouter_api_key: str = ""
+    deepseek_api_key: str = ""
+    groq_api_key: str = ""
+    mistral_api_key: str = ""
+    xai_api_key: str = ""
+    # Modelos locais (sem chave). Vazio = desligado; ex.: http://localhost:11434/v1
+    ollama_url: str = ""
+    lmstudio_url: str = ""
+    # Qualquer outro servidor compativel com a API da OpenAI (vLLM, LiteLLM, Azure...)
+    chat_custom_url: str = ""
+    chat_custom_api_key: str = ""
+    chat_custom_modelos: str = ""  # separados por virgula
+    # Esforco de raciocinio dos modelos Claude: low | medium | high | xhigh | max
+    chat_esforco: str = "medium"
+    chat_max_tokens: int = 64000
+    # Chamadas de ferramenta por mensagem (protege contra lacos sem fim)
+    chat_max_rodadas: int = 25
+    # Resultado de ferramenta maior que isto e cortado antes de ir ao modelo
+    chat_resultado_max_chars: int = 30000
+    chat_sql_max_linhas: int = 500
+    chat_sql_timeout_segundos: float = 30.0
 
     # Busca avancada
     busca_timeout_segundos: float = 30.0
@@ -155,20 +201,39 @@ class Settings(BaseSettings):
     sefaz_ca_bundle: str = ""
 
 
-def assert_bind_allowed(settings: Settings | None = None) -> None:
+def host_de_execucao(argv: list[str] | None = None) -> str | None:
+    """Endereco passado ao uvicorn na linha de comando (`--host X` ou `--host=X`)
+    ou em UVICORN_HOST: e nele que o servidor escuta de fato, nao no APP_HOST."""
+    import os
+    import sys
+
+    args = sys.argv if argv is None else argv
+    host = None
+    for i, a in enumerate(args):  # o uvicorn/click usa o ULTIMO --host repetido
+        if a == "--host" and i + 1 < len(args):
+            host = args[i + 1]
+        elif a.startswith("--host="):
+            host = a.split("=", 1)[1]
+    return host or os.environ.get("UVICORN_HOST") or None
+
+
+def assert_bind_allowed(settings: Settings | None = None, host_real: str | None = None) -> None:
     """Recusa subir com host nao-loopback em production ou sem debug.
 
     O app e single-user local e nao tem autenticacao. Expor em 0.0.0.0
     transformaria as consultas em proxy aberto das APIs de terceiros.
+    Confere o APP_HOST e tambem o `--host` real do uvicorn.
     """
     cfg = settings or get_settings()
-    host = (cfg.app_host or "").strip().lower()
     loopback = {"127.0.0.1", "localhost", "::1"}
-    if host in loopback:
-        return
-    if cfg.app_env == "production" or not cfg.app_debug:
+    for valor in (cfg.app_host, host_real):
+        host = (valor or "").strip().lower().strip("[]")
+        if valor is None or host in loopback:
+            continue
+        if cfg.app_env != "production" and cfg.app_debug:
+            continue
         raise RuntimeError(
-            f"APP_HOST={cfg.app_host!r} nao e loopback, mas app_env={cfg.app_env!r} "
+            f"Endereco {valor!r} nao e loopback, mas app_env={cfg.app_env!r} "
             f"e app_debug={cfg.app_debug}. O app nao tem autenticacao: use "
             "127.0.0.1/localhost, ou (apenas em laboratorio) APP_ENV=development "
             "e APP_DEBUG=true."

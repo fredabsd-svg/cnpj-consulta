@@ -72,7 +72,8 @@ async def query_company_async(
         unified = reconcile(normalized, results)
         # A base local e consultada direto (rapida) e muda a cada atualizacao:
         # nao vai para o cache.
-        if ok and not so_local:
+        # So vai para o cache consulta com dados: nao guarda um "vazio" por 24h.
+        if ok and not so_local and unified.razao_social:
             try:
                 await asyncio.to_thread(cache_put, normalized, unified)
             except Exception as e:  # noqa: BLE001

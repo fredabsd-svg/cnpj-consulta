@@ -170,7 +170,8 @@ document.documentElement.classList.add("js");
 
     function initFavorite() {
         document.querySelectorAll("[data-favorite-url]").forEach((btn) => {
-            btn.addEventListener("click", async () => {
+            btn.addEventListener("click", async (ev) => {
+                ev.preventDefault();  // sem JS, o <form> em volta faz o mesmo com recarga
                 const on = btn.getAttribute("aria-pressed") === "true";
                 const url = btn.dataset.favoriteUrl + (on ? "" : "?label=" + encodeURIComponent(btn.dataset.label || ""));
                 btn.disabled = true;
@@ -178,6 +179,8 @@ document.documentElement.classList.add("js");
                     await send(on ? "DELETE" : "POST", url);
                     btn.setAttribute("aria-pressed", String(!on));
                     btn.querySelector("[data-favorite-text]").textContent = on ? "Favoritar" : "Favorito";
+                    const acao = btn.form && btn.form.querySelector("[data-favorite-acao]");
+                    if (acao) acao.value = on ? "adicionar" : "remover";
                     toast(on ? "Removido dos favoritos" : "Adicionado aos favoritos");
                 } catch (e) {
                     toast("Falha ao salvar favorito (" + e.message + ")");
@@ -190,7 +193,8 @@ document.documentElement.classList.add("js");
 
     function initDeleteActions() {
         document.querySelectorAll("[data-delete-url]").forEach((btn) => {
-            btn.addEventListener("click", async () => {
+            btn.addEventListener("click", async (ev) => {
+                ev.preventDefault();
                 if (btn.dataset.confirm && !window.confirm(btn.dataset.confirm)) return;
                 btn.disabled = true;
                 try {
