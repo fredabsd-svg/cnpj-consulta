@@ -6,6 +6,7 @@ import asyncio
 import logging
 import shutil
 import threading
+import time
 import traceback
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -17,6 +18,7 @@ from app.receita import armazenamento as arm
 from app.receita import jobs, trava
 from app.receita.duck import SCHEMA_VERSAO, conectar_leitura, metadados
 from app.receita.fonte import FonteError, FonteReceita
+from app.receita.layout import MES_RE
 from app.receita.pipeline import ETAPAS, Atualizacao, Interrompido, PipelineError, validar_base
 
 log = logging.getLogger(__name__)
@@ -128,6 +130,8 @@ def verificar_atualizacao(settings: Settings | None = None, client=None) -> dict
 
 def iniciar_atualizacao(mes: str | None, *, forcar: bool = False, origem: str = "manual",
                         em_processo: bool = True) -> dict:
+    if mes is not None and not MES_RE.match(mes):
+        raise ValueError("Mês deve estar no formato AAAA-MM (ex.: 2026-10).")
     job = jobs.criar_job("atualizar", mes, opcoes={"forcar": forcar}, origem=origem)
     if em_processo:
         jobs.iniciar_processo(job["id"], arm.data_dir() / "logs")
@@ -174,18 +178,27 @@ class _Batimento:
         self._thread.join(timeout=5)
 
 
-def executar_job(job_id: int, *, client=None, sleep=None) -> str:
+def executar_job(job_id: int, *, client=None, sleep=None, espera_trava: float = 10.0) -> str:
     """Corpo do processo de trabalho. Retorna o status final.
 
     So um processo por vez: se outro ja estiver trabalhando (trava presa), este
     sai sem tocar na tarefa nem nos arquivos.
     """
     t = trava.TravaProcesso()
-    if not t.adquirir():
+    # Espera curta: o processo anterior pode estar so terminando a limpeza.
+    limite = time.monotonic() + espera_trava
+    while not t.adquirir() and time.monotonic() < limite:
+        time.sleep(0.2)
+    if not t.presa:
         pid = trava.em_uso()
         log.warning("outro processo (%s) ja executa uma tarefa da base; saindo", pid)
-        jobs.JobReporter(job_id).log(
-            f"Pedido ignorado: a atualizacao ja esta em execucao no processo {pid}.", "aviso")
+        rep = jobs.JobReporter(job_id)
+        rep.log(f"Pedido ignorado: a atualizacao ja esta em execucao no processo {pid}.", "aviso")
+        atual = jobs.obter(job_id)
+        if atual and atual["status"] == "pendente":
+            # Tarefa que nunca comecou: nao pode ficar "pendente" e virar a "ativa" do painel.
+            rep.finalizar("falhou", mensagem="Outra atualizacao ja estava em execucao.",
+                          erro=f"Outra atualizacao ja estava em execucao (processo {pid}).")
         return "ocupado"
     try:
         rep = jobs.JobReporter(job_id)
@@ -204,10 +217,14 @@ def _executar_job(rep: jobs.JobReporter, job_id: int, *, client=None, sleep=None
     if job["tipo"] == "validar":
         return _executar_validacao(rep)
     kwargs = {"sleep": sleep} if sleep else {}
-    atual = Atualizacao(
-        job.get("mes"), settings=settings, reporter=rep, client=client,
-        forcar=bool((job.get("opcoes") or {}).get("forcar")), **kwargs,
-    )
+    try:
+        atual = Atualizacao(
+            job.get("mes"), settings=settings, reporter=rep, client=client,
+            forcar=bool((job.get("opcoes") or {}).get("forcar")), **kwargs,
+        )
+    except ValueError as e:  # mes invalido gravado na tarefa: falha, nao fica "executando"
+        rep.finalizar("falhou", mensagem="Tarefa invalida.", erro=str(e))
+        return "falhou"
     try:
         relatorio = atual.executar()
     except Interrompido as e:

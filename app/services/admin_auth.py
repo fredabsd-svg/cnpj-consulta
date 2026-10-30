@@ -74,6 +74,8 @@ def criar_sessao(agora: float | None = None) -> str:
 def sessao_valida(valor: str | None, agora: float | None = None) -> bool:
     if not valor or valor.count(".") != 2:
         return False
+    if not valor.isascii():
+        return False
     exp, nonce, sig = valor.split(".")
     esperado = hmac.new(_chave(), f"{exp}.{nonce}".encode(), hashlib.sha256).hexdigest()
     if not hmac.compare_digest(esperado, sig):
@@ -89,6 +91,16 @@ def token_confere(candidato: str) -> bool:
 
 
 def ip_de(request: Request) -> str:
+    """IP do cliente para limite de tentativas e auditoria.
+
+    O uvicorn troca o IP pelo X-Forwarded-For quando a conexao vem de 127.0.0.1;
+    como todo cliente local vem de la, qualquer um inventaria um IP novo a cada
+    tentativa. Sem CONFIAR_PROXY=true, o cabecalho e ignorado.
+    """
+    from app.config import get_settings
+
+    if request.headers.get("x-forwarded-for") and not get_settings().confiar_proxy:
+        return "127.0.0.1"
     return request.client.host if request.client else "?"
 
 
@@ -118,7 +130,20 @@ def eh_admin(request: Request) -> bool:
 
 
 def exigir_admin_api(request: Request) -> None:
-    """Dependencia das rotas /api/admin/*."""
+    """Dependencia das rotas /api/admin/* (e do chat). Bearer errado conta como
+    tentativa de login: entra no limite por IP e na auditoria."""
+    bearer = request.headers.get("authorization", "").lower().startswith("bearer ")
+    if bearer:
+        ip = ip_de(request)
+        if bloqueado(ip):
+            raise HTTPException(status_code=429, detail="Muitas tentativas. Aguarde 5 minutos.")
+        if not eh_admin(request):
+            from app.receita import jobs
+
+            registrar_falha(ip)
+            jobs.auditar("admin.login", resultado="negado", detalhe="token Bearer incorreto", ip=ip)
+            raise HTTPException(status_code=401, detail="Token de administrador incorreto.")
+        return
     if not eh_admin(request):
         raise HTTPException(status_code=401, detail="Acesso restrito ao administrador. Entre em /admin/entrar.")
 

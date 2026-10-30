@@ -9,8 +9,8 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi import APIRouter, Depends, Form, Query, Request
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from app import __version__
@@ -27,7 +27,15 @@ from app.services.batch import parse_cnpj_list, run_batch, summarize
 from app.services.company_query import query_company_async
 from app.services.diligence import STATUS_LABELS, build_diligence_checklist, build_diligence_verdict
 from app.services.ficha import BaseIndisponivel, ficha_local
-from app.services.history_service import history_stats, is_favorite, list_favorites, recent_queries
+from app.services.history_service import (
+    add_favorite,
+    clear_history,
+    history_stats,
+    is_favorite,
+    list_favorites,
+    recent_queries,
+    remove_favorite,
+)
 from app.services.partner_search import MAX_LIMIT, search_partners
 from app.services.report_context import build_report_context
 from app.services.sanctions import check_sanctions
@@ -99,6 +107,41 @@ async def index(request: Request) -> HTMLResponse:
     return await _index(request)
 
 
+def _volta_segura(destino: str, padrao: str) -> str:
+    return destino if destino.startswith("/") and not destino.startswith(("//", "/\\")) else padrao
+
+
+@router.post("/favoritos/{cnpj}")
+async def favoritar_form(cnpj: str, acao: str = Form("adicionar"), rotulo: str = Form("", max_length=200),
+                         voltar: str = Form("", max_length=300)) -> Response:
+    """Favoritar/remover sem JavaScript (o JS usa /api/favorites)."""
+    n = normalize_or_none(cnpj)
+    if n is None:
+        return PlainTextResponse("CNPJ inválido.", status_code=400)
+    if acao == "remover":
+        await asyncio.to_thread(remove_favorite, n)
+    else:
+        await asyncio.to_thread(add_favorite, n, rotulo.strip() or None)
+    return RedirectResponse(_volta_segura(voltar, f"/empresa/{n}"), status_code=303)
+
+
+@router.post("/historico/limpar")
+async def limpar_historico_form() -> Response:
+    await asyncio.to_thread(clear_history)
+    return RedirectResponse("/historico", status_code=303)
+
+
+def _parece_cnpj(texto: str) -> bool:
+    """Tentativa de digitar um CNPJ (mesmo errado): sem espacos, so letras, digitos e
+    a pontuacao do CNPJ, 14 caracteres e terminando nos 2 digitos verificadores.
+    "MERCADO CENTRAL" ou "CONTAFACILLTDA" sao nomes, nao CNPJ."""
+    t = texto.strip()
+    if any(c.isspace() for c in t) or any(not (c.isalnum() or c in "./-") for c in t):
+        return False
+    s = strip(t)
+    return len(s) == 14 and s[-2:].isdigit()
+
+
 @router.get("/consulta")
 async def consulta(request: Request, cnpj: str = "") -> Response:
     """Destino do formulario da pagina inicial: CNPJ abre a ficha; nome
@@ -107,7 +150,7 @@ async def consulta(request: Request, cnpj: str = "") -> Response:
         return await _index(request, error="Informe um CNPJ ou o nome da empresa.", status=400)
     normalized = normalize_or_none(cnpj)
     tem_letras = any(ch.isalpha() for ch in cnpj)
-    if normalized is None and tem_letras and len(strip(cnpj)) != 14 and caminho_base_ativa():
+    if normalized is None and tem_letras and not _parece_cnpj(cnpj) and caminho_base_ativa():
         from urllib.parse import urlencode
 
         return RedirectResponse(f"/busca?{urlencode({'q': cnpj.strip()[:100]})}", status_code=303)

@@ -810,3 +810,5 @@ select[multiple].select { background-image: none; padding-right: var(--space-1);
     .chat-composer { flex-direction: column; align-items: stretch; }
     .chat-composer-acoes { justify-content: flex-end; }
 }
+
+.form-favorito { display: inline-flex; margin: 0; }

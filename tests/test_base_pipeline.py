@@ -429,8 +429,11 @@ class TestTravaDeProcesso:
         assert t.adquirir()
         try:
             assert trava.em_uso() is not None
-            assert servico.executar_job(job["id"]) == "ocupado"
-            assert jobs.obter(job["id"])["status"] == "pendente"  # tarefa intacta
+            assert servico.executar_job(job["id"], espera_trava=0) == "ocupado"
+            # Nunca comecou: vira "falhou" (retomavel) em vez de ficar "pendente" e
+            # aparecer como a tarefa ativa do painel (achado P4 do Gauntlet Loop).
+            assert jobs.obter(job["id"])["status"] == "falhou"
+            assert jobs.job_ativo() is None
         finally:
             t.liberar()
         assert trava.em_uso() is None

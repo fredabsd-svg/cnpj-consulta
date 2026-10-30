@@ -9,6 +9,7 @@ from typing import Any
 
 from sqlalchemy import delete, func, select
 
+from app.core.cnpj_validator import is_valid
 from app.db import get_session_factory, init_database
 from app.models.base_cnpj import BuscaRecente, BuscaSalva, ListaEmpresas, ListaItem
 
@@ -79,7 +80,9 @@ def remover_busca(busca_id: int) -> None:
 def registrar_recente(filtros: dict, resumo: str, total: int | None) -> None:
     """Historico local. Criterios com nome/documento de socio nao sao guardados
     (o resumo ja os omite e os filtros sao gravados sem esses valores)."""
-    limpos = {k: v for k, v in filtros.items() if k not in ("socio_nome", "socio_documento", "excluir_socio_nome")}
+    from app.services.busca_avancada import sem_dados_de_socio
+
+    limpos = sem_dados_de_socio(filtros)
     if not limpos:
         return
     init_database()
@@ -182,10 +185,13 @@ def adicionar(lista_id: int, itens: list[dict]) -> int:
         n = 0
         for it in itens:
             cnpj = re.sub(r"[^0-9A-Za-z]", "", str(it.get("cnpj", ""))).upper()
-            if not _CNPJ.fullmatch(cnpj) or cnpj in existentes:
+            if not _CNPJ.fullmatch(cnpj) or not is_valid(cnpj) or cnpj in existentes:
                 continue
-            s.add(ListaItem(lista_id=lista_id, cnpj=cnpj, razao_social=(it.get("razao_social") or None),
-                            observacao=(it.get("observacao") or "").strip()[:1000] or None))
+            razao = it.get("razao_social")
+            obs = it.get("observacao")
+            s.add(ListaItem(lista_id=lista_id, cnpj=cnpj,
+                            razao_social=str(razao).strip()[:200] or None if isinstance(razao, str | int) else None,
+                            observacao=str(obs).strip()[:1000] or None if isinstance(obs, str | int | float) else None))
             existentes.add(cnpj)
             n += 1
         lst.atualizado_em = datetime.now()

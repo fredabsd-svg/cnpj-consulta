@@ -25,6 +25,7 @@ inteiro e desfeito e refeito; os demais nao.
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import logging
 import queue
@@ -86,6 +87,10 @@ TENTATIVAS_DOWNLOAD = 6
 CHUNK = 1024 * 1024
 # Arquivos a partir de 2x este tamanho sao baixados em partes paralelas.
 SEGMENTO_MIN = 32 * 1024 * 1024
+
+
+TABELAS_COMPARADAS = ("empresas", "estabelecimentos", "socios", "simples", "cnaes", "motivos", "municipios",
+                      "naturezas", "paises", "qualificacoes")
 
 
 class PipelineError(RuntimeError):
@@ -260,9 +265,13 @@ class Atualizacao:
 
     def executar(self) -> dict:
         try:
+            if self.mes and self._ja_publicada():
+                return self._concluir_publicada()
             t0 = self._entrar("descoberta", "Consultando o portal oficial da Receita Federal")
             self._descobrir()
             self._sair("descoberta", t0)
+            if self._ja_publicada():
+                return self._concluir_publicada()
 
             t0 = self._entrar("espaco")
             self._checar_espaco()
@@ -291,6 +300,23 @@ class Atualizacao:
             self.relatorio.fim = datetime.now(UTC).isoformat()
             self.fonte.close() if self._client is None else None
         self._log(f"Base {self.mes} publicada: {self.relatorio.publicada}")
+        return self.relatorio.as_dict()
+
+    def _ja_publicada(self) -> bool:
+        """A tentativa anterior publicou esta versao e caiu antes de terminar a limpeza."""
+        publicada = self._estado().get("publicada") if self.estado_path.exists() else None
+        ativa = arm.base_ativa(self.settings)
+        return bool(publicada and ativa and ativa.caminho.name == publicada)
+
+    def _concluir_publicada(self) -> dict:
+        estado = self._estado()
+        self.relatorio.publicada = estado.get("publicada")
+        self.relatorio.anterior = estado.get("anterior")
+        self._log("Esta versao ja foi publicada na tentativa anterior; concluindo a limpeza.")
+        t0 = self._entrar("limpeza")
+        self._limpar(tudo=True)
+        self._sair("limpeza", t0)
+        self.relatorio.fim = datetime.now(UTC).isoformat()
         return self.relatorio.as_dict()
 
     # ---------- descoberta ----------
@@ -930,11 +956,27 @@ class Atualizacao:
         fmt = {f"bruto_{g.nome}": bruto(g.nome) for g in GRUPOS}
         webmail = "[" + ", ".join(sql_str(d) for d in WEBMAIL) + "]"
 
+        # Etapas ja consolidadas so valem para os MESMOS arquivos importados: se algum
+        # arquivo mudou no portal e foi reimportado, a consolidacao recomeca do zero.
+        assinatura = hashlib.sha256("|".join(
+            f"{n}:{i.get('etag')}:{i.get('linhas')}" for n, i in sorted(importados.items())).encode()).hexdigest()
+        if self.final_db.exists():
+            conn = self._conectar(self.final_db)
+            try:
+                conn.execute("CREATE TABLE IF NOT EXISTS _etapas (nome VARCHAR PRIMARY KEY, info VARCHAR, em TIMESTAMP)")
+                anterior = conn.execute("SELECT info FROM _etapas WHERE nome = '_assinatura'").fetchone()
+            finally:
+                conn.close()
+            if anterior is None or anterior[0] != assinatura:
+                self._log("Arquivos importados mudaram desde a consolidacao anterior; consolidando de novo.", "aviso")
+                self._apagar_final()
+
         conn = self._conectar(self.final_db)
         try:
             conn.execute(f"ATTACH {sql_str(self.bruto_db.as_posix())} AS bruto (READ_ONLY)")
             conn.execute(MACROS)
             conn.execute("CREATE TABLE IF NOT EXISTS _etapas (nome VARCHAR PRIMARY KEY, info VARCHAR, em TIMESTAMP)")
+            conn.execute("INSERT OR REPLACE INTO _etapas VALUES ('_assinatura', ?, now())", [assinatura])
             feitas = {r[0] for r in conn.execute("SELECT nome FROM _etapas").fetchall()}
 
             dup_emp = self._duplicados(conn, fmt["bruto_empresas"], "trim(cnpj_basico)")
@@ -1049,6 +1091,10 @@ class Atualizacao:
         conn = duckdb.connect(str(self.final_db))
         try:
             resultado = validar_base(conn, self.settings)
+            novas = {t: conn.execute(f"SELECT count(*) FROM {t}").fetchone()[0]
+                     for t in TABELAS_COMPARADAS
+                     if conn.execute("SELECT count(*) FROM information_schema.tables "
+                                     "WHERE table_schema = 'main' AND table_name = ?", [t]).fetchone()[0]}
         finally:
             conn.close()
         self.relatorio.contagens = resultado["contagens"]
@@ -1062,9 +1108,13 @@ class Atualizacao:
             try:
                 anterior = duckdb.connect(str(ativa.caminho), read_only=True)
                 try:
+                    existentes = {r[0] for r in anterior.execute(
+                        "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'").fetchall()}
+                    # Todas as tabelas da Receita: um Simples.zip ou Cnaes.zip truncado
+                    # tambem nao pode ser publicado.
                     antes = {
                         t: anterior.execute(f"SELECT count(*) FROM {t}").fetchone()[0]
-                        for t in ("empresas", "estabelecimentos", "socios")
+                        for t in TABELAS_COMPARADAS if t in existentes
                     }
                 finally:
                     anterior.close()
@@ -1072,7 +1122,7 @@ class Atualizacao:
                 antes = {}
                 self._log(f"Nao foi possivel comparar com a versao ativa: {e}", "aviso")
             for t, n_antes in antes.items():
-                n_novo = self.relatorio.contagens.get(t, 0)
+                n_novo = novas.get(t, self.relatorio.contagens.get(t, 0))
                 var = 100 * (n_novo - n_antes) / n_antes if n_antes else 0.0
                 self.relatorio.comparacao[t] = {"anterior": n_antes, "nova": n_novo, "variacao_pct": round(var, 2)}
                 if var < -self.settings.receita_queda_maxima_pct:
@@ -1099,6 +1149,11 @@ class Atualizacao:
         destino = arm.publicar(self.final_db, self.mes, self.settings)
         self.relatorio.publicada = destino.name
         self.relatorio.anterior = anterior.caminho.name if anterior else None
+        # Se o processo cair daqui ate o fim da limpeza, a retomada nao publica de novo
+        # (o que empurraria a versao anterior verdadeira para a poda).
+        estado = self._estado()
+        estado.update(publicada=destino.name, anterior=self.relatorio.anterior)
+        self._salvar_estado(estado)
         self._log(f"Publicada {destino.name}" + (f"; anterior mantida: {anterior.caminho.name}" if anterior else ""))
 
     def _limpar(self, tudo: bool) -> None:
@@ -1111,11 +1166,18 @@ class Atualizacao:
         if self.temp_base != self.dir:
             shutil.rmtree(self.temp_base, ignore_errors=True)
 
+    def _apagar_final(self) -> None:
+        self.final_db.unlink(missing_ok=True)
+        Path(str(self.final_db) + ".wal").unlink(missing_ok=True)
+
     def descartar_trabalho(self, manter_downloads: bool = True) -> None:
-        """Cancelamento: apaga o que foi importado; ZIPs verificados podem ficar."""
-        for p in (self.bruto_db, self.final_db):
-            p.unlink(missing_ok=True)
-            Path(str(p) + ".wal").unlink(missing_ok=True)
+        """Cancelamento: descarta a consolidacao. Com manter_downloads, o que ja foi
+        baixado e importado (ZIPs e bruto.duckdb) fica para a proxima tentativa,
+        como o painel promete; sem ele, apaga a area de trabalho inteira."""
+        self._apagar_final()
+        if not manter_downloads:
+            self.bruto_db.unlink(missing_ok=True)
+            Path(str(self.bruto_db) + ".wal").unlink(missing_ok=True)
         for d in (self.extraido, self.temp_base / "tmp"):
             shutil.rmtree(d, ignore_errors=True)
         if not manter_downloads:

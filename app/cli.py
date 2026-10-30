@@ -184,8 +184,10 @@ def providers_list() -> None:
 @consulta_app.command("historico")
 def consulta_historico(limit: int = typer.Option(20, "--limit", "-n")) -> None:
     """Mostra as ultimas consultas realizadas."""
+    from app.db import init_database
     from app.services.history_service import recent_queries
 
+    init_database()
     rows = recent_queries(limit=limit)
     if not rows:
         console.print("Nenhuma consulta registrada.")
@@ -253,6 +255,9 @@ def base_atualizar(
         job = iniciar_atualizacao(mes, forcar=forcar, origem="cli", em_processo=segundo_plano)
     except jobs.JobEmAndamento as e:
         err_console.print(f"[red]Erro:[/red] {e} Use `cnpj base retomar` ou `cnpj base cancelar`.")
+        raise typer.Exit(code=2) from e
+    except ValueError as e:
+        err_console.print(f"[red]Erro:[/red] {e}")
         raise typer.Exit(code=2) from e
     jobs.auditar("base.atualizar", detalhe=f"cli job={job['id']} mes={mes or 'mais recente'}")
     if segundo_plano:
@@ -396,8 +401,10 @@ def admin_token() -> None:
 @app.command()
 def limpar_historico() -> None:
     """Apaga o historico local de consultas."""
+    from app.db import init_database
     from app.services.history_service import clear_history
 
+    init_database()
     n = clear_history()
     console.print(f"[green]{n} entradas removidas.[/green]")
 
@@ -405,8 +412,10 @@ def limpar_historico() -> None:
 @app.command()
 def limpar_cache() -> None:
     """Apaga o cache local de respostas."""
+    from app.db import init_database
     from app.services.cache import clear_cache
 
+    init_database()
     n = clear_cache()
     console.print(f"[green]{n} entradas removidas do cache.[/green]")
 

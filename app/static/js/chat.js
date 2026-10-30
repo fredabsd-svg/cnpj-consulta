@@ -91,9 +91,12 @@
 
     // ------------------------------------------------------------ markdown seguro
 
+    // Barra invertida e caracteres de controle ficam de fora: o navegador trata
+    // "\\" como "/" e "/\\outro.site" sairia do app parecendo link interno.
     function linkSeguro(url) {
+        if (/[\\\u0000-\u001f\u007f]/.test(url)) return null;
         if (/^\/(?!\/)/.test(url)) return { href: url, externo: false };
-        if (/^https?:\/\//i.test(url)) return { href: url, externo: true };
+        if (/^https?:\/\/[^/]/i.test(url)) return { href: url, externo: true };
         return null;
     }
 
@@ -495,6 +498,10 @@
                 ui.msgs.appendChild(ctx.pensando);
                 rolar();
             }
+            break;
+        case "reiniciar":
+            // O servidor refez a ida ao modelo: some o texto parcial da tentativa anterior.
+            if (ctx.bolha) { ctx.sujas.delete(ctx.bolha); ctx.bolha.remove(); ctx.bolha = null; }
             break;
         case "texto":
             tirarPensando(ctx);

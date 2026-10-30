@@ -14,16 +14,19 @@ import hashlib
 import os
 import sys
 import tempfile
+import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from app.config import Settings, get_settings
 
 
-def caminho_trava(settings: Settings | None = None) -> Path:
+def caminho_trava(settings: Settings | None = None, nome: str = "base") -> Path:
     settings = settings or get_settings()
     dados = str(Path(settings.receita_data_dir).expanduser().resolve())
     chave = hashlib.sha256(dados.encode()).hexdigest()[:16]
-    return Path(tempfile.gettempdir()) / f"cnpj-consulta-base-{chave}.lock"
+    return Path(tempfile.gettempdir()) / f"cnpj-consulta-{nome}-{chave}.lock"
 
 
 class TravaProcesso:
@@ -51,6 +54,11 @@ class TravaProcesso:
         self._fd = fd
         return True
 
+    @property
+    def presa(self) -> bool:
+        """True se ESTE objeto segura a trava."""
+        return self._fd is not None
+
     def liberar(self) -> None:
         if self._fd is None:
             return
@@ -73,6 +81,22 @@ class TravaProcesso:
 
     def __exit__(self, *exc) -> None:
         self.liberar()
+
+
+@contextmanager
+def exclusivo(nome: str, timeout: float = 30.0) -> Iterator[None]:
+    """Secao critica entre threads E processos (painel, agendador, CLI), esperando
+    a vez ate `timeout` segundos. Usada para "conferir se ha tarefa e criar"."""
+    t = TravaProcesso(caminho_trava(nome=nome))
+    limite = time.monotonic() + timeout
+    while not t.adquirir():
+        if time.monotonic() > limite:
+            raise TimeoutError(f"Trava '{nome}' ocupada por mais de {timeout:.0f}s.")
+        time.sleep(0.05)
+    try:
+        yield
+    finally:
+        t.liberar()
 
 
 def em_uso(settings: Settings | None = None) -> int | None:

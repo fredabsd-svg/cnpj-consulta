@@ -86,17 +86,28 @@ def clear_history() -> int:
 
 
 def add_favorite(cnpj: str, label: str | None = None) -> None:
+    from sqlalchemy.exc import IntegrityError
+
     from app.db import get_session_factory
     from app.models.favorite import Favorite
 
     factory = get_session_factory()
-    with factory() as s:
-        existing = s.execute(select(Favorite).where(Favorite.cnpj == cnpj)).scalar_one_or_none()
-        if existing is not None:
-            existing.label = label or existing.label
-        else:
-            s.add(Favorite(cnpj=cnpj, label=label))
-        s.commit()
+    # Duas tentativas: se outro pedido (ex.: clique duplo) inserir o mesmo CNPJ
+    # entre a leitura e a gravacao, a 2a volta so atualiza o rotulo.
+    for tentativa in range(2):
+        with factory() as s:
+            existing = s.execute(select(Favorite).where(Favorite.cnpj == cnpj)).scalar_one_or_none()
+            if existing is not None:
+                existing.label = label or existing.label
+            else:
+                s.add(Favorite(cnpj=cnpj, label=label))
+            try:
+                s.commit()
+                return
+            except IntegrityError:
+                s.rollback()
+                if tentativa:
+                    raise
 
 
 def remove_favorite(cnpj: str) -> bool:

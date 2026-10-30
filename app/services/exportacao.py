@@ -30,7 +30,13 @@ from app.core.formatting import csv_cell
 from app.db import get_session_factory, init_database
 from app.models.base_cnpj import Exportacao
 from app.receita.armazenamento import exportacoes_dir
-from app.services.busca_avancada import COLUNAS, COLUNAS_PADRAO, Filtros, iterar_exportacao
+from app.services.busca_avancada import (
+    COLUNAS,
+    COLUNAS_PADRAO,
+    Filtros,
+    iterar_exportacao,
+    sem_dados_de_socio,
+)
 
 log = logging.getLogger(__name__)
 
@@ -194,14 +200,21 @@ def obter(exp_id: int) -> dict | None:
         e = s.get(Exportacao, exp_id)
         if e is None:
             return None
-        return {c.name: getattr(e, c.name) for c in Exportacao.__table__.columns}
+        d = {c.name: getattr(e, c.name) for c in Exportacao.__table__.columns}
+        d["filtros"] = sem_dados_de_socio(dict(d.get("filtros") or {}))
+        return d
 
 
 def listar(limite: int = 20) -> list[dict]:
     init_database()
     with get_session_factory()() as s:
         rows = s.scalars(select(Exportacao).order_by(Exportacao.id.desc()).limit(limite))
-        return [{c.name: getattr(e, c.name) for c in Exportacao.__table__.columns} for e in rows]
+        out = []
+        for e in rows:
+            d = {c.name: getattr(e, c.name) for c in Exportacao.__table__.columns}
+            d["filtros"] = sem_dados_de_socio(dict(d.get("filtros") or {}))  # listagem sem dado pessoal
+            out.append(d)
+        return out
 
 
 def caminho_arquivo(exp: dict) -> Path | None:

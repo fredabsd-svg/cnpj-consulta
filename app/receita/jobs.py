@@ -62,7 +62,9 @@ def status_efetivo(job: BaseJob) -> str:
 
 def criar_job(tipo: str, mes: str | None, *, opcoes: dict | None = None, origem: str = "manual") -> dict:
     init_database()
-    with get_session_factory()() as s:
+    # Conferir "ha tarefa ativa?" e inserir precisa ser atomico entre pedidos
+    # simultaneos (dois cliques, painel + agendador, CLI).
+    with trava.exclusivo("criar-tarefa"), get_session_factory()() as s:
         for job in s.scalars(select(BaseJob).where(BaseJob.status.in_(ATIVOS))):
             if status_efetivo(job) in ATIVOS:
                 raise JobEmAndamento(f"Ja existe uma tarefa em andamento (#{job.id}).")

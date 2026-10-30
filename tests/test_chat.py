@@ -422,19 +422,21 @@ class TestLacoClaude:
         evs = await _coletar(conv["id"], "algo")
         assert any(e["tipo"] == "aviso" and "recusou" in e["mensagem"] for e in evs)
         salvo = conversas.obter(conv["id"], com_historico=True)
-        assert [m["role"] for m in salvo["historico"]] == ["user"]
+        assert salvo["historico"] == []  # o pedido recusado nao volta na proxima mensagem
+        assert [i["tipo"] for i in salvo["exibicao"]] == ["usuario", "aviso"]
 
     async def test_limite_de_rodadas(self, db_initialized, claude_falso, monkeypatch):
         from app.chat import conversas
 
         _env(monkeypatch, CHAT_MAX_RODADAS="2")
         rodada = _sse_anthropic([{"type": "tool_use", "id": "t", "name": "listar_listas", "input": {}}], "tool_use")
-        claude_falso["respostas"] = [rodada, rodada]
+        final = _sse_anthropic([{"type": "text", "text": "Até aqui achei isto."}], "end_turn")
+        claude_falso["respostas"] = [rodada, rodada, final]
         conv = conversas.criar("anthropic", "claude-opus-5-5")
         evs = await _coletar(conv["id"], "laço")
         assert any(e["tipo"] == "aviso" and "rodadas" in e["mensagem"] for e in evs)
         salvo = conversas.obter(conv["id"], com_historico=True)
-        assert [m["role"] for m in salvo["historico"]] == ["user", "assistant", "user", "assistant", "user"]
+        assert [m["role"] for m in salvo["historico"]] == ["user", "assistant", "user", "assistant", "user", "assistant"]
 
 
 # ---------------------------------------------------------------- rotas

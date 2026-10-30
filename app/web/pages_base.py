@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import json
 from datetime import date
 from typing import Any
 from urllib.parse import urlencode
@@ -65,7 +66,9 @@ async def busca(request: Request, salva: int | None = None) -> HTMLResponse:
     if salva and not any(k for k in params if k != "salva"):
         b = await asyncio.to_thread(listas_srv.obter_busca, salva)
         if b:
-            filtros = {k: (v if isinstance(v, list) else [v]) for k, v in b["filtros"].items()}
+            filtros = {k: [json.dumps(x, ensure_ascii=False) if isinstance(x, dict | list) else x
+                           for x in (v if isinstance(v, list) else [v])]
+                       for k, v in b["filtros"].items()}
             return RedirectResponse(f"/busca?{urlencode({**filtros, 'salva': [str(salva)]}, doseq=True)}", 303)
     params.pop("salva", None)
     ctx: dict[str, Any] = {

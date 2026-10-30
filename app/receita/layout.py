@@ -84,9 +84,25 @@ def grupo_do_arquivo(nome: str) -> Grupo | None:
 
 
 def grupos_faltando(nomes: list[str]) -> list[str]:
-    """Grupos sem nenhum arquivo na listagem (a versao esta incompleta)."""
-    presentes = {g.nome for n in nomes if (g := grupo_do_arquivo(n))}
-    return [g.prefixo for g in GRUPOS if g.nome not in presentes]
+    """O que falta na listagem para a versao estar completa: grupos sem nenhum
+    arquivo e, nos grupos em partes, buracos na sequencia 0..N (pasta ainda em
+    publicacao com Estabelecimentos0 e 2 mas sem o 1)."""
+    partes: dict[str, set[int]] = {}
+    for n in nomes:
+        g = grupo_do_arquivo(n)
+        if g is None:
+            continue
+        m = _ZIP_RE.match(n)
+        partes.setdefault(g.nome, set())
+        if g.multiparte and m and m["parte"]:
+            partes[g.nome].add(int(m["parte"]))
+    faltando: list[str] = []
+    for g in GRUPOS:
+        if g.nome not in partes:
+            faltando.append(g.prefixo)
+        elif g.multiparte and partes[g.nome]:
+            faltando += [f"{g.prefixo}{i}" for i in range(max(partes[g.nome]) + 1) if i not in partes[g.nome]]
+    return faltando
 
 
 # Codigos oficiais do leiaute.

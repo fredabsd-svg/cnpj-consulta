@@ -133,13 +133,17 @@ class AdaptadorAnthropic:
         return {"role": "user", "content": texto}
 
     @staticmethod
+    def msg_assistente_texto(texto: str) -> dict:
+        return {"role": "assistant", "content": [{"type": "text", "text": texto}]}
+
+    @staticmethod
     def msgs_resultados(resultados: list[tuple[Chamada, bool, str]]) -> list[dict]:
         # Todos os resultados numa unica mensagem (preserva chamadas em paralelo).
         return [{"role": "user", "content": [
             {"type": "tool_result", "tool_use_id": c.id, "content": texto, **({} if ok else {"is_error": True})}
             for c, ok, texto in resultados]}]
 
-    def _parametros(self, historico: list[dict], tools: list[dict]) -> dict:
+    def _parametros(self, historico: list[dict], tools: list[dict], sem_ferramentas: bool = False) -> dict:
         cfg = get_settings()
         kw: dict[str, Any] = {
             "model": self.modelo, "max_tokens": cfg.chat_max_tokens, "system": sistema(),
@@ -149,15 +153,18 @@ class AdaptadorAnthropic:
             kw["thinking"] = {"type": "adaptive"}
             esforco = cfg.chat_esforco if cfg.chat_esforco in _ESFORCOS else "medium"
             kw["output_config"] = {"effort": esforco}
+        if sem_ferramentas:
+            kw["tool_choice"] = {"type": "none"}
         if self.modelo in _COM_FALLBACK:
             kw["betas"] = [_BETA_FALLBACK]
             kw["fallbacks"] = "default"
         return kw
 
-    async def rodada(self, historico: list[dict], tools: list[dict]) -> AsyncIterator[dict]:
+    async def rodada(self, historico: list[dict], tools: list[dict], *,
+                     sem_ferramentas: bool = False) -> AsyncIterator[dict]:
         import anthropic
 
-        kw = self._parametros(historico, tools)
+        kw = self._parametros(historico, tools, sem_ferramentas)
         for tentativa in range(3):
             pensando = False
             try:
@@ -174,6 +181,8 @@ class AdaptadorAnthropic:
                 # JSON de entrada de ferramenta que nao deu para ler: refaz a rodada.
                 if tentativa == 2:
                     raise ErroProvedor("O modelo gerou parâmetros de ferramenta ilegíveis. Tente de novo.") from None
+                # A tela descarta o texto ja mostrado desta tentativa.
+                yield {"tipo": "reiniciar"}
                 yield {"tipo": "aviso", "mensagem": "Refazendo a resposta (parâmetros ilegíveis)…"}
             except anthropic.AuthenticationError as e:
                 raise ErroProvedor("Chave da Anthropic inválida. Confira em Configurar provedores.") from e
@@ -207,6 +216,10 @@ class AdaptadorAnthropic:
         elif motivo == "max_tokens" and r.chamadas:
             r.parada = "limite"
             r.aviso = "A resposta passou do limite de tamanho no meio de uma chamada de ferramenta. Peça algo menor."
+        elif not r.texto.strip() and not r.chamadas and motivo != "pause_turn":
+            # Resposta sem texto nem ferramenta: nao entra no historico (a API
+            # recusa mensagem de assistente vazia no meio da conversa).
+            r.aviso = "O modelo não devolveu resposta. Tente reformular ou peça para continuar."
         else:
             r.mensagens = [{"role": "assistant", "content": blocos}]
             if motivo == "pause_turn":
@@ -274,6 +287,10 @@ class AdaptadorOpenAI:
         return {"role": "user", "content": texto}
 
     @staticmethod
+    def msg_assistente_texto(texto: str) -> dict:
+        return {"role": "assistant", "content": texto}
+
+    @staticmethod
     def msgs_resultados(resultados: list[tuple[Chamada, bool, str]]) -> list[dict]:
         return [{"role": "tool", "tool_call_id": c.id, "content": texto if ok else f"ERRO: {texto}"}
                 for c, ok, texto in resultados]
@@ -286,11 +303,15 @@ class AdaptadorOpenAI:
             h["X-Title"] = "CNPJ Consulta"
         return h
 
-    async def rodada(self, historico: list[dict], tools: list[dict]) -> AsyncIterator[dict]:
+    async def rodada(self, historico: list[dict], tools: list[dict], *,
+                     sem_ferramentas: bool = False) -> AsyncIterator[dict]:
         corpo = {"model": self.modelo, "stream": True, "tools": tools,
                  "messages": [{"role": "system", "content": sistema()}, *historico]}
+        if sem_ferramentas:
+            corpo["tool_choice"] = "none"
         texto: list[str] = []
         parciais: dict[int, dict] = {}
+        atual: int | None = None  # chamada em montagem quando o provedor nao manda `index`
         motivo = None
         uso: dict = {}
         pensando = False
@@ -321,8 +342,16 @@ class AdaptadorOpenAI:
                         if delta.get("content"):
                             texto.append(delta["content"])
                             yield {"tipo": "texto", "delta": delta["content"]}
-                        for pos, tc in enumerate(delta.get("tool_calls") or []):
-                            idx = tc.get("index", pos)
+                        for tc in delta.get("tool_calls") or []:
+                            if isinstance(tc.get("index"), int):
+                                idx = tc["index"]
+                            else:
+                                # Sem `index` (ex.: Gemini manda cada chamada inteira num
+                                # pedaco): um `id` novo abre outra chamada.
+                                novo_id = tc.get("id")
+                                if atual is None or (novo_id and parciais[atual]["id"] not in ("", novo_id)):
+                                    atual = max(parciais, default=-1) + 1
+                                idx = atual
                             p = parciais.setdefault(idx, {"id": "", "nome": "", "args": ""})
                             p["id"] = tc.get("id") or p["id"]
                             fn = tc.get("function") or {}
@@ -331,7 +360,7 @@ class AdaptadorOpenAI:
                         motivo = escolha.get("finish_reason") or motivo
         except httpx.TimeoutException as e:
             raise ErroProvedor(f"{self.prov.nome} demorou demais para responder.") from e
-        except httpx.HTTPError as e:
+        except (httpx.HTTPError, httpx.InvalidURL, OverflowError, ValueError) as e:
             raise ErroProvedor(f"Sem conexão com {self.prov.nome} ({self.prov.base_url}).") from e
 
         r = Rodada(texto="".join(texto))
@@ -353,6 +382,8 @@ class AdaptadorOpenAI:
         elif motivo == "length" and r.chamadas:
             r.parada = "limite"
             r.aviso = "A resposta passou do limite de tamanho no meio de uma chamada de ferramenta. Peça algo menor."
+        elif not r.texto.strip() and not r.chamadas:
+            r.aviso = "O modelo não devolveu resposta. Tente reformular ou peça para continuar."
         else:
             msg: dict[str, Any] = {"role": "assistant", "content": r.texto}
             if r.chamadas:
@@ -408,12 +439,23 @@ def _entrada_exibicao(entrada: Any) -> Any:
 
 async def responder(conversa_id: int, texto_usuario: str) -> AsyncIterator[dict]:
     """Processa uma mensagem do usuario e emite os eventos da resposta."""
+    # Marca a conversa ANTES de qualquer await: duas mensagens simultaneas nao
+    # podem ler o mesmo historico e uma apagar a outra ao gravar.
+    if conversa_id in _em_andamento:
+        yield {"tipo": "erro", "mensagem": "Já há uma resposta em andamento nesta conversa."}
+        return
+    _em_andamento.add(conversa_id)
+    try:
+        async for ev in _responder(conversa_id, texto_usuario):
+            yield ev
+    finally:
+        _em_andamento.discard(conversa_id)
+
+
+async def _responder(conversa_id: int, texto_usuario: str) -> AsyncIterator[dict]:
     conv = await asyncio.to_thread(conversas.obter, conversa_id, com_historico=True)
     if conv is None:
         yield {"tipo": "erro", "mensagem": "Conversa não encontrada."}
-        return
-    if conversa_id in _em_andamento:
-        yield {"tipo": "erro", "mensagem": "Já há uma resposta em andamento nesta conversa."}
         return
     try:
         prov = await asyncio.to_thread(resolver, conv["provedor"])
@@ -430,24 +472,31 @@ async def responder(conversa_id: int, texto_usuario: str) -> AsyncIterator[dict]
     historico: list[dict] = conv["historico"]
     exibicao: list[dict] = conv["exibicao"]
     titulo = None if exibicao else " ".join(texto_usuario.split())[:70]
+    inicio_turno = len(historico)
     historico.append(ad.msg_usuario(texto_usuario))
     exibicao.append({"tipo": "usuario", "texto": texto_usuario})
     tok_e = tok_s = 0
 
     async def gravar() -> None:
-        nonlocal tok_e, tok_s
+        nonlocal tok_e, tok_s, titulo
         await asyncio.to_thread(conversas.salvar, conversa_id, historico=historico, exibicao=exibicao,
                                 titulo=titulo, tokens_entrada=tok_e, tokens_saida=tok_s)
         tok_e = tok_s = 0
+        titulo = None  # so na primeira gravacao: nao desfaz um "renomear" feito durante a resposta
 
-    _em_andamento.add(conversa_id)
     try:
         await gravar()
         yield {"tipo": "inicio", "provedor": prov.id, "modelo": conv["modelo"]}
         total_e = total_s = 0
-        for _ in range(max(1, cfg.chat_max_rodadas)):
+        limite = max(1, cfg.chat_max_rodadas)
+        rodada_n = 0
+        while True:
+            rodada_n += 1
+            # Esgotadas as rodadas com ferramentas, uma ultima ida sem ferramentas
+            # para o modelo responder com o que ja reuniu.
+            ultima = rodada_n > limite
             r: Rodada | None = None
-            async for ev in ad.rodada(historico, tools):
+            async for ev in ad.rodada(historico, tools, sem_ferramentas=ultima):
                 if ev["tipo"] == "_rodada":
                     r = ev["rodada"]
                 else:
@@ -457,9 +506,20 @@ async def responder(conversa_id: int, texto_usuario: str) -> AsyncIterator[dict]
             tok_s += r.saida_tokens
             total_e += r.entrada_tokens
             total_s += r.saida_tokens
+            if ultima and r.chamadas:
+                # O modelo insistiu em ferramentas na ida final: fica so o texto.
+                r.parada, r.chamadas = "fim", []
+                r.mensagens = [ad.msg_assistente_texto(r.texto)] if r.texto.strip() else []
             if r.aviso:
                 yield {"tipo": "aviso", "mensagem": r.aviso}
-            if r.parada in ("recusa", "limite"):
+            if r.parada == "recusa":
+                # O pedido recusado sai do historico enviado ao modelo (continua na
+                # tela): senao ele volta junto com o pedido reformulado.
+                del historico[inicio_turno:]
+                exibicao.append({"tipo": "aviso", "texto": r.aviso or ""})
+                await gravar()
+                break
+            if r.parada == "limite":
                 exibicao.append({"tipo": "aviso", "texto": r.aviso or ""})
                 await gravar()
                 break
@@ -473,6 +533,11 @@ async def responder(conversa_id: int, texto_usuario: str) -> AsyncIterator[dict]
                 historico.extend(r.mensagens)
                 if r.aviso:
                     exibicao.append({"tipo": "aviso", "texto": r.aviso})
+                if ultima:
+                    aviso = (f"Parei após {limite} rodadas de ferramentas. "
+                             "Peça para continuar se quiser que eu siga.")
+                    exibicao.append({"tipo": "aviso", "texto": aviso})
+                    yield {"tipo": "aviso", "mensagem": aviso}
                 await gravar()
                 break
 
@@ -495,16 +560,12 @@ async def responder(conversa_id: int, texto_usuario: str) -> AsyncIterator[dict]
             historico.extend(r.mensagens)
             historico.extend(ad.msgs_resultados(list(resultados)))
             await gravar()
-        else:
-            aviso = (f"Parei após {cfg.chat_max_rodadas} rodadas de ferramentas. "
-                     "Peça para continuar se quiser que eu siga.")
-            exibicao.append({"tipo": "aviso", "texto": aviso})
-            yield {"tipo": "aviso", "mensagem": aviso}
-            await gravar()
         yield {"tipo": "fim", "uso": {"entrada": total_e, "saida": total_s}}
-    except ErroProvedor as e:
-        exibicao.append({"tipo": "aviso", "texto": str(e)})
+    except Exception as e:  # noqa: BLE001 -- qualquer falha vira evento de erro, nunca fluxo quebrado
+        msg = str(e) if isinstance(e, ErroProvedor) else \
+            f"Erro inesperado ao falar com {prov.nome}: {type(e).__name__}. Confira o endereço e tente de novo."
+        if not isinstance(e, ErroProvedor):
+            log.exception("chat: falha inesperada na conversa %s", conversa_id)
+        exibicao.append({"tipo": "aviso", "texto": msg})
         await gravar()
-        yield {"tipo": "erro", "mensagem": str(e)}
-    finally:
-        _em_andamento.discard(conversa_id)
+        yield {"tipo": "erro", "mensagem": msg}

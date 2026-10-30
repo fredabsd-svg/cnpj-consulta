@@ -259,6 +259,10 @@ class Provider(abc.ABC):
             raise ProviderError(
                 f"fonte indisponivel (HTTP {status})", status=status, transient=status >= 500, source=self.name
             )
+        if "_raw" in body:
+            # 200 com pagina de bloqueio/proxy no lugar do JSON: nao e uma resposta valida.
+            raise ProviderError("resposta invalida da fonte (nao e JSON)", status=502, transient=True,
+                                source=self.name)
 
     # ---------- API publica ----------
 

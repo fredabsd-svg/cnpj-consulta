@@ -100,8 +100,15 @@ def _q(value: str) -> str:
     return quote_plus(value, safe="")
 
 
+_CPF_NO_NOME = re.compile(r"(?<!\d)\d{3}\.?\d{3}\.?\d{3}-?\d{2}(?!\d)")
+
+
 def company_name(company: CompanyUnified) -> str:
-    return (company.razao_social or company.nome_fantasia or company.cnpj_formatado).strip()
+    """Nome para as pesquisas. A razao social de empresario individual/MEI traz o
+    CPF do titular: ele e retirado (dado pessoal nao vai para buscadores)."""
+    nome = company.razao_social or company.nome_fantasia or ""
+    nome = " ".join(_CPF_NO_NOME.sub(" ", nome).split())
+    return nome or company.cnpj_formatado
 
 
 def default_query(company: CompanyUnified) -> str:

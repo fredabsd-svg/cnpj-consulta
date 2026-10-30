@@ -21,6 +21,7 @@ lista de CNPJs. Celular/fixo seguem o plano de numeracao da Anatel.
 from __future__ import annotations
 
 import json
+import math
 import re
 import threading
 import time
@@ -121,14 +122,51 @@ def _num(valor: Any, nome: str) -> float | None:
         return None
     if isinstance(valor, list):
         valor = valor[-1]
-    v = str(valor).strip().replace(".", "").replace(",", ".") if "," in str(valor) else str(valor).strip()
+    v = str(valor).strip()
+    if "," in v or re.fullmatch(r"\d{1,3}(\.\d{3})+", v):  # 1.234,56 ou 100.000 (milhar)
+        v = v.replace(".", "").replace(",", ".")
     try:
         n = float(v)
     except ValueError as e:
         raise FiltroInvalido(f"Número inválido em {nome}.") from e
-    if n < 0 or n > 1e15:
+    if not math.isfinite(n) or n < 0 or n > 1e15:
         raise FiltroInvalido(f"Número fora do intervalo em {nome}.")
     return n
+
+
+def sem_dados_de_socio(params: dict[str, Any]) -> dict[str, Any]:
+    """Copia dos filtros sem nome/documento/chave de socio (inclusive `excluir_*`
+    e folhas do construtor E/OU/NAO), para guardar em historico ou mostrar em
+    listas publicas sem dado pessoal (LGPD)."""
+    def eh_socio(nome: str) -> bool:
+        nome = nome.removeprefix("excluir_")
+        c = CAMPOS.get(nome)
+        return nome.startswith("socio_") or bool(c and c.socio)
+
+    def podar(no: Any) -> Any:
+        if not isinstance(no, dict):
+            return no
+        if "campo" in no:
+            return None if eh_socio(str(no["campo"])) else no
+        itens = [x for x in (podar(i) for i in (no.get("itens") or []) if isinstance(no.get("itens"), list)) if x]
+        return {**no, "itens": itens} if itens else None
+
+    out: dict[str, Any] = {}
+    for k, v in params.items():
+        if eh_socio(k):
+            continue
+        if k == "arvore":
+            bruto = v[-1] if isinstance(v, list) and v else v
+            try:
+                arv = json.loads(bruto) if isinstance(bruto, str) else bruto
+            except ValueError:
+                continue
+            arv = podar(arv)
+            if arv:
+                out[k] = json.dumps(arv, ensure_ascii=False)
+            continue
+        out[k] = v
+    return out
 
 
 def _palavras(valor: Any) -> list[str]:
@@ -138,6 +176,13 @@ def _palavras(valor: Any) -> list[str]:
     if len(palavras) > 10:
         raise FiltroInvalido("Use no máximo 10 palavras.")
     return palavras
+
+
+def _idade(valor: Any) -> float | None:
+    n = _num(valor, "idade")
+    if n is not None and n > 200:
+        raise FiltroInvalido("Idade: informe até 200 anos.")
+    return n
 
 
 def _anos_atras(anos: float) -> date:
@@ -214,6 +259,9 @@ def _q_rapida(v) -> Sql | None:
         if len(dig) < 2:
             raise FiltroInvalido("Digite ao menos 2 dígitos do CNPJ.")
         return "e.cnpj_completo >= ? AND e.cnpj_completo < ?", [dig, dig + "~"]
+    alfa = re.sub(r"[\s./-]", "", texto).upper()
+    if re.fullmatch(r"[A-Z0-9]{12}\d{2}", alfa) and any(c.isdigit() for c in alfa[:12]):
+        return "e.cnpj_completo = ?", [alfa]  # CNPJ alfanumerico completo
     ps = _palavras(texto)
     if not ps or max(len(p) for p in ps) < 2:
         raise FiltroInvalido("Digite ao menos 2 letras.")
@@ -224,13 +272,18 @@ def _q_rapida(v) -> Sql | None:
     return conds, params
 
 
+def _alnum(x: str) -> str:
+    """CNPJ sem mascara, preservando letras (CNPJ alfanumerico)."""
+    return re.sub(r"[^A-Za-z0-9]", "", x).upper()
+
+
 def _cnpj_prefixo(v) -> Sql | None:
-    vals = [re.sub(r"\D", "", x) for x in _lista(v)]
+    vals = [_alnum(x) for x in _lista(v)]
     vals = [x for x in vals if x]
     if not vals:
         return None
     if any(len(x) < 2 or len(x) > 14 for x in vals):
-        raise FiltroInvalido("CNPJ: informe de 2 a 14 dígitos.")
+        raise FiltroInvalido("CNPJ: informe de 2 a 14 caracteres.")
     exatos = [x for x in vals if len(x) == 14]
     prefixos = [x for x in vals if len(x) < 14]
     partes, params = [], []
@@ -244,12 +297,12 @@ def _cnpj_prefixo(v) -> Sql | None:
 
 
 def _cnpj_basico(v) -> Sql | None:
-    vals = [re.sub(r"\D", "", x) for x in _lista(v)]
+    vals = [_alnum(x) for x in _lista(v)]
     vals = [x for x in vals if x]
     if not vals:
         return None
     if any(len(x) != 8 for x in vals):
-        raise FiltroInvalido("CNPJ básico (raiz) tem 8 dígitos.")
+        raise FiltroInvalido("CNPJ básico (raiz) tem 8 caracteres.")
     return f"e.cnpj_basico IN ({_ph(len(vals))})", vals
 
 
@@ -467,11 +520,13 @@ def _socio_multi(v) -> Sql | None:
     n = _num(v, "sócio em várias empresas")
     if n is None:
         return None
+    if n > 1_000_000:
+        raise FiltroInvalido("Sócio em várias empresas: número alto demais.")
     return "s.socio_chave IN (SELECT socio_chave FROM socio_resumo WHERE qtd_empresas >= ?)", [max(2, int(n))]
 
 
 def _compartilha(v) -> Sql | None:
-    vals = [re.sub(r"\D", "", x) for x in _lista(v)]
+    vals = [_alnum(x) for x in _lista(v)]
     vals = [x for x in vals if x]
     if not vals:
         return None
@@ -520,9 +575,9 @@ _CAMPOS: list[Campo] = [
     Campo("abertura_ate", "Abertura até", "identificacao", "data",
           _cmp("e.data_inicio_atividade", "<=", _data, "abertura")),
     Campo("idade_min", "Idade mínima (anos)", "identificacao", "numero",
-          lambda v: (None if (n := _num(v, "idade")) is None else ("e.data_inicio_atividade <= ?", [_anos_atras(n)]))),
+          lambda v: (None if (n := _idade(v)) is None else ("e.data_inicio_atividade <= ?", [_anos_atras(n)]))),
     Campo("idade_max", "Idade máxima (anos)", "identificacao", "numero",
-          lambda v: (None if (n := _num(v, "idade")) is None else ("e.data_inicio_atividade >= ?", [_anos_atras(n + 1)]))),
+          lambda v: (None if (n := _idade(v)) is None else ("e.data_inicio_atividade >= ?", [_anos_atras(n + 1)]))),
     Campo("capital_min", "Capital social mínimo (R$)", "perfil", "numero",
           _cmp("e.capital_social", ">=", _num, "capital")),
     Campo("capital_max", "Capital social máximo (R$)", "perfil", "numero",
@@ -836,7 +891,7 @@ def _compilar_arvore(no: Any, ctx: _Ctx, prof: int = 0, contador: list[int] | No
     contador[0] += 1
     if contador[0] > MAX_ITENS_ARVORE:
         raise FiltroInvalido(f"Construtor de filtros: no máximo {MAX_ITENS_ARVORE} condições.")
-    negar = bool(no.get("negar"))
+    negar = bool(_bool(no.get("negar"))) if not isinstance(no.get("negar"), bool) else no["negar"]
     if "campo" in no:
         r = _compilar_folha(str(no["campo"]), no.get("valor"), ctx)
     else:
@@ -845,7 +900,10 @@ def _compilar_arvore(no: Any, ctx: _Ctx, prof: int = 0, contador: list[int] | No
             raise FiltroInvalido("Operador inválido (use E ou OU).")
         juntor = " AND " if op in ("E", "AND") else " OR "
         partes, params = [], []
-        for item in no.get("itens") or []:
+        itens = no.get("itens") or []
+        if not isinstance(itens, list):
+            raise FiltroInvalido("Construtor de filtros: `itens` deve ser uma lista.")
+        for item in itens:
             sub = _compilar_arvore(item, ctx, prof + 1, contador)
             if sub:
                 partes.append(f"({sub[0]})")
@@ -853,7 +911,9 @@ def _compilar_arvore(no: Any, ctx: _Ctx, prof: int = 0, contador: list[int] | No
         r = (juntor.join(partes), params) if partes else None
     if r is None:
         return None
-    return (f"NOT ({r[0]})", r[1]) if negar else r
+    # NAO sobre dado ausente (NULL) tem de incluir a linha: "nao e do DDD 63"
+    # vale para quem nao tem telefone.
+    return (f"NOT coalesce(({r[0]}), false)", r[1]) if negar else r
 
 
 def compilar(f: Filtros) -> Sql:
@@ -876,7 +936,7 @@ def compilar(f: Filtros) -> Sql:
     for nome, valor in f.excluir.items():
         r = _compilar_folha(nome, valor, ctx)
         if r:
-            partes.append(f"NOT ({r[0]})")
+            partes.append(f"NOT coalesce(({r[0]}), false)")
             params += r[1]
     if f.arvore:
         r = _compilar_arvore(f.arvore, ctx)
@@ -979,7 +1039,7 @@ def _colunas_sql(colunas: list[str]) -> str:
 
 def buscar(f: Filtros, *, colunas: list[str] | None = None, cancelar: threading.Event | None = None,
            timeout: float | None = None, contar: bool = True) -> Resultado:
-    colunas = [c for c in (colunas or COLUNAS_TELA) if c in COLUNAS]
+    colunas = [c for c in (colunas or COLUNAS_TELA) if c in COLUNAS_TELA]
     if "cnpj" not in colunas:
         colunas.insert(0, "cnpj")
     where, params = compilar(f)
@@ -1160,7 +1220,7 @@ def _rotulo_valor(nome: str, valor: Any, nomes_municipios: dict | None = None) -
     vals = _lista(valor)
     opcoes = dict(c.opcoes)
     if nome == "municipio" and nomes_municipios:
-        vals = [nomes_municipios.get(int(v), v) if str(v).isdigit() else v for v in vals]
+        vals = [nomes_municipios.get(int(v), v) if re.fullmatch(r"[0-9]+", str(v)) else v for v in vals]
     rot = [opcoes.get(v, v) for v in vals]
     return f"{c.rotulo}: {', '.join(str(x) for x in rot)}"
 
@@ -1237,7 +1297,7 @@ def nomes_para_chips(f: Filtros) -> dict[str, dict]:
             for campo, tabela in pedidos.items():
                 if campo not in usados:
                     continue
-                cods = [int(v) for v in _lista(usados[campo]) if str(v).isdigit()]
+                cods = [int(v) for v in _lista(usados[campo]) if re.fullmatch(r"[0-9]{1,9}", str(v))]
                 if cods:
                     rows = conn.execute(
                         f"SELECT codigo, descricao FROM {tabela} WHERE codigo IN ({_ph(len(cods))})", cods).fetchall()

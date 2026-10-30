@@ -52,10 +52,21 @@ def _situacao_item(company: CompanyUnified) -> DiligenceItem:
     return DiligenceItem("situacao_ativa", "Situação cadastral", "falha", f"Situação atual: {sit}.")
 
 
+def _situacao_especial_item(company: CompanyUnified) -> DiligenceItem | None:
+    if not company.situacao_especial:
+        return None
+    return DiligenceItem("situacao_especial", "Situação especial", "alerta",
+                         f"{company.situacao_especial}. Verifique o processo antes de contratar.")
+
+
 def _simples_mei_item(company: CompanyUnified) -> DiligenceItem:
+    # Sempre informativo: o enquadramento e dado cadastral e nao comprova
+    # regularidade fiscal, entao nao pesa no veredito.
     if company.opcao_simples is None and company.opcao_mei is None:
-        return DiligenceItem("simples_mei", "Simples / MEI", "alerta", "Simples e MEI não informados.")
-    return DiligenceItem("simples_mei", "Simples / MEI", "ok", "Enquadramento informado.")
+        return DiligenceItem("simples_mei", "Simples / MEI", "info",
+                             "Simples e MEI não informados pelas fontes.")
+    return DiligenceItem("simples_mei", "Simples / MEI", "info",
+                         "Enquadramento informado (dado cadastral; não comprova regularidade fiscal).")
 
 
 def _capital_item(company: CompanyUnified) -> DiligenceItem:
@@ -108,8 +119,9 @@ def _sancoes_item(sanctions: SanctionsCheck | None) -> DiligenceItem:
 def build_diligence_checklist(
     company: CompanyUnified, sanctions: SanctionsCheck | None = None
 ) -> list[DiligenceItem]:
-    return [
+    itens = [
         _situacao_item(company),
+        _situacao_especial_item(company),
         _simples_mei_item(company),
         _capital_item(company),
         _qsa_item(company),
@@ -117,6 +129,7 @@ def build_diligence_checklist(
         _fontes_item(company),
         _sancoes_item(sanctions),
     ]
+    return [i for i in itens if i is not None]
 
 
 def diligence_summary(items: list[DiligenceItem]) -> dict[str, int]:

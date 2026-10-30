@@ -67,7 +67,11 @@ def normalizar(tipo: str, valor: str) -> tuple[str, str | None]:
         return v, None
     if tipo == "site":
         v = valor if "://" in valor else "https://" + valor
-        partes = urlsplit(v)
+        try:
+            partes = urlsplit(v)
+            partes.hostname  # noqa: B018 -- levanta ValueError em IPv6 mal formado
+        except ValueError as e:
+            raise ContatoInvalido("Site inválido (use o endereço completo, ex.: https://empresa.com.br).") from e
         if partes.scheme not in ("http", "https") or "." not in (partes.hostname or ""):
             raise ContatoInvalido("Site inválido (use o endereço completo, ex.: https://empresa.com.br).")
         host = (partes.hostname or "").lower().removeprefix("www.")
@@ -125,7 +129,11 @@ def salvar(
         raise ContatoInvalido("Informe a fonte do contato (ex.: site oficial da empresa, e-mail do cliente).")
     if url_fonte:
         url_fonte = url_fonte.strip()
-        if urlsplit(url_fonte).scheme not in ("http", "https"):
+        try:
+            esquema = urlsplit(url_fonte).scheme
+        except ValueError:
+            esquema = ""
+        if esquema not in ("http", "https"):
             raise ContatoInvalido("O endereço da fonte deve começar com http:// ou https://.")
     if verificado and data_verificacao is None:
         data_verificacao = date.today()

@@ -99,8 +99,9 @@ Exemplos:
   oficiais separados dos complementares, nada de contatos inventados,
   Simples/MEI não é prova de regularidade fiscal, exportação de contatos exige
   finalidade.
-- **Limites:** `CHAT_MAX_RODADAS` (chamadas de ferramenta por mensagem, padrão
-  25) e `CHAT_RESULTADO_MAX_CHARS` (tamanho máximo de um resultado enviado ao
+- **Limites:** `CHAT_MAX_RODADAS` (idas ao modelo com ferramentas por mensagem,
+  padrão 25; cada ida pode pedir várias ferramentas em paralelo; ao esgotar, o
+  modelo responde mais uma vez, sem ferramentas, com o que já reuniu) e `CHAT_RESULTADO_MAX_CHARS` (tamanho máximo de um resultado enviado ao
   modelo) evitam laços e custos inesperados. Para desligar o chat:
   `CHAT_HABILITADO=false`.
 

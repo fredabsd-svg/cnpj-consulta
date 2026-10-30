@@ -161,8 +161,8 @@ def salvar(pid: str, *, api_key: str | None = None, base_url: str | None = None,
     if pid not in PRESETS:
         raise LookupError(pid)
     base_url = (base_url or "").strip()
-    if base_url and not base_url.startswith(("http://", "https://")):
-        raise ValueError("O endereço deve começar com http:// ou https://")
+    if base_url:
+        validar_endereco(base_url)
     init_database()
     with get_session_factory()() as s:
         r = s.get(ChatProvedor, pid) or ChatProvedor(provedor=pid)
@@ -179,6 +179,19 @@ def salvar(pid: str, *, api_key: str | None = None, base_url: str | None = None,
         s.commit()
     _cache_modelos.pop(pid, None)
     return resolver(pid)
+
+
+def validar_endereco(url: str) -> None:
+    """Recusa endereco que o cliente HTTP nao conseguiria usar (porta invalida, IPv6 mal fechado)."""
+    if not url.startswith(("http://", "https://")):
+        raise ValueError("O endereço deve começar com http:// ou https://")
+    try:
+        u = httpx.URL(url)
+        porta = u.port
+    except (httpx.InvalidURL, ValueError, TypeError) as e:
+        raise ValueError(f"Endereço inválido: {url}") from e
+    if not u.host or (porta is not None and not 0 < porta < 65536):
+        raise ValueError(f"Endereço inválido: {url}")
 
 
 # ---------------------------------------------------------------- lista de modelos
@@ -206,14 +219,17 @@ async def listar_modelos(prov: Provedor) -> list[str]:
 async def _modelos_remotos(prov: Provedor) -> list[str]:
     headers = {"Authorization": f"Bearer {prov.api_key}"} if prov.api_key else {}
     try:
+        validar_endereco(prov.base_url)
         async with httpx.AsyncClient(timeout=8.0) as c:
             r = await c.get(f"{prov.base_url}/models", headers=headers)
             r.raise_for_status()
             dados = r.json()
-    except (TimeoutError, httpx.HTTPError, ValueError) as e:
+    except Exception as e:  # noqa: BLE001 -- um provedor com problema nao derruba a lista dos outros
         log.info("lista de modelos de %s indisponivel: %s", prov.id, type(e).__name__)
         return []
-    itens = dados.get("data", dados.get("models", [])) if isinstance(dados, dict) else []
+    itens = (dados.get("data") or dados.get("models") or []) if isinstance(dados, dict) else dados
+    if not isinstance(itens, list):
+        return []
     ids = []
     for it in itens:
         mid = str((it.get("id") or it.get("name") or "") if isinstance(it, dict) else it)

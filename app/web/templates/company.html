@@ -32,10 +32,15 @@
                 <a class="btn" href="/empresa/{{ c.cnpj }}/cartao-cnpj">{{ ui.icon('landmark') }} Cartão CNPJ</a>
                 <a class="btn" href="/empresa/{{ c.cnpj }}/inscricao-estadual">{{ ui.icon('building') }} Inscrição estadual</a>
                 {% if c.razao_social %}
-                <button type="button" class="btn" aria-pressed="{{ 'true' if favorite else 'false' }}"
-                        data-favorite-url="/api/favorites/{{ c.cnpj }}" data-label="{{ c.razao_social }}">
-                    {{ ui.icon('star') }} <span data-favorite-text>{{ "Favorito" if favorite else "Favoritar" }}</span>
-                </button>
+                {# Sem JavaScript o formulario grava e volta para esta pagina; com JS, app.js faz o mesmo sem recarregar. #}
+                <form method="post" action="/favoritos/{{ c.cnpj }}" class="form-favorito">
+                    <input type="hidden" name="acao" value="{{ 'remover' if favorite else 'adicionar' }}" data-favorite-acao>
+                    <input type="hidden" name="rotulo" value="{{ c.razao_social }}">
+                    <button type="submit" class="btn" aria-pressed="{{ 'true' if favorite else 'false' }}"
+                            data-favorite-url="/api/favorites/{{ c.cnpj }}" data-label="{{ c.razao_social }}">
+                        {{ ui.icon('star') }} <span data-favorite-text>{{ "Favorito" if favorite else "Favoritar" }}</span>
+                    </button>
+                </form>
                 {% endif %}
                 <details class="more-actions">
                     <summary class="btn">Mais</summary>

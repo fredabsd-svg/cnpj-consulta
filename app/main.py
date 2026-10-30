@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import ipaddress
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -11,12 +12,12 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Request
-from fastapi.responses import PlainTextResponse, RedirectResponse, Response
+from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
 from app.api import admin, batch, busca, companies, health, history, partners, providers
-from app.config import assert_bind_allowed, get_settings
+from app.config import assert_bind_allowed, get_settings, host_de_execucao
 from app.db import init_database
 from app.providers.registry import get_registry
 from app.receita.servico import agendador
@@ -54,7 +55,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         level=settings.log_level,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
-    assert_bind_allowed(settings)  # fail-fast se host inseguro em production
+    assert_bind_allowed(settings, host_de_execucao())  # fail-fast se host inseguro em production
     init_database()  # idempotente: cria as tabelas se faltarem
     logging.getLogger("uvicorn.access").addFilter(SemQueryString())
     # Atualizacao agendada da base (so age se ligada no painel Base de Dados CNPJ)
@@ -101,8 +102,40 @@ def _is_cross_site(request: Request) -> bool:
     return origin == "null"
 
 
+_HOSTS_LOCAIS = {"localhost", "127.0.0.1", "::1"}
+
+
+def _host_permitido(request: Request) -> bool:
+    """Protecao contra DNS rebinding: um site que passa a resolver para 127.0.0.1
+    chega com o PROPRIO nome no Host. Aceita localhost, enderecos IP (o rebinding
+    precisa de um nome) e os nomes de APP_HOSTS_PERMITIDOS."""
+    bruto = (request.headers.get("host") or "").strip().lower()
+    if bruto.startswith("["):
+        host = bruto[1:].split("]", 1)[0]
+    else:
+        host = bruto.rsplit(":", 1)[0] if bruto.count(":") == 1 else bruto
+    if not host:
+        return False
+    if host in _HOSTS_LOCAIS:
+        return True
+    try:
+        ipaddress.ip_address(host)
+        return True
+    except ValueError:
+        pass
+    cfg = get_settings()
+    extras = {h.strip().lower() for h in cfg.app_hosts_permitidos.split(",") if h.strip()}
+    if cfg.app_host and cfg.app_host not in ("0.0.0.0", "::"):
+        extras.add(cfg.app_host.strip().lower())
+    return host in extras
+
+
 @app.middleware("http")
 async def security_middleware(request: Request, call_next) -> Response:
+    if not _host_permitido(request):
+        return PlainTextResponse(
+            "Host nao permitido. Acesse por localhost ou pelo endereco IP, ou inclua o nome em "
+            "APP_HOSTS_PERMITIDOS.", status_code=400)
     if request.method not in _SAFE_METHODS and _is_cross_site(request):
         return PlainTextResponse("Requisicao de outra origem bloqueada.", status_code=403)
     response = await call_next(request)
@@ -112,6 +145,12 @@ async def security_middleware(request: Request, call_next) -> Response:
             continue
         response.headers.setdefault(key, value)
     return response
+
+
+@app.exception_handler(OverflowError)
+async def _numero_grande(request: Request, exc: OverflowError) -> Response:
+    # Id/numero acima do que o SQLite guarda (ex.: /listas/99999999999999999999): nao existe.
+    return JSONResponse({"detail": "Não encontrado."}, status_code=404)
 
 
 @app.exception_handler(LoginNecessario)
