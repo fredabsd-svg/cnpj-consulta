@@ -21,6 +21,7 @@ from app.receita import jobs, servico
 from app.services import admin_auth
 from app.services import busca_avancada as ba
 from app.services import contatos as contatos_srv
+from app.services import cpf as cpf_srv
 from app.services import ficha as ficha_srv
 from app.services import listas as listas_srv
 from app.services.admin_auth import exigir_admin_pagina, ip_de
@@ -254,7 +255,66 @@ async def socio(request: Request, chave: str) -> HTMLResponse:
             ctx["erro"], status = "Sócio não encontrado na base local.", 404
     except ficha_srv.BaseIndisponivel as e:
         ctx["erro"], status = str(e), 503
+    ctx["admin"] = admin_auth.eh_admin(request)
+    if ctx["admin"] and ctx["socio"]:
+        s = ctx["socio"]
+        achados = await asyncio.to_thread(cpf_srv.revelar, [(s["nome"], s["documento"])])
+        ctx["cpf_completo"] = next(iter(achados.values()), None)
+        if ctx["cpf_completo"]:
+            jobs.auditar("cpf.visualizar", detalhe=f"socio={chave} quantidade=1", ip=ip_de(request))
     return _render(request, "socio.html", ctx, status)
+
+
+# ---------------------------------------------------------------- cofre de CPFs (admin)
+
+
+@router.get("/admin/cpfs", response_class=HTMLResponse, dependencies=[Depends(exigir_admin_pagina)])
+async def cpfs_pagina(request: Request, cpf: str = Query("", max_length=20), msg: str = Query("", max_length=300)
+                      ) -> HTMLResponse:
+    ctx: dict[str, Any] = {"active": "cpfs", "registros": await asyncio.to_thread(cpf_srv.listar),
+                           "cpf": cpf.strip(), "resultado": None, "erro": None, "msg": msg}
+    status = 200
+    if ctx["cpf"]:
+        try:
+            ctx["resultado"] = await asyncio.to_thread(cpf_srv.buscar, ctx["cpf"])
+            # Auditoria sem o numero: so que houve busca e quantos achados.
+            r = ctx["resultado"]
+            jobs.auditar("cpf.buscar", ip=ip_de(request),
+                         detalhe=f"titular={len(r['titular'])} socios={len(r['socios'])} "
+                                 f"cadastrado={'sim' if r['cadastrado'] else 'nao'}")
+        except cpf_srv.CpfInvalido as e:
+            ctx["erro"], status = str(e), 400
+        except ficha_srv.BaseIndisponivel as e:
+            ctx["erro"], status = str(e), 503
+    return _render(request, "cpfs.html", ctx, status)
+
+
+@router.post("/admin/cpfs", dependencies=[Depends(exigir_admin_pagina)])
+async def cpfs_cadastrar(request: Request, nome: str = Form("", max_length=200), cpf: str = Form("", max_length=20),
+                         fonte: str = Form("", max_length=300), finalidade: str = Form("", max_length=300),
+                         documento_publicado: str = Form("", max_length=30),
+                         voltar: str = Form("", max_length=300)) -> Response:
+    destino = voltar if voltar.startswith("/") and not voltar.startswith(("//", "/\\")) else "/admin/cpfs"
+    try:
+        r = await asyncio.to_thread(cpf_srv.cadastrar, nome, cpf, fonte=fonte, finalidade=finalidade,
+                                    documento_publicado=documento_publicado or None)
+    except cpf_srv.CpfInvalido as e:
+        jobs.auditar("cpf.cadastrar", resultado="negado", detalhe="validacao recusou o cadastro", ip=ip_de(request))
+        sep = "&" if "?" in destino else "?"
+        return RedirectResponse(f"{destino}{sep}{urlencode({'msg': str(e)})}", 303)
+    jobs.auditar("cpf.cadastrar", detalhe=f"registro={r['id']} conferido={r['conferido']} "
+                                          f"finalidade={finalidade.strip()[:200]}", ip=ip_de(request))
+    return RedirectResponse(destino, 303)
+
+
+@router.post("/admin/cpfs/{registro_id}/remover", dependencies=[Depends(exigir_admin_pagina)])
+async def cpfs_remover(request: Request, registro_id: int) -> Response:
+    try:
+        await asyncio.to_thread(cpf_srv.remover, registro_id)
+    except LookupError:
+        return RedirectResponse(f"/admin/cpfs?{urlencode({'msg': 'Registro não encontrado.'})}", 303)
+    jobs.auditar("cpf.remover", detalhe=f"registro={registro_id}", ip=ip_de(request))
+    return RedirectResponse(f"/admin/cpfs?{urlencode({'msg': 'CPF removido do cofre.'})}", 303)
 
 
 # ---------------------------------------------------------------- ficha (export)

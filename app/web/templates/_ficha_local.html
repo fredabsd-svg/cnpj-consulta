@@ -19,6 +19,7 @@
         {% if i.situacao_especial %}<dt>Situação especial</dt><dd>{{ i.situacao_especial }}{% if i.data_situacao_especial %} desde {{ i.data_situacao_especial | data_br }}{% endif %}</dd>{% endif %}
         <dt>Início da atividade</dt><dd>{{ i.data_abertura | data_br }}{% if i.idade_anos is not none %} <span class="muted">({{ i.idade_anos }} ano{{ "s" if i.idade_anos != 1 }})</span>{% endif %}</dd>
         <dt>Natureza jurídica</dt><dd>{% if i.natureza_codigo is not none %}<span class="mono">{{ "%04d" | format(i.natureza_codigo) }}</span> · {% endif %}{{ ui.value(i.natureza) }}</dd>
+        {% if i.cpf_titular %}<dt>CPF do titular</dt><dd class="mono">{{ i.cpf_titular }} <button type="button" class="icon-btn icon-btn-sm" data-copy="{{ i.cpf_titular }}" aria-label="Copiar CPF do titular">{{ ui.icon('copy') }}</button> <span class="small muted">publicado pela Receita na razão social</span></dd>{% endif %}
         <dt>Porte</dt><dd>{{ ui.value(i.porte) }}</dd>
         <dt>Capital social</dt><dd>{{ i.capital_social | brl }}</dd>
         {% if i.ente_federativo %}<dt>Ente federativo responsável</dt><dd>{{ i.ente_federativo }}</dd>{% endif %}
@@ -83,7 +84,7 @@
                     <span class="cell-sub">{{ s.tipo }}{% if s.pais %} · {{ s.pais }}{% endif %}{% if s.qtd_empresas and s.qtd_empresas > 1 %} · <a href="/socio/{{ s.chave }}">{{ s.qtd_empresas }} empresas</a>{% endif %}</span></td>
                 <td>{{ ui.value(s.qualificacao) }}{% if s.administrador %} <span class="badge badge-violet">Administração</span>{% endif %}</td>
                 <td class="nowrap">{{ s.data_entrada | data_br }}</td>
-                <td class="mono nowrap">{{ s.documento or "—" }}</td>
+                <td class="mono nowrap">{% set k = chave_pessoa(s.nome, s.documento) %}{% if cpfs and k in cpfs %}{{ cpfs[k].cpf }} <span class="badge badge-violet" title="Fonte: {{ cpfs[k].fonte }}">completo · admin</span>{% else %}{{ s.documento or "—" }}{% endif %}</td>
                 <td class="nowrap">{{ s.faixa_etaria or "—" }}</td>
                 <td>{% if s.representante %}{{ s.representante.nome or "" }}{% if s.representante.documento %} <span class="mono small">{{ s.representante.documento }}</span>{% endif %}{% if s.representante.qualificacao %}<span class="cell-sub">{{ s.representante.qualificacao }}</span>{% endif %}{% else %}—{% endif %}</td>
             </tr>
@@ -91,7 +92,7 @@
             </tbody>
         </table>
     </div>
-    <p class="muted small">CPFs aparecem mascarados, como publicados pela Receita Federal; o app não tenta revelá-los. A base pública não informa percentual de participação.</p>
+    <p class="muted small">CPFs aparecem mascarados, como publicados pela Receita Federal; o app não os deduz. O CPF completo só aparece para o administrador quando foi cadastrado a partir de documentos do cliente ou recebido de uma fonte consultada (<a href="/admin/cpfs">cofre de CPFs</a>). A base pública não informa percentual de participação.</p>
     {% else %}
     <p class="empty-state">A base da Receita não traz quadro societário para esta empresa (comum em empresário individual e MEI).</p>
     {% endif %}

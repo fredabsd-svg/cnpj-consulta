@@ -26,7 +26,7 @@ import duckdb
 from app.config import get_settings
 from app.receita.duck import Vigia, _safe_size
 
-TABELAS_BLOQUEADAS = {"chat_provedor"}
+TABELAS_BLOQUEADAS = {"chat_provedor", "socio_cpf"}  # chaves de API e o cofre de CPFs
 
 
 class ConsultaInvalida(ValueError):

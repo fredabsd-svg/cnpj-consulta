@@ -20,6 +20,32 @@
     {% if s.identificacao_provavel %}
     <p class="muted small section">{{ ui.icon('info') }} A Receita publica o CPF mascarado (6 dígitos visíveis). As empresas abaixo têm um sócio com o <strong>mesmo nome e os mesmos dígitos visíveis</strong> — identificação provável, não confirmação de que é a mesma pessoa.</p>
     {% endif %}
+    {% if admin and s.tipo_codigo == 2 %}
+    <div class="section">
+        {% if cpf_completo %}
+        <p><strong>CPF completo:</strong> <span class="mono">{{ cpf_completo.cpf }}</span>
+            <span class="badge badge-violet">só administrador</span>
+            <span class="small muted">fonte: {{ cpf_completo.fonte }}{% if cpf_completo.conferido %} · confere com os dígitos publicados{% endif %}</span></p>
+        {% else %}
+        <details>
+            <summary>{{ ui.icon('lock') }} Cadastrar o CPF completo (documento do cliente)</summary>
+            <form method="post" action="/admin/cpfs" class="form-contato">
+                <input type="hidden" name="nome" value="{{ s.nome }}">
+                <input type="hidden" name="documento_publicado" value="{{ s.documento }}">
+                <input type="hidden" name="voltar" value="/socio/{{ s.chave }}">
+                <div class="field"><label for="cpf-num">CPF completo</label>
+                    <input class="input mono" id="cpf-num" name="cpf" inputmode="numeric" maxlength="14" required placeholder="000.000.000-00" autocomplete="off"></div>
+                <div class="field"><label for="cpf-fonte">Fonte</label>
+                    <input class="input" id="cpf-fonte" name="fonte" maxlength="300" required placeholder="ex.: contrato social do cliente"></div>
+                <div class="field"><label for="cpf-fin">Finalidade</label>
+                    <input class="input" id="cpf-fin" name="finalidade" maxlength="300" required minlength="10" placeholder="ex.: cadastro do sócio no eSocial do cliente"></div>
+                <button type="submit" class="btn btn-primary">{{ ui.icon('save') }} Guardar no cofre</button>
+                <p class="hint">O app confere se o número bate com os dígitos publicados pela Receita ({{ s.documento }}). Fica criptografado, só o administrador vê e cada visualização vai para a auditoria.</p>
+            </form>
+        </details>
+        {% endif %}
+    </div>
+    {% endif %}
     <div class="actions section">
         <a class="btn" href="/busca?socio_chave={{ s.chave }}">{{ ui.icon('filter') }} Abrir estas empresas na busca avançada</a>
     </div>

@@ -166,6 +166,7 @@
             <dt>Motivo da situação</dt><dd>{{ ui.value(c.motivo_situacao) }}</dd>
             <dt>Data de abertura</dt><dd>{{ c.data_abertura | data_br }}{% if c.data_abertura %} <span class="muted">({{ c.data_abertura | idade }})</span>{% endif %}</dd>
             <dt>Natureza jurídica</dt><dd>{{ ui.value(c.natureza_juridica) }}</dd>
+            {% if cpf_titular %}<dt>CPF do titular</dt><dd class="mono">{{ cpf_titular }} <span class="small muted">publicado pela Receita na razão social</span></dd>{% endif %}
             <dt>Porte</dt><dd>{{ ui.value(c.porte) }}</dd>
             <dt>Capital social</dt><dd>{{ c.capital_social | brl }}</dd>
             <dt>Simples Nacional</dt><dd>{{ ui.sim_nao(c.opcao_simples) }}</dd>
@@ -200,14 +201,14 @@
                         <td>{{ s.nome }}{% if s.tipo == "PESSOA_JURIDICA" %} <span class="badge badge-plain">PJ</span>{% elif s.tipo == "ESTRANGEIRO" %} <span class="badge badge-plain">Estrangeiro</span>{% endif %}</td>
                         <td>{{ ui.value(s.qualificacao) }}</td>
                         <td class="nowrap">{{ s.data_entrada | data_br }}</td>
-                        <td class="mono nowrap">{{ s.documento_mascarado or "-" }}</td>
+                        <td class="mono nowrap">{% set k = chave_pessoa(s.nome, s.documento_mascarado) %}{% if cpfs and k in cpfs %}{{ cpfs[k].cpf }} <span class="badge badge-violet" title="Fonte: {{ cpfs[k].fonte }}">completo · admin</span>{% else %}{{ s.documento_mascarado or "-" }}{% endif %}</td>
                         <td class="small muted">{{ s.fonte | fonte }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
-        <p class="muted small">CPFs aparecem mascarados, como publicados pela Receita Federal. Este aplicativo não tenta revelá-los.</p>
+        <p class="muted small">CPFs aparecem mascarados, como publicados pela Receita Federal; o app não os deduz. O CPF completo só aparece para o administrador quando foi cadastrado a partir de documentos do cliente ou recebido de uma fonte consultada (<a href="/admin/cpfs">cofre de CPFs</a>).</p>
         {% else %}
         <p class="empty-state">Nenhum sócio informado pelas fontes (comum em empresário individual e MEI).</p>
         {% endif %}

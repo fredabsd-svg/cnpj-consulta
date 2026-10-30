@@ -70,6 +70,12 @@ async def query_company_async(
                 summary,
             )
         unified = reconcile(normalized, results)
+        # CPF completo devolvido por fonte externa vai para o cofre (so o
+        # administrador ve); a resposta publica continua mascarada.
+        try:
+            await asyncio.to_thread(_guardar_cpfs, normalized, results)
+        except Exception as e:  # noqa: BLE001 -- nunca derruba a consulta
+            log.warning("falha ao guardar CPF de fonte externa: %s", type(e).__name__)
         # A base local e consultada direto (rapida) e muda a cada atualizacao:
         # nao vai para o cache.
         # So vai para o cache consulta com dados: nao guarda um "vazio" por 24h.
@@ -92,6 +98,26 @@ async def query_company_async(
         log.warning("falha ao registrar historico: %s", e)
 
     return unified
+
+
+def _guardar_cpfs(cnpj: str, results: list) -> None:
+    from app.services import cpf as cpf_srv
+
+    fontes = []
+    for r in results:
+        if r.http_status != 200 or r.provider == "receita_local" or not isinstance(r.raw, dict):
+            continue
+        lista = r.raw.get("qsa") or r.raw.get("socios") or []
+        socios = [{"nome": s.get("nome_socio") or s.get("nome"),
+                   "documento": s.get("cnpj_cpf_do_socio") or s.get("cpf_cnpj_socio")}
+                  for s in lista if isinstance(s, dict)]
+        if socios:
+            fontes.append((r.provider, socios))
+    n = cpf_srv.capturar_de_fontes(cnpj, fontes) if fontes else 0
+    if n:
+        from app.receita import jobs
+
+        jobs.auditar("cpf.capturado", detalhe=f"cnpj={cnpj} quantidade={n} origem=fonte_externa")
 
 
 def query_company(

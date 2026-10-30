@@ -190,3 +190,26 @@ class Exportacao(Base):
     erro: Mapped[str | None] = mapped_column(String(500))
     criado_em: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     finalizado_em: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class SocioCpf(Base):
+    """CPF completo de uma pessoa (socio ou representante), so para o administrador.
+
+    O numero fica criptografado (Fernet); `cpf_indice` e um HMAC para achar pelo
+    CPF sem guarda-lo em claro. `pessoa` = nome normalizado + digitos 4-9, como a
+    Receita identifica o socio. Ver app/services/cpf.py.
+    """
+
+    __tablename__ = "socio_cpf"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    pessoa: Mapped[str] = mapped_column(String(260), unique=True, index=True)
+    nome: Mapped[str] = mapped_column(String(200))
+    cpf_cifrado: Mapped[str] = mapped_column(Text)
+    cpf_indice: Mapped[str] = mapped_column(String(64), index=True)
+    cpf_mascarado: Mapped[str] = mapped_column(String(20))
+    fonte: Mapped[str] = mapped_column(String(300))
+    finalidade: Mapped[str] = mapped_column(String(300))
+    origem: Mapped[str] = mapped_column(String(20), default="manual")  # manual | fonte_externa
+    conferido: Mapped[bool] = mapped_column(Boolean, default=False)  # bate com os digitos publicados
+    criado_em: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

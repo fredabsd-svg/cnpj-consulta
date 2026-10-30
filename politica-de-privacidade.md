@@ -77,6 +77,7 @@ As integracoes com chave ou certificado vem **desligadas** por padrao; o certifi
 - **Exportacoes** com telefones, e-mails ou nomes de socios exigem informar a finalidade e ficam registradas na trilha de auditoria (acao, quantidade de linhas, colunas e finalidade; nunca os dados exportados).
 - Nomes e documentos de socios nao entram no historico de buscas, nos logs de processamento, na auditoria nem nas pesquisas na internet; o log de acesso nao guarda a query string.
 - O CPF que aparece na razao social de empresario individual/MEI e retirado do historico de consultas, do historico de buscas e das pesquisas na internet.
+- CPF completo de socio (cofre, `/admin/cpfs`): so existe quando o administrador o cadastra a partir de documentos do cliente (com fonte e finalidade) ou quando uma fonte consultada o devolve; o app nunca o deduz dos digitos publicados. Fica criptografado no banco do app, e visivel so ao administrador, e cada cadastro, visualizacao, busca e remocao vai para a auditoria (sem o numero). Pode ser removido a qualquer momento (pedido do titular, fim da finalidade).
 - Telefones e e-mails em quantidade (API JSON, ferramentas de IA e exportacao) so com a finalidade informada, registrada na auditoria sem os dados.
 - Funcoes administrativas exigem token de administrador e sao auditadas.
 

@@ -73,7 +73,9 @@ Como usar:
 
 Regras (LGPD e procedencia):
 - CPF de socio vem mascarado pela Receita (***.123.456-**); nao tente
-  reconstitui-lo nem sugerir o numero completo.
+  reconstitui-lo nem sugerir o numero completo. O CPF completo so existe no
+  cofre do app (ferramentas `cpf_*`, so administrador): use quando o usuario
+  pedir e nunca o deduza de outros dados.
 - Diferencie dados oficiais (Receita) de complementares (cadastrados com fonte).
   Nao invente telefone, e-mail ou site que nao estejam nos resultados.
 - Simples/MEI e informacao cadastral, nao prova regularidade fiscal.
@@ -757,6 +759,67 @@ def _registrar_admin() -> None:
         _auditar("contato.criar", f"cnpj={n} tipo={tipo} verificado={verificado}")
         return _json(c)
 
+    @mcp.tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False))
+    async def cpf_completo_dos_socios(cnpj: str) -> dict:
+        """CPF completo dos socios de uma empresa que estao no cofre (cadastrados a
+        partir de documentos do cliente ou recebidos de fonte consultada) e o CPF do
+        titular de empresario individual/MEI. So quando o usuario pedir; cada uso
+        vai para a auditoria. Socios fora do cofre seguem mascarados (nunca deduza)."""
+        from app.services import cpf as cpf_srv
+        from app.services import ficha
+
+        n = _cnpj(cnpj)
+        try:
+            f = await asyncio.to_thread(ficha.ficha_local, n)
+        except ficha.BaseIndisponivel as e:
+            raise _base_ou_erro(e) from e
+        if f is None:
+            raise ToolError("CNPJ não encontrado na base local.")
+        socios = f.get("socios") or []
+        cofre = await asyncio.to_thread(cpf_srv.revelar, [(s.get("nome"), s.get("documento")) for s in socios])
+        itens = []
+        for s in socios:
+            k = cpf_srv.chave_pessoa(s.get("nome"), s.get("documento"))
+            itens.append({"nome": s.get("nome"), "documento_publicado": s.get("documento"),
+                          "cpf_completo": cofre[k]["cpf"] if k in cofre else None,
+                          "fonte_do_cpf": cofre[k]["fonte"] if k in cofre else None})
+        titular = f["identificacao"].get("cpf_titular")
+        _auditar("cpf.visualizar", f"cnpj={n} quantidade={len(cofre) + (1 if titular else 0)}")
+        return {"cnpj": n, "cpf_titular": titular, "socios": itens}
+
+    @mcp.tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False))
+    async def buscar_por_cpf(cpf: str) -> dict:
+        """Empresas ligadas a um CPF completo: titular de empresario individual/MEI
+        (certo), cadastro no cofre (certo) e socios com os mesmos digitos visiveis
+        (PROVAVEL: confira o nome). Auditado sem o numero."""
+        from app.services import cpf as cpf_srv
+        from app.services import ficha
+
+        try:
+            r = await asyncio.to_thread(cpf_srv.buscar, cpf)
+        except cpf_srv.CpfInvalido as e:
+            raise ToolError(str(e)) from e
+        except ficha.BaseIndisponivel as e:
+            raise _base_ou_erro(e) from e
+        _auditar("cpf.buscar", f"titular={len(r['titular'])} socios={len(r['socios'])}")
+        return _json(r)
+
+    @mcp.tool(annotations=ADMIN)
+    async def cadastrar_cpf_socio(nome: str, cpf: str, fonte: str, finalidade: str,
+                                  documento_publicado: str | None = None) -> dict:
+        """Guarda no cofre o CPF completo de um socio, a partir de documento do
+        cliente informado pelo usuario (fonte e finalidade obrigatorias). Confere
+        com os digitos publicados pela Receita quando `documento_publicado` vem."""
+        from app.services import cpf as cpf_srv
+
+        try:
+            r = await asyncio.to_thread(cpf_srv.cadastrar, nome, cpf, fonte=fonte, finalidade=finalidade,
+                                        documento_publicado=documento_publicado)
+        except cpf_srv.CpfInvalido as e:
+            raise ToolError(str(e)) from e
+        _auditar("cpf.cadastrar", f"registro={r['id']} conferido={r['conferido']} finalidade={finalidade.strip()[:200]}")
+        return r
+
     @mcp.tool(annotations=ADMIN)
     async def remover_contato_complementar(cnpj: str, contato_id: int) -> dict:
         """Remove um contato complementar (correcao ou pedido do titular)."""
@@ -832,7 +895,8 @@ def mapa_de_socios(nome_ou_cnpj: str) -> str:
 
 
 FERRAMENTAS_ADMIN = ("atualizar_base", "controlar_tarefa", "cadastrar_contato_complementar",
-                     "remover_contato_complementar")
+                     "remover_contato_complementar", "cpf_completo_dos_socios", "buscar_por_cpf",
+                     "cadastrar_cpf_socio")
 _admin_registrado = False
 
 
