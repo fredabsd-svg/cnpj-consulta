@@ -437,6 +437,177 @@ class AdaptadorOpenAI:
         yield {"tipo": "_rodada", "rodada": r}
 
 
+# ---------------------------------------------------------------- ChatGPT (plano do usuario, Responses API)
+
+_NAMESPACE = "cnpj"
+_ERROS_CHATGPT = {
+    "subscription_sharing_usage_limit_exceeded":
+        "Limite de uso do seu plano do ChatGPT para este app atingido. Gerencie o uso em "
+        "https://chatgpt.com/settings/usage ou use outro provedor.",
+    "subscription_sharing_usage_unavailable": "O ChatGPT não conseguiu conferir o uso do seu plano agora. "
+                                              "Tente de novo em instantes.",
+    "subscription_sharing_user_unavailable": "O ChatGPT está indisponível para a sua conta agora. Tente de novo em instantes.",
+    "subscription_sharing_user_not_eligible": "Sua conta do ChatGPT não pode usar o plano em outros apps.",
+    "subscription_sharing_unsupported_capability": "Este modelo ou recurso não está liberado pelo plano do ChatGPT. "
+                                                   "Escolha outro modelo.",
+    "subscription_sharing_invalid_user": "O ChatGPT não aceitou o login. Saia e entre de novo em Configurar provedores.",
+}
+
+
+def _para_responses(historico: list[dict]) -> list[dict]:
+    """Historico (formato chat da OpenAI) como itens de entrada da Responses API."""
+    itens: list[dict] = []
+    for m in historico:
+        papel = m.get("role")
+        if papel == "tool":
+            itens.append({"type": "function_call_output", "call_id": str(m.get("tool_call_id") or ""),
+                          "output": _texto_conteudo(m.get("content"))})
+        elif papel == "assistant":
+            texto = _texto_conteudo(m.get("content"))
+            if texto.strip():
+                itens.append({"role": "assistant", "content": texto})
+            for t in m.get("tool_calls") or []:
+                f = t.get("function") or {}
+                itens.append({"type": "function_call", "call_id": str(t.get("id") or ""), "namespace": _NAMESPACE,
+                              "name": f.get("name") or "", "arguments": f.get("arguments") or "{}"})
+        elif papel == "user":
+            texto = _texto_conteudo(m.get("content"))
+            if texto:
+                itens.append({"role": "user", "content": texto})
+    return itens
+
+
+class AdaptadorChatGPT(AdaptadorOpenAI):
+    """Plano do ChatGPT pelo login oficial ("Continuar com o ChatGPT"). Guarda o
+    historico no formato chat da OpenAI e fala a Responses API (store=false)."""
+
+    tipo = "openai"  # formato do historico gravado
+
+    @staticmethod
+    def ferramentas(catalogo: list[dict]) -> list[dict]:
+        # Nesta rota as ferramentas de funcao vao agrupadas num namespace.
+        funcoes = [{"type": "function", "name": t["function"]["name"], "description": t["function"]["description"],
+                    "parameters": t["function"]["parameters"], "strict": False}
+                   for t in AdaptadorOpenAI.ferramentas(catalogo)]
+        return [{"type": "namespace", "name": _NAMESPACE, "tools": funcoes,
+                 "description": "Ferramentas do app CNPJ Consulta: empresas, sócios, listas, base da Receita e SQL."}]
+
+    async def rodada(self, historico: list[dict], tools: list[dict], *,
+                     sem_ferramentas: bool = False) -> AsyncIterator[dict]:
+        from app.chat import chatgpt
+
+        try:
+            token = await chatgpt.token_de_acesso()
+        except (chatgpt.SessaoExpirada, RuntimeError) as e:
+            raise ErroProvedor(str(e)) from e
+        corpo: dict[str, Any] = {"model": self.modelo, "instructions": sistema(), "store": False, "stream": True,
+                                 "input": _para_responses(para_openai(historico)), "tools": tools}
+        if sem_ferramentas:
+            corpo["tool_choice"] = "none"
+        texto: list[str] = []
+        chamadas: list[dict] = []
+        uso: dict = {}
+        fim = None  # completed | incomplete
+        motivo_incompleto = ""
+        pensando = False
+        timeout = httpx.Timeout(300.0, connect=15.0)
+        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as cliente, cliente.stream(
+                    "POST", f"{chatgpt.API}/responses", json=corpo, headers=headers) as resp:
+                if resp.status_code >= 400:
+                    raise ErroProvedor(_erro_chatgpt(resp.status_code, (await resp.aread())[:4000]))
+                async for linha in resp.aiter_lines():
+                    if not linha.startswith("data:"):
+                        continue
+                    try:
+                        ev = json.loads(linha[5:].strip())
+                    except ValueError:
+                        continue
+                    t = ev.get("type") if isinstance(ev, dict) else None
+                    if t == "response.output_text.delta" and isinstance(ev.get("delta"), str):
+                        texto.append(ev["delta"])
+                        yield {"tipo": "texto", "delta": ev["delta"]}
+                    elif t in ("response.reasoning_summary_text.delta", "response.reasoning_text.delta") \
+                            or (t == "response.output_item.added" and (ev.get("item") or {}).get("type") == "reasoning"):
+                        if not pensando:
+                            pensando = True
+                            yield {"tipo": "pensando"}
+                    elif t == "response.output_item.done" and (ev.get("item") or {}).get("type") == "function_call":
+                        chamadas.append(ev["item"])
+                    elif t in ("response.completed", "response.incomplete"):
+                        fim = t.rsplit(".", 1)[1]
+                        r_ = ev.get("response") or {}
+                        uso = r_.get("usage") or uso
+                        motivo_incompleto = str((r_.get("incomplete_details") or {}).get("reason") or "")
+                    elif t == "response.failed":
+                        err = (ev.get("response") or {}).get("error") or {}
+                        raise ErroProvedor(_ERROS_CHATGPT.get(str(err.get("code") or ""))
+                                           or f"ChatGPT: {_msg_erro(err) or 'a resposta falhou'}")
+                    elif t == "error":
+                        raise ErroProvedor(_ERROS_CHATGPT.get(str(ev.get("code") or ""))
+                                           or f"ChatGPT: {_msg_erro(ev)}")
+        except httpx.TimeoutException as e:
+            raise ErroProvedor("O ChatGPT demorou demais para responder.") from e
+        except httpx.HTTPError as e:
+            raise ErroProvedor("Sem conexão com o ChatGPT (api.openai.com).") from e
+        if fim is None:
+            raise ErroProvedor("A resposta do ChatGPT foi interrompida antes do fim. Tente de novo.")
+
+        r = Rodada(texto="".join(texto))
+        r.entrada_tokens = int(uso.get("input_tokens") or 0)
+        r.saida_tokens = int(uso.get("output_tokens") or 0)
+        for item in chamadas:
+            nome = str(item.get("name") or "").removeprefix(_NAMESPACE + ".")
+            if not nome:
+                continue
+            cid = str(item.get("call_id") or item.get("id") or f"call{uuid.uuid4().hex[:5]}")
+            args = item.get("arguments") or ""
+            try:
+                r.chamadas.append(Chamada(cid, nome, json.loads(args) if str(args).strip() else {}))
+            except ValueError:
+                r.chamadas.append(Chamada(cid, nome, args, erro_entrada="Argumentos JSON inválidos; gere a chamada de novo."))
+        if fim == "incomplete" and motivo_incompleto == "content_filter":
+            r.parada, r.aviso = "recusa", "O ChatGPT bloqueou a resposta (filtro de conteúdo)."
+        elif fim == "incomplete" and r.chamadas:
+            r.parada = "limite"
+            r.aviso = "A resposta passou do limite no meio de uma chamada de ferramenta. Peça algo menor."
+        elif not r.texto.strip() and not r.chamadas:
+            r.aviso = "O modelo não devolveu resposta. Tente reformular ou peça para continuar."
+        else:
+            msg: dict[str, Any] = {"role": "assistant", "content": r.texto}
+            if r.chamadas:
+                msg["tool_calls"] = [{"id": c.id, "type": "function", "function": {
+                    "name": c.nome,
+                    "arguments": "{}" if c.erro_entrada else json.dumps(c.entrada, ensure_ascii=False)}}
+                    for c in r.chamadas]
+                r.parada = "ferramentas"
+            elif fim == "incomplete":
+                r.aviso = "Resposta cortada por tamanho. Peça para continuar."
+            r.mensagens = [msg]
+        yield {"tipo": "_rodada", "rodada": r}
+
+
+def _erro_chatgpt(status: int, corpo: bytes) -> str:
+    try:
+        err = json.loads(corpo).get("error") or {}
+    except (ValueError, AttributeError):
+        err = {}
+    codigo = str(err.get("code") or "") if isinstance(err, dict) else ""
+    if codigo in _ERROS_CHATGPT:
+        return _ERROS_CHATGPT[codigo]
+    if status == 401:
+        return "O ChatGPT não aceitou o login. Saia e entre de novo em Configurar provedores."
+    if status == 403:
+        return f"O ChatGPT recusou o pedido ({_msg_erro(err) if err else 'sem permissão'})."
+    if status == 429:
+        return ("Limite de uso do ChatGPT atingido. Gerencie o uso em https://chatgpt.com/settings/usage "
+                "ou aguarde e tente de novo.")
+    if status == 404:
+        return f"ChatGPT: modelo não encontrado ({_msg_erro(err) if err else 'confira o modelo'})."
+    return f"ChatGPT respondeu HTTP {status}: {_msg_erro(err) if err else 'erro'}"
+
+
 def eh_azure(base_url: str) -> bool:
     try:
         host = (httpx.URL(base_url).host or "").lower()
@@ -617,7 +788,11 @@ def _erro_http(prov: Provedor, status: int, corpo: bytes) -> str:
 
 
 def adaptador(prov: Provedor, modelo: str):
-    return AdaptadorAnthropic(prov, modelo) if prov.tipo == "anthropic" else AdaptadorOpenAI(prov, modelo)
+    if prov.tipo == "anthropic":
+        return AdaptadorAnthropic(prov, modelo)
+    if prov.tipo == "chatgpt":
+        return AdaptadorChatGPT(prov, modelo)
+    return AdaptadorOpenAI(prov, modelo)
 
 
 # ---------------------------------------------------------------- conversa

@@ -32,6 +32,8 @@ dependencies = [
     "mcp>=2.0,<3",
     # Chat com IA: modelos Claude pelo SDK oficial (outros provedores via httpx)
     "anthropic>=2.3,<3",
+    # Continuar com o ChatGPT: conferencia do ID token (OIDC) da OpenAI
+    "pyjwt[crypto]>=2.8",
     # CLI
     "typer>=0.12",
     "rich>=13.7",

@@ -31,7 +31,7 @@ log = logging.getLogger(__name__)
 class Preset:
     id: str
     nome: str
-    tipo: str  # anthropic | openai
+    tipo: str  # anthropic | openai | chatgpt (Responses API com o login do ChatGPT)
     base_url: str = ""
     chave_cfg: str = ""  # atributo de Settings com a chave
     url_cfg: str = ""  # atributo de Settings com o endereco (locais/personalizado)
@@ -55,6 +55,8 @@ PRESETS: dict[str, Preset] = {p.id: p for p in (
            modelos=MODELOS_CLAUDE, onde_obter="https://platform.claude.com/settings/keys"),
     Preset("openai", "OpenAI", "openai", "https://api.openai.com/v1", "openai_api_key",
            onde_obter="https://platform.openai.com/api-keys"),
+    # Plano do ChatGPT do usuario, pelo login oficial da OpenAI (sem chave; ver chatgpt.py)
+    Preset("chatgpt", "ChatGPT (sua conta)", "chatgpt", "https://api.openai.com/v1", precisa_chave=False),
     Preset("gemini", "Google Gemini", "openai", "https://generativelanguage.googleapis.com/v1beta/openai",
            "gemini_api_key", onde_obter="https://aistudio.google.com/apikey"),
     Preset("openrouter", "OpenRouter (vários provedores)", "openai", "https://openrouter.ai/api/v1",
@@ -130,7 +132,12 @@ def resolver(pid: str, salvos: dict[str, ChatProvedor] | None = None) -> Provedo
     url = (url_env or (salvo.base_url if salvo else "") or "").strip()
     habilitado = salvo.habilitado if salvo is not None else True
     origem = "env" if (chave_env or url_env) else ("tela" if salvo and (salvo.api_key or salvo.base_url) else "")
-    if p.local or p.id == "personalizado":
+    if p.id == "chatgpt":
+        from app.chat import chatgpt
+
+        logado = chatgpt.conectado()
+        configurado, base, origem = logado and habilitado, p.base_url, ("login" if logado else "")
+    elif p.local or p.id == "personalizado":
         # Locais e personalizado so contam com endereco informado.
         configurado = bool(url) and habilitado
         base = url or p.base_url
@@ -226,7 +233,15 @@ async def listar_modelos(prov: Provedor) -> list[str]:
     if cache and agora - cache[0] < _CACHE_SEG:
         remotos = cache[1]
     else:
-        remotos = await (_modelos_anthropic(prov) if prov.tipo == "anthropic" else _modelos_remotos(prov))
+        if prov.tipo == "anthropic":
+            remotos = await _modelos_anthropic(prov)
+        elif prov.tipo == "chatgpt":
+            from app.chat import chatgpt
+
+            remotos, nomes = await chatgpt.listar_modelos()
+            _nomes_modelos.update(nomes)
+        else:
+            remotos = await _modelos_remotos(prov)
         if remotos:  # falha (ex.: Ollama ainda fechado) nao fica em cache
             _cache_modelos[prov.id] = (agora, remotos)
     return list(dict.fromkeys([*prov.modelos, *remotos]))
