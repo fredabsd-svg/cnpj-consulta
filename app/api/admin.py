@@ -144,6 +144,21 @@ async def base_limpar(request: Request, confirmar: str | None = Body(None, embed
     return {"liberado": liberado}
 
 
+@router.post("/base/apagar")
+async def base_apagar(request: Request, confirmar: str | None = Body(None, embed=True),
+                      incluir_app: bool | None = Body(False, embed=True)) -> dict:
+    """Apaga a base local inteira (todas as versoes, downloads, trabalho e temporarios);
+    com incluir_app, tambem os dados do usuario no app."""
+    _confirmar(confirmar, "APAGAR TUDO")
+    try:
+        r = await asyncio.to_thread(servico.apagar_base_completa, incluir_app=bool(incluir_app))
+    except jobs.JobEmAndamento as e:
+        raise HTTPException(409, str(e)) from e
+    _auditar(request, "base.apagar_tudo", f"bytes={r['liberado']} incluir_app={bool(incluir_app)} "
+                                         f"falhas={len(r['falhas'])}")
+    return r
+
+
 @router.put("/base/agenda")
 async def base_agenda(request: Request, ativo: bool = Body(..., embed=True),
                       hora: int = Body(3, embed=True, ge=0, le=23),

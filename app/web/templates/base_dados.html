@@ -190,6 +190,15 @@
             <input class="input input-sm no-js-only" name="confirmar" placeholder="CONFIRMAR" size="10" aria-label="Digite CONFIRMAR">
             <button type="submit" class="btn" {% if not e.disco.trabalho or e.job_ativo %}disabled{% endif %}>{{ ui.icon('trash') }} Limpar temporários</button>
         </form>
+        <form action="/base/acao" method="post" data-api="/api/admin/base/apagar" data-api-json='{"incluir_app": "incluir_app"}'
+              class="linha-acao linha-perigo" data-confirmar-texto="APAGAR TUDO"
+              data-confirmar="Apagar a base local da Receita INTEIRA? Todas as versões (inclusive a que está em uso), downloads, atualizações interrompidas e temporários serão apagados. As consultas passam a usar só as APIs públicas até uma nova atualização. Não dá para desfazer.">
+            <input type="hidden" name="acao" value="apagar_tudo">
+            <input class="input input-sm no-js-only" name="confirmar" placeholder="APAGAR TUDO" size="12" aria-label="Digite APAGAR TUDO">
+            <button type="submit" class="btn btn-danger" {% if e.job_ativo %}disabled{% endif %}>{{ ui.icon('trash') }} Apagar base completa</button>
+            <label class="check small"><input type="checkbox" name="incluir_app" value="sim"> Também apagar os dados do app (histórico, favoritos, listas, buscas salvas, contatos complementares, cofre de CPFs, conversas do chat e exportações)</label>
+            <span class="hint">Apaga só o que o app criou na pasta da base (<code>{{ e.disco.pasta }}</code>) e nos temporários; outros arquivos do disco não são tocados. Configurações, chaves dos provedores e a auditoria ficam.</span>
+        </form>
 
         <h3 class="section">{{ ui.icon('calendar') }} Atualização automática</h3>
         {% set ag = e.agenda %}

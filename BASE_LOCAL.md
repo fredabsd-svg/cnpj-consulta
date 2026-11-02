@@ -165,6 +165,20 @@ dia e hora. Com o servidor ligado, o app verifica o portal no horário e inicia 
 atualização se houver versão nova. Sem o servidor aberto, agende
 `python -m app.cli base atualizar` no Agendador de Tarefas do Windows ou no cron.
 
+**Manutenção (painel `/base`):**
+
+| Botão | O que apaga | O que fica |
+|---|---|---|
+| Limpar temporários (`CONFIRMAR`) | área de trabalho de atualizações interrompidas (`trabalho/`) e a pasta `cnpj-consulta` em `RECEITA_TEMP_DIR` | versões publicadas |
+| Lixeira de uma versão (`CONFIRMAR`) | uma versão que não está em uso | a versão ativa |
+| **Apagar base completa** (`APAGAR TUDO`) | todas as versões (inclusive a ativa), `trabalho/`, `zips/`, `logs/`, `ATIVA.json` e a pasta `cnpj-consulta` em `RECEITA_TEMP_DIR`; atualizações interrompidas passam a *canceladas* | configurações, chaves dos provedores e auditoria |
+| … com *Também apagar os dados do app* | também histórico, favoritos, listas, buscas salvas e recentes, contatos complementares, cofre de CPFs, conversas do chat, exportações e cache de consultas | configurações, chaves dos provedores e auditoria |
+
+Só são apagados os itens que o app cria: se `RECEITA_DATA_DIR` for a raiz de um
+HD externo, os outros arquivos do disco não são tocados. Nada disso funciona
+com uma atualização em andamento (pause ou cancele antes). Depois de apagar, as
+consultas usam as APIs públicas até uma nova atualização.
+
 ## 6. Estrutura da base publicada
 
 | Tabela | Conteúdo | Ordenação |

@@ -9,11 +9,15 @@ import threading
 import time
 import traceback
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import duckdb
+from sqlalchemy import inspect, select, text
 
 from app.config import Settings, get_settings
+from app.db import get_session_factory
+from app.models.base_cnpj import BaseJob
 from app.receita import armazenamento as arm
 from app.receita import jobs, trava
 from app.receita.duck import SCHEMA_VERSAO, conectar_leitura, metadados
@@ -306,10 +310,85 @@ def limpar_trabalho(settings: Settings | None = None) -> int:
     settings = settings or get_settings()
     if jobs.job_ativo():
         raise jobs.JobEmAndamento("Ha uma tarefa em andamento; pause ou cancele antes de limpar.")
-    raiz = arm.data_dir(settings) / "trabalho"
-    liberado = arm.tamanho_pasta(raiz)
-    shutil.rmtree(raiz, ignore_errors=True)
+    liberado = 0
+    pastas = [arm.data_dir(settings) / "trabalho"]
+    if settings.receita_temp_dir.strip():  # CSVs extraidos e temporario do DuckDB em outro disco
+        pastas.append(Path(settings.receita_temp_dir.strip()).expanduser() / "cnpj-consulta")
+    for raiz in pastas:
+        liberado += arm.tamanho_pasta(raiz)
+        shutil.rmtree(raiz, ignore_errors=True)
     return liberado
+
+
+# Pastas e arquivos que o app cria dentro de RECEITA_DATA_DIR. So estes sao
+# apagados: a pasta pode ser a raiz de um HD externo com outras coisas do usuario.
+_ITENS_DA_BASE = ("versoes", "trabalho", "zips", "logs", arm.PONTEIRO)
+# Tabelas do banco do app com dados do usuario (nao configuracao nem auditoria).
+_TABELAS_DO_APP = ("history", "favorite", "busca_salva", "busca_recente", "lista_item", "lista_empresas",
+                   "contato_complementar", "socio_cpf", "chat_conversa", "exportacao", "cached_query")
+
+
+def apagar_base_completa(*, incluir_app: bool = False, settings: Settings | None = None) -> dict[str, Any]:
+    """Apaga a base local da Receita inteira: todas as versoes (inclusive a ativa),
+    downloads e trabalho de atualizacoes, logs e os temporarios em RECEITA_TEMP_DIR.
+    Com incluir_app, apaga tambem os dados do usuario no app (historico, favoritos,
+    listas, buscas salvas, contatos complementares, cofre de CPFs, conversas do chat,
+    exportacoes e cache). Configuracoes, chaves dos provedores e a auditoria ficam."""
+    settings = settings or get_settings()
+    if jobs.job_ativo():
+        raise jobs.JobEmAndamento("Ha uma tarefa em andamento; pause ou cancele antes de apagar a base.")
+    t = trava.TravaProcesso(trava.caminho_trava(settings))
+    if not t.adquirir():
+        raise jobs.JobEmAndamento("Outro processo esta usando a base (atualizacao em andamento?). Tente de novo.")
+    liberado = 0
+    falhas: list[str] = []
+
+    def remover(alvo):
+        nonlocal liberado
+        if not alvo.exists():
+            return
+        liberado += arm.tamanho_pasta(alvo) if alvo.is_dir() else alvo.stat().st_size
+        try:
+            if alvo.is_dir():
+                shutil.rmtree(alvo)
+            else:
+                alvo.unlink()
+        except OSError as e:
+            falhas.append(f"{alvo}: {e.strerror or type(e).__name__}")
+
+    try:
+        raiz = arm.data_dir(settings)
+        for nome in _ITENS_DA_BASE:
+            remover(raiz / nome)
+        for extra in raiz.glob(f"{arm.PONTEIRO}.*"):  # restos de gravacao atomica
+            remover(extra)
+        temp = settings.receita_temp_dir.strip()
+        if temp:
+            remover(Path(temp).expanduser() / "cnpj-consulta")
+        if incluir_app:
+            remover(arm.exportacoes_dir(settings))
+        arm.limpar_cache()
+    finally:
+        t.liberar()
+
+    tabelas: dict[str, int] = {}
+    with get_session_factory()() as sessao:
+        # Atualizacoes interrompidas nao tem mais de onde continuar.
+        for job in sessao.scalars(select(BaseJob).where(BaseJob.status.in_(jobs.RETOMAVEIS))):
+            job.status = "cancelado"
+            job.mensagem = "Base apagada pelo administrador."
+        if incluir_app:
+            for tabela in _TABELAS_DO_APP:
+                if inspect(sessao.get_bind()).has_table(tabela):
+                    tabelas[tabela] = sessao.execute(text(f"DELETE FROM {tabela}")).rowcount or 0
+        sessao.commit()
+    cfg = jobs.config_get(CFG_VERIFICACAO)
+    jobs.config_set(CFG_VERIFICACAO, {**cfg, "mes_local": None})
+    if incluir_app:
+        from app.services.cache import clear_cache
+
+        clear_cache()  # consultas de CNPJ em cache (memoria ou SQLite)
+    return {"liberado": liberado, "falhas": falhas, "registros_apagados": tabelas}
 
 
 # ---------- agendamento ----------
