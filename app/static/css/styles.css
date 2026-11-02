@@ -759,6 +759,8 @@ select[multiple].select { background-image: none; padding-right: var(--space-1);
 .chat-modelo { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
 .chat-modelo .select { width: auto; max-width: 100%; }
 .chat-select-modelo { min-width: 240px; }
+.chat-prov-login { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0 8px; }
+.chat-prov-login .hint { margin: 0; }
 .chat-input-modelo[hidden] { display: none; }
 .chat-composer-acoes .btn[hidden] { display: none; }
 .chat-input-modelo { width: 230px; min-height: 32px; height: 32px; font-family: var(--font-mono); font-size: var(--text-sm); }

@@ -38,6 +38,26 @@ os valores do `.env` têm prioridade sobre os cadastrados na tela.
   para o formato do provedor escolhido (o raciocínio interno do modelo anterior
   não passa adiante; textos, ferramentas usadas e resultados passam).
 - `CHAT_PROVEDOR_PADRAO` e `CHAT_MODELO_PADRAO` definem o que vem selecionado.
+
+### Entrar com login e senha (sem chave)
+
+Onde o provedor oferece login oficial para outros aplicativos, a tela de
+provedores mostra o botão **Entrar com …**: abre a página de login do próprio
+provedor, você entra e autoriza, e o app recebe a chave da sua conta sozinho
+(nada de copiar e colar). A senha é digitada só no site do provedor; o app
+nunca a vê. Cada login fica na auditoria (`chat.provedor.login`, sem a chave).
+
+| Provedor | Login sem chave? |
+|---|---|
+| OpenRouter | **Sim** (login oficial com OAuth/PKCE). Dá acesso aos modelos de vários fabricantes, **inclusive o Grok** (`x-ai/grok-…`), Claude, GPT, Gemini e Llama, com uma conta só |
+| xAI (Grok) direto | Não: a xAI só libera login por assinatura (SuperGrok/X Premium) para parceiros escolhidos por ela, sem programa aberto. Use a chave de API, ou o Grok pelo OpenRouter |
+| Anthropic (Claude) | Não: a Anthropic proíbe login do Claude.ai em aplicativos de terceiros. Use a chave do Console |
+| OpenAI | Existe em prévia (“Entrar com o ChatGPT” para apps locais e de código aberto), mas só pela Responses API; ainda não está no app |
+| Groq, Mistral, DeepSeek | Não oferecem; só chave de API |
+
+O endereço de retorno do login é `/chat/login/<provedor>/retorno` no próprio
+app: abra o app pelo mesmo endereço que você usa no dia a dia (ex.:
+`http://localhost:8000`).
 - **Escolha de modelo:** o modelo precisa saber usar ferramentas (*tool calling*).
   Os grandes modelos dos provedores em nuvem sabem; entre os locais, use modelos
   com suporte a ferramentas (o Ollama marca isso como *tools*) e de bom tamanho.

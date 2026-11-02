@@ -615,6 +615,16 @@
             topo.append(nome, badge);
             card.appendChild(topo);
 
+            if (p.login && p.origem !== "env") {
+                // Login oficial do provedor (OAuth): abre a pagina de login dele e
+                // volta com a chave da conta, sem copiar e colar.
+                const entrar = el("div", "chat-prov-login");
+                const a = el("a", "btn btn-primary btn-sm", (p.tem_chave ? "Entrar de novo com " : "Entrar com ") + p.nome.split(" (")[0]);
+                a.href = "/chat/login/" + encodeURIComponent(p.id) + "/iniciar";
+                entrar.append(a, el("span", "hint", "Abre o login da sua conta; não precisa copiar a chave."));
+                card.appendChild(entrar);
+            }
+
             const campos = el("div", "chat-prov-campos");
             let chave = null, url = null;
             if (p.precisa_chave || p.id === "personalizado") {
@@ -700,6 +710,11 @@
     });
 
     (async function iniciar() {
+        const q = new URLSearchParams(location.search);
+        if (q.has("login_ok") || q.has("login_erro")) {
+            toast(q.has("login_ok") ? "Login feito: " + q.get("login_ok") + " configurado." : q.get("login_erro"));
+            history.replaceState(null, "", location.pathname + location.hash);
+        }
         await carregarProvedores();
         await carregarConversas();
         const m = /^#c(\d+)$/.exec(location.hash);
