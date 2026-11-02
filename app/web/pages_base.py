@@ -510,6 +510,18 @@ async def base_acao(request: Request, acao: str = Form(...), mes: str = Form("")
                 n = await asyncio.to_thread(servico.limpar_trabalho)
                 jobs.auditar("base.limpar", detalhe=f"bytes={n}", ip=ip)
                 msg = f"{n / 1024**3:.2f} GB liberados."
+        elif acao == "apagar_tudo":
+            if confirmar.strip().upper() != "APAGAR TUDO":
+                msg = "Para apagar a base completa, digite APAGAR TUDO."
+            else:
+                form = await request.form()
+                incluir_app = form.get("incluir_app") == "sim"
+                r = await asyncio.to_thread(servico.apagar_base_completa, incluir_app=incluir_app)
+                jobs.auditar("base.apagar_tudo", ip=ip, detalhe=f"bytes={r['liberado']} incluir_app={incluir_app} "
+                                                                f"falhas={len(r['falhas'])}")
+                msg = f"Base apagada: {r['liberado'] / 1024**3:.2f} GB liberados."
+                if r["falhas"]:
+                    msg += " Não foi possível apagar (arquivo em uso?): " + "; ".join(r["falhas"][:3])
         elif acao == "agenda":
             form = await request.form()
             from datetime import datetime
