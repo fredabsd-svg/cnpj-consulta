@@ -17,7 +17,7 @@ os valores do `.env` têm prioridade sobre os cadastrados na tela.
 
 | Provedor | Variável no `.env` | Modelos |
 |---|---|---|
-| Anthropic (Claude) | `ANTHROPIC_API_KEY` | Claude Opus 5.5 (padrão), Sonnet 5.5, Haiku 5.5, Fable 5.1 |
+| Anthropic (Claude) | `ANTHROPIC_API_KEY` | Claude Opus 5.5 (padrão), Sonnet 5.5, Haiku 5.5, Fable 5.1 e os demais da sua conta |
 | OpenAI | `OPENAI_API_KEY` | lista carregada da sua conta |
 | Google Gemini | `GEMINI_API_KEY` | lista carregada da sua conta |
 | OpenRouter | `OPENROUTER_API_KEY` | centenas de modelos de vários fabricantes com uma chave só |
@@ -29,13 +29,14 @@ os valores do `.env` têm prioridade sobre os cadastrados na tela.
 | LM Studio (local) | `LMSTUDIO_URL=http://localhost:1234/v1` | modelo carregado no LM Studio |
 | Personalizado | `CHAT_CUSTOM_URL`, `CHAT_CUSTOM_API_KEY`, `CHAT_CUSTOM_MODELOS` | qualquer servidor compatível com a API da OpenAI (vLLM, LiteLLM, Azure OpenAI…). Parâmetros do endereço são mantidos (ex.: Azure: `https://RECURSO.openai.azure.com/openai/deployments/MODELO?api-version=AAAA-MM-DD`) |
 
-- A lista de modelos dos provedores compatíveis com OpenAI vem do próprio
-  provedor (`/models`) e é atualizada a cada 10 minutos. O campo de modelo também
-  aceita digitar qualquer nome; em **Modelos extras** você fixa nomes que não
-  aparecem na lista.
-- O modelo pode ser trocado no meio da conversa dentro do mesmo tipo (entre os
-  Claude, ou entre os compatíveis com OpenAI). Para passar de um tipo ao outro,
-  comece uma nova conversa.
+- A lista de modelos vem do próprio provedor (API de modelos da Anthropic;
+  `/models` nos compatíveis com OpenAI) e é atualizada a cada 10 minutos. A lista
+  mostra todos; em **Outro modelo…** você digita qualquer nome e em **Modelos
+  extras** fixa nomes que não aparecem nela.
+- O modelo e o provedor podem ser trocados a qualquer momento, inclusive no meio
+  da conversa e entre Claude e os outros provedores: o histórico é convertido
+  para o formato do provedor escolhido (o raciocínio interno do modelo anterior
+  não passa adiante; textos, ferramentas usadas e resultados passam).
 - `CHAT_PROVEDOR_PADRAO` e `CHAT_MODELO_PADRAO` definem o que vem selecionado.
 - **Escolha de modelo:** o modelo precisa saber usar ferramentas (*tool calling*).
   Os grandes modelos dos provedores em nuvem sabem; entre os locais, use modelos

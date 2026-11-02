@@ -150,7 +150,7 @@ class AdaptadorAnthropic:
         cfg = get_settings()
         kw: dict[str, Any] = {
             "model": self.modelo, "max_tokens": cfg.chat_max_tokens, "system": sistema(),
-            "messages": historico, "tools": tools, "cache_control": {"type": "ephemeral"},
+            "messages": para_anthropic(historico), "tools": tools, "cache_control": {"type": "ephemeral"},
         }
         if self.modelo in _ADAPTATIVOS:
             kw["thinking"] = {"type": "adaptive"}
@@ -312,7 +312,7 @@ class AdaptadorOpenAI:
     async def rodada(self, historico: list[dict], tools: list[dict], *,
                      sem_ferramentas: bool = False) -> AsyncIterator[dict]:
         corpo = {"model": self.modelo, "stream": True, "tools": tools,
-                 "messages": [{"role": "system", "content": sistema()}, *_para_envio(historico, self.prov.id)]}
+                 "messages": [{"role": "system", "content": sistema()}, *_para_envio(para_openai(historico), self.prov.id)]}
         if sem_ferramentas:
             corpo["tool_choice"] = "none"
         texto: list[str] = []
@@ -476,6 +476,123 @@ def _para_envio(historico: list[dict], provedor: str) -> list[dict]:
             if m.get("role") == "tool":
                 m["tool_call_id"] = _id_mistral(m.get("tool_call_id", ""))
         out.append(m)
+    return out
+
+
+# ---------------------------------------------------------------- troca de provedor na conversa
+#
+# O historico e gravado no formato do provedor que respondeu cada mensagem. Ao
+# trocar de Claude para um compativel com OpenAI (ou o contrario) no meio da
+# conversa, o adaptador converte as mensagens do outro formato na hora do envio
+# (o que esta gravado nao muda). Raciocinio (thinking) de outro provedor nao passa.
+
+_ID_ANTHROPIC = re.compile(r"[^a-zA-Z0-9_-]")
+
+
+def _id_anthropic(cid: Any) -> str:
+    cid = str(cid or "")
+    limpo = _ID_ANTHROPIC.sub("_", cid)[:64]
+    return limpo if limpo == cid and limpo else "t" + hashlib.sha256(cid.encode()).hexdigest()[:24]
+
+
+def _texto_conteudo(conteudo: Any) -> str:
+    if isinstance(conteudo, str):
+        return conteudo
+    if isinstance(conteudo, list):
+        return "\n".join(str(b.get("text") or "") for b in conteudo
+                         if isinstance(b, dict) and b.get("type") == "text" and b.get("text"))
+    return "" if conteudo is None else str(conteudo)
+
+
+def _eh_openai(m: dict) -> bool:
+    return m.get("role") == "tool" or "tool_calls" in m or "_origem" in m or "reasoning_content" in m
+
+
+def _eh_anthropic(m: dict) -> bool:
+    c = m.get("content")
+    return isinstance(c, list) and any(isinstance(b, dict) and b.get("type") in
+                                       ("tool_use", "tool_result", "thinking", "redacted_thinking") for b in c)
+
+
+def para_anthropic(historico: list[dict]) -> list[dict]:
+    """Historico no formato da API da Anthropic (converte mensagens no formato OpenAI)."""
+    if not any(_eh_openai(m) for m in historico):
+        return historico
+    out: list[dict] = []
+
+    def anexar(papel: str, blocos: list[dict]) -> None:
+        if not blocos:
+            return
+        if out and out[-1]["role"] == papel:  # a API pede papeis alternados
+            anterior = out[-1]["content"]
+            if isinstance(anterior, str):
+                anterior = [{"type": "text", "text": anterior}] if anterior else []
+            # resultados de ferramenta vem primeiro na mensagem do usuario
+            junto = [*anterior, *blocos]
+            junto.sort(key=lambda b: b.get("type") != "tool_result")
+            out[-1] = {"role": papel, "content": junto}
+        else:
+            out.append({"role": papel, "content": blocos})
+
+    for m in historico:
+        papel = m.get("role")
+        if not _eh_openai(m):
+            c = m.get("content")
+            anexar(papel, c if isinstance(c, list) else ([{"type": "text", "text": c}] if c else []))
+        elif papel == "tool":
+            anexar("user", [{"type": "tool_result", "tool_use_id": _id_anthropic(m.get("tool_call_id")),
+                             "content": _texto_conteudo(m.get("content")) or "(vazio)"}])
+        elif papel == "assistant":
+            blocos: list[dict] = []
+            texto = _texto_conteudo(m.get("content"))
+            if texto.strip():
+                blocos.append({"type": "text", "text": texto})
+            for t in m.get("tool_calls") or []:
+                f = t.get("function") or {}
+                try:
+                    entrada = json.loads(f.get("arguments") or "{}")
+                except ValueError:
+                    entrada = {}
+                blocos.append({"type": "tool_use", "id": _id_anthropic(t.get("id")), "name": f.get("name") or "",
+                               "input": entrada if isinstance(entrada, dict) else {}})
+            anexar("assistant", blocos)
+        else:
+            texto = _texto_conteudo(m.get("content"))
+            anexar(papel or "user", [{"type": "text", "text": texto}] if texto else [])
+    return out
+
+
+def para_openai(historico: list[dict]) -> list[dict]:
+    """Historico no formato da API da OpenAI (converte mensagens no formato Anthropic)."""
+    if not any(_eh_anthropic(m) or isinstance(m.get("content"), list) for m in historico if not _eh_openai(m)):
+        return historico
+    out: list[dict] = []
+    for m in historico:
+        c = m.get("content")
+        if _eh_openai(m) or not isinstance(c, list):
+            out.append(m)
+            continue
+        if m.get("role") == "assistant":
+            texto = _texto_conteudo(c)
+            chamadas = [{"id": b.get("id"), "type": "function",
+                         "function": {"name": b.get("name"), "arguments": json.dumps(b.get("input") or {},
+                                                                                     ensure_ascii=False)}}
+                        for b in c if isinstance(b, dict) and b.get("type") == "tool_use"]
+            if not texto.strip() and not chamadas:
+                continue  # so raciocinio: nao passa para outro provedor
+            msg: dict[str, Any] = {"role": "assistant", "content": texto or None}
+            if chamadas:
+                msg["tool_calls"] = chamadas
+            out.append(msg)
+            continue
+        for b in c:  # usuario: resultados de ferramenta primeiro, texto depois
+            if isinstance(b, dict) and b.get("type") == "tool_result":
+                conteudo = _texto_conteudo(b.get("content"))
+                out.append({"role": "tool", "tool_call_id": b.get("tool_use_id"),
+                            "content": f"ERRO: {conteudo}" if b.get("is_error") else conteudo})
+        texto = _texto_conteudo(c)
+        if texto.strip():
+            out.append({"role": m.get("role") or "user", "content": texto})
     return out
 
 

@@ -477,18 +477,64 @@ class TestRotas:
         reg = [a for a in jobs.auditoria() if a["acao"] == "chat.mensagem"]
         assert reg and reg[0]["detalhe"] == f"origem=chat conversa={cid} provedor=anthropic modelo=claude-opus-5-5"
 
-    def test_trocar_de_tipo_exige_nova_conversa(self, cliente, admin_headers, claude_falso):
-        claude_falso["respostas"] = [_sse_anthropic([{"type": "text", "text": "ok"}], "end_turn")]
+    @respx.mock
+    def test_troca_de_claude_para_groq_no_meio_da_conversa(self, cliente, admin_headers, claude_falso):
+        from app.chat import conversas
+
+        claude_falso["respostas"] = [
+            _sse_anthropic([{"type": "thinking"}, {"type": "text", "text": "Vou ver."},
+                            {"type": "tool_use", "id": "toolu_1", "name": "listar_listas", "input": {}}], "tool_use"),
+            _sse_anthropic([{"type": "text", "text": "Nenhuma lista."}], "end_turn")]
         cliente.post("/chat/api/provedores/groq", headers=admin_headers, json={"api_key": "gsk-000000000000"})
         cid = cliente.post("/chat/api/conversas", headers=admin_headers, json={"provedor": "anthropic"}).json()["id"]
         r = cliente.patch(f"/chat/api/conversas/{cid}", headers=admin_headers,
                           json={"provedor": "anthropic", "modelo": "claude-sonnet-5-5"})
         assert r.status_code == 200 and r.json()["modelo"] == "claude-sonnet-5-5"
         with cliente.stream("POST", f"/chat/api/conversas/{cid}/mensagens", headers=admin_headers,
-                            json={"texto": "oi"}) as resp:
+                            json={"texto": "Quais listas?"}) as resp:
             list(resp.iter_lines())
         r = cliente.patch(f"/chat/api/conversas/{cid}", headers=admin_headers,
-                          json={"provedor": "groq", "modelo": "x"})
+                          json={"provedor": "groq", "modelo": "llama-x"})
+        assert r.status_code == 200 and r.json()["provedor"] == "groq"
+
+        corpos: list[dict] = []
+
+        def groq(request: httpx.Request):
+            corpos.append(json.loads(request.content))
+            return httpx.Response(200, content=_sse({"choices": [{"delta": {"content": "Continuo."},
+                                                                  "finish_reason": "stop"}]}),
+                                  headers={"content-type": "text/event-stream"})
+
+        respx.post("https://api.groq.com/openai/v1/chat/completions").mock(side_effect=groq)
+        with cliente.stream("POST", f"/chat/api/conversas/{cid}/mensagens", headers=admin_headers,
+                            json={"texto": "e agora?"}) as resp:
+            list(resp.iter_lines())
+        msgs = corpos[0]["messages"][1:]
+        assert corpos[0]["model"] == "llama-x"
+        assert [m["role"] for m in msgs] == ["user", "assistant", "tool", "assistant", "user"]
+        assert msgs[1]["tool_calls"][0]["id"] == "toolu_1" and msgs[1]["content"] == "Vou ver."
+        assert msgs[2]["tool_call_id"] == "toolu_1"
+        assert msgs[3] == {"role": "assistant", "content": "Nenhuma lista."}
+        assert "thinking" not in json.dumps(msgs)  # raciocinio do Claude nao passa
+        exib = conversas.obter(cid)["exibicao"]
+        assert exib[-1] == {"tipo": "assistente", "texto": "Continuo."}
+
+        # e de volta ao Claude: as mensagens do Groq viram o formato da Anthropic
+        cliente.patch(f"/chat/api/conversas/{cid}", headers=admin_headers, json={"provedor": "anthropic"})
+        claude_falso["respostas"] = [_sse_anthropic([{"type": "text", "text": "De volta."}], "end_turn")]
+        with cliente.stream("POST", f"/chat/api/conversas/{cid}/mensagens", headers=admin_headers,
+                            json={"texto": "oi de novo"}) as resp:
+            list(resp.iter_lines())
+        enviado = claude_falso["pedidos"][-1]["corpo"]["messages"]
+        assert [m["role"] for m in enviado] == ["user", "assistant", "user", "assistant", "user", "assistant", "user"]
+        assert enviado[-2]["content"] in ("Continuo.", [{"type": "text", "text": "Continuo."}])
+
+    def test_nao_troca_modelo_durante_resposta(self, cliente, admin_headers, claude_falso):
+        from app.chat import motor
+
+        cid = cliente.post("/chat/api/conversas", headers=admin_headers, json={"provedor": "anthropic"}).json()["id"]
+        motor._em_andamento.add(cid)
+        r = cliente.patch(f"/chat/api/conversas/{cid}", headers=admin_headers, json={"modelo": "claude-haiku-5-5"})
         assert r.status_code == 409
 
     def test_download_so_de_arquivos_exportados(self, cliente, admin_headers):
@@ -505,3 +551,84 @@ class TestRotas:
     def test_chat_desligado(self, cliente, admin_headers, monkeypatch):
         _env(monkeypatch, CHAT_HABILITADO="false")
         assert cliente.get("/chat", headers=admin_headers).status_code == 404
+
+
+def test_conversao_de_historico_entre_formatos():
+    from app.chat.motor import para_anthropic, para_openai
+
+    openai = [
+        {"role": "user", "content": "oi"},
+        {"role": "assistant", "content": None, "_origem": "deepseek", "reasoning_content": "pensando",
+         "tool_calls": [{"id": "call:1", "type": "function", "function": {"name": "a", "arguments": '{"x": 1}'}},
+                        {"id": "call_2", "type": "function", "function": {"name": "b", "arguments": "{ruim"}}]},
+        {"role": "tool", "tool_call_id": "call:1", "content": "r1"},
+        {"role": "tool", "tool_call_id": "call_2", "content": "ERRO: r2"},
+        {"role": "assistant", "content": "pronto", "_origem": "deepseek"},
+    ]
+    a = para_anthropic(openai)
+    assert [m["role"] for m in a] == ["user", "assistant", "user", "assistant"]
+    usos = a[1]["content"]
+    assert [b["type"] for b in usos] == ["tool_use", "tool_use"]
+    assert usos[0]["input"] == {"x": 1} and usos[1]["input"] == {}
+    assert usos[0]["id"] != "call:1" and usos[0]["id"] == a[2]["content"][0]["tool_use_id"]  # id saneado e coerente
+    assert [b["tool_use_id"] for b in a[2]["content"]] == [usos[0]["id"], "call_2"]
+    assert "pensando" not in json.dumps(a)
+
+    anthropic = [
+        {"role": "user", "content": "oi"},
+        {"role": "assistant", "content": [{"type": "thinking", "thinking": "", "signature": "s"},
+                                          {"type": "text", "text": "Vou ver."},
+                                          {"type": "tool_use", "id": "toolu_1", "name": "a", "input": {"x": 1}}]},
+        {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_1", "content": "falhou",
+                                      "is_error": True}]},
+        {"role": "assistant", "content": [{"type": "thinking", "thinking": "", "signature": "s"}]},
+        {"role": "assistant", "content": [{"type": "text", "text": "fim"}]},
+    ]
+    o = para_openai(anthropic)
+    assert o == [
+        {"role": "user", "content": "oi"},
+        {"role": "assistant", "content": "Vou ver.", "tool_calls": [
+            {"id": "toolu_1", "type": "function", "function": {"name": "a", "arguments": '{"x": 1}'}}]},
+        {"role": "tool", "tool_call_id": "toolu_1", "content": "ERRO: falhou"},
+        {"role": "assistant", "content": "fim"},
+    ]
+    assert para_anthropic(anthropic) is anthropic and para_openai(openai) is openai  # mesmo formato: intacto
+
+
+async def test_lista_modelos_da_anthropic_pela_api(db_initialized, monkeypatch):
+    import anthropic
+
+    from app.chat import provedores
+
+    class _Modelo:
+        def __init__(self, mid, nome, ciclo="active"):
+            self.id, self.display_name, self.lifecycle = mid, nome, ciclo
+
+    class _Lista:
+        async def __aiter__(self):
+            for m in (_Modelo("claude-opus-5-5", "Claude Opus 5.5"), _Modelo("claude-novo-6", "Claude Novo 6"),
+                      _Modelo("claude-velho-1", "Claude Velho", "retired")):
+                yield m
+
+    class _Cliente:
+        def __init__(self, **kw):
+            self.models = type("M", (), {"list": staticmethod(lambda **kw: _Lista().__aiter__())})()
+
+    monkeypatch.setattr(anthropic, "AsyncAnthropic", _Cliente)
+    monkeypatch.setattr(provedores, "_modelos_anthropic", provedores._modelos_anthropic.real)
+    _env(monkeypatch, ANTHROPIC_API_KEY="sk-ant-teste-000000000000")
+    p = provedores.resolver("anthropic")
+    modelos = await provedores.listar_modelos(p)
+    # todos os sugeridos (Opus, Sonnet, Haiku, Fable) + os novos da conta, sem os aposentados
+    assert {"claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5-1"} <= set(modelos)
+    assert "claude-novo-6" in modelos and "claude-velho-1" not in modelos
+    assert provedores.nome_modelo("claude-novo-6") == "Claude Novo 6"
+
+
+def test_rota_de_provedores_devolve_todos_os_modelos_com_nome(cliente, admin_headers, monkeypatch):
+    _env(monkeypatch, ANTHROPIC_API_KEY="sk-ant-teste-000000000000")
+    r = cliente.get("/chat/api/provedores", headers=admin_headers).json()
+    claude = next(p for p in r if p["id"] == "anthropic")
+    assert claude["modelos"][:1] == ["claude-opus-5-5"]
+    assert {"claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5-1"} <= set(claude["modelos"])
+    assert claude["nomes_modelos"]["claude-sonnet-5-5"].startswith("Claude Sonnet")

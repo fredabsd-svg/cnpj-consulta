@@ -19,7 +19,7 @@
         parar: $('[data-chat="parar"]'),
         provedor: $("[data-chat-provedor]"),
         modelo: $("[data-chat-modelo]"),
-        modelos: $("[data-chat-modelos]"),
+        modeloOutro: $("[data-chat-modelo-outro]"),
         uso: $("[data-chat-uso]"),
         dialogo: $("[data-chat-dialogo]"),
         config: $("[data-chat-config-lista]"),
@@ -266,11 +266,40 @@
         return estado.provedores.find((p) => p.id === ui.provedor.value);
     }
 
+    const OUTRO = "__outro__";
+
+    // Modelo escolhido: item da lista ou o nome digitado em "Outro modelo…".
+    function modeloEscolhido() {
+        return ui.modelo.value === OUTRO ? ui.modeloOutro.value.trim() : ui.modelo.value;
+    }
+
+    function definirModelo(m) {
+        const p = provedorAtual();
+        if (m && !Array.from(ui.modelo.options).some((o) => o.value === m)) {
+            // modelo fora da lista (ex.: conversa antiga): entra como opcao propria
+            const o = el("option", null, m);
+            o.value = m;
+            ui.modelo.insertBefore(o, ui.modelo.lastElementChild);
+        }
+        ui.modelo.value = m || (p && p.modelos[0]) || OUTRO;
+        ui.modeloOutro.hidden = ui.modelo.value !== OUTRO;
+    }
+
     function preencherModelos(manterValor) {
         const p = provedorAtual();
-        ui.modelos.replaceChildren(...(p ? p.modelos : []).map((m) => { const o = el("option"); o.value = m; return o; }));
-        if (!manterValor) ui.modelo.value = p ? (p.modelo_padrao || "") : "";
+        const anterior = modeloEscolhido();
+        const nomes = (p && p.nomes_modelos) || {};
+        const opcoes = (p ? p.modelos : []).map((m) => {
+            const o = el("option", null, nomes[m] ? nomes[m] + " — " + m : m);
+            o.value = m;
+            return o;
+        });
+        const outro = el("option", null, "Outro modelo…");
+        outro.value = OUTRO;
+        ui.modelo.replaceChildren(...opcoes, outro);
+        definirModelo(manterValor ? anterior : (p ? p.modelo_padrao : ""));
         ui.modelo.disabled = !p;
+        ui.modeloOutro.disabled = !p;
     }
 
     function preencherProvedores() {
@@ -308,7 +337,7 @@
         if (!estado.atual || estado.enviando) return;
         try {
             const r = await api("/chat/api/conversas/" + estado.atual.id, {
-                method: "PATCH", body: { provedor: ui.provedor.value, modelo: ui.modelo.value.trim() },
+                method: "PATCH", body: { provedor: ui.provedor.value, modelo: modeloEscolhido() },
             });
             estado.atual = { ...estado.atual, ...(await r.json()) };
             toast("Modelo desta conversa: " + estado.atual.modelo);
@@ -317,7 +346,7 @@
             toast(e.message);
             ui.provedor.value = estado.atual.provedor;
             preencherModelos(true);
-            ui.modelo.value = estado.atual.modelo;
+            definirModelo(estado.atual.modelo);
         }
     }
 
@@ -365,7 +394,7 @@
                 ui.provedor.value = c.provedor;
                 preencherModelos(true);
             }
-            ui.modelo.value = c.modelo;
+            definirModelo(c.modelo);
             ui.uso.textContent = usoTexto(c.tokens_entrada, c.tokens_saida);
             renderExibicao(c.exibicao);
             renderConversas();
@@ -414,6 +443,7 @@
         ui.parar.hidden = !sim;
         ui.provedor.disabled = sim;
         ui.modelo.disabled = sim;
+        ui.modeloOutro.disabled = sim;
     }
 
     async function enviar(texto) {
@@ -424,7 +454,7 @@
         try {
             if (!estado.atual) {
                 const r = await api("/chat/api/conversas", {
-                    method: "POST", body: { provedor: ui.provedor.value, modelo: ui.modelo.value.trim() },
+                    method: "POST", body: { provedor: ui.provedor.value, modelo: modeloEscolhido() },
                 });
                 estado.atual = { ...(await r.json()), exibicao: [] };
                 history.replaceState(null, "", "#c" + estado.atual.id);
@@ -604,7 +634,7 @@
             const extras = el("input", "input");
             extras.placeholder = "ex.: modelo-a, modelo-b";
             campos.appendChild(campo("Modelos extras (opcional)", extras,
-                p.tipo === "openai" ? "A lista do provedor é carregada sozinha; acrescente aqui modelos que não aparecem." : "Para usar outro modelo Claude além dos sugeridos."));
+                "A lista de modelos da sua conta é carregada sozinha; acrescente aqui nomes que não aparecem nela."));
             card.appendChild(campos);
 
             const acoes = el("div", "chat-prov-acoes");
@@ -655,7 +685,12 @@
     ui.texto.addEventListener("input", ajustarAltura);
     ui.parar.addEventListener("click", () => { if (estado.controle) estado.controle.abort(); });
     ui.provedor.addEventListener("change", () => { preencherModelos(false); trocarModelo(); });
-    ui.modelo.addEventListener("change", trocarModelo);
+    ui.modelo.addEventListener("change", () => {
+        ui.modeloOutro.hidden = ui.modelo.value !== OUTRO;
+        if (ui.modelo.value === OUTRO) { ui.modeloOutro.focus(); return; }
+        trocarModelo();
+    });
+    ui.modeloOutro.addEventListener("change", () => { if (modeloEscolhido()) trocarModelo(); });
     $('[data-chat="nova"]').addEventListener("click", novaConversa);
     $('[data-chat="configurar"]').addEventListener("click", abrirConfig);
     $('[data-chat="fechar"]').addEventListener("click", () => ui.dialogo.close());

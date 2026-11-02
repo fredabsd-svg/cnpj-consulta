@@ -33,6 +33,10 @@ def _habilitado() -> None:
 api = [Depends(_habilitado), Depends(exigir_admin_api)]
 
 
+def _nomes(modelos: list[str]) -> dict[str, str]:
+    return {m: n for m in modelos if (n := provedores.nome_modelo(m))}
+
+
 def _modelo_padrao(prov: provedores.Provedor) -> str:
     cfg = get_settings()
     if cfg.chat_modelo_padrao and prov.id == cfg.chat_provedor_padrao:
@@ -56,7 +60,8 @@ async def listar_provedores() -> list[dict]:
     provs = await asyncio.to_thread(provedores.provedores)
     modelos = await asyncio.gather(*(provedores.listar_modelos(p) for p in provs))
     cfg = get_settings()
-    return [{**p.publico(), "modelos": m, "modelo_padrao": _modelo_padrao(p) or (m[0] if m else ""),
+    return [{**p.publico(), "modelos": m, "nomes_modelos": _nomes(m),
+             "modelo_padrao": _modelo_padrao(p) or (m[0] if m else ""),
              "padrao": p.id == cfg.chat_provedor_padrao} for p, m in zip(provs, modelos, strict=True)]
 
 
@@ -80,7 +85,8 @@ async def salvar_provedor(request: Request, pid: str, dados: dict[str, Any] = Bo
                  detalhe=f"provedor={pid} chave_alterada={bool(chave) or bool(dados.get('apagar_chave'))} "
                          f"habilitado={p.configurado}")
     modelos = await provedores.listar_modelos(p)
-    return {**p.publico(), "modelos": modelos, "modelo_padrao": _modelo_padrao(p) or (modelos[0] if modelos else "")}
+    return {**p.publico(), "modelos": modelos, "nomes_modelos": _nomes(modelos),
+            "modelo_padrao": _modelo_padrao(p) or (modelos[0] if modelos else "")}
 
 
 @router.get("/chat/api/conversas", dependencies=api)
@@ -131,10 +137,10 @@ async def alterar_conversa(conversa_id: int, dados: dict[str, Any] = Body(...)) 
     if dados.get("provedor") or dados.get("modelo"):
         prov, modelo = await asyncio.to_thread(_validar_modelo, {"provedor": dados.get("provedor") or c["provedor"],
                                                                  "modelo": dados.get("modelo")})
-        atual = await asyncio.to_thread(provedores.resolver, c["provedor"])
-        if prov.tipo != atual.tipo and c["exibicao"]:
-            raise HTTPException(status_code=409, detail="Para trocar entre Claude e os outros provedores, "
-                                                        "comece uma nova conversa.")
+        if conversa_id in motor._em_andamento:
+            raise HTTPException(status_code=409, detail="Aguarde a resposta terminar para trocar o modelo.")
+        # Qualquer provedor/modelo, mesmo no meio da conversa: o motor converte o
+        # historico para o formato do provedor escolhido (motor.para_anthropic/para_openai).
         c = await asyncio.to_thread(conversas.trocar_modelo, conversa_id, prov.id, modelo)
     return c
 

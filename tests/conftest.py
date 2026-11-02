@@ -52,6 +52,17 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[No
     limpar_cache()
     limpar_falhas()
 
+    # Lista de modelos da Anthropic: sem rede nos testes (o teste proprio usa .real)
+    from app.chat import provedores as _prov
+
+    _real = getattr(_prov._modelos_anthropic, "real", _prov._modelos_anthropic)
+
+    async def _sem_rede(prov):
+        return []
+
+    _sem_rede.real = _real  # type: ignore[attr-defined]
+    monkeypatch.setattr(_prov, "_modelos_anthropic", _sem_rede)
+
     # Reseta engine/Factory do SQLAlchemy para apontar para o DB isolado
     import app.db as _db
 

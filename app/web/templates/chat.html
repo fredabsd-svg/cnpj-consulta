@@ -33,9 +33,12 @@
                 <label for="chat-provedor" class="visually-hidden">Provedor</label>
                 <select class="select select-sm" id="chat-provedor" data-chat-provedor></select>
                 <label for="chat-modelo" class="visually-hidden">Modelo</label>
-                <input class="input chat-input-modelo" id="chat-modelo" list="chat-modelos" data-chat-modelo
-                       autocomplete="off" spellcheck="false" placeholder="modelo">
-                <datalist id="chat-modelos" data-chat-modelos></datalist>
+                {# Lista de selecao (nao <input list>): o navegador filtra as sugestoes de um
+                   campo de texto pelo que ja esta escrito e escondia os outros modelos. #}
+                <select class="select select-sm chat-select-modelo" id="chat-modelo" data-chat-modelo></select>
+                <label for="chat-modelo-outro" class="visually-hidden">Nome do modelo</label>
+                <input class="input chat-input-modelo" id="chat-modelo-outro" data-chat-modelo-outro hidden
+                       autocomplete="off" spellcheck="false" placeholder="nome exato do modelo">
             </div>
             <span class="faint small" data-chat-uso></span>
         </div>
