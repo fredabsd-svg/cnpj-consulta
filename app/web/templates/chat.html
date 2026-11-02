@@ -40,6 +40,8 @@
                 <input class="input chat-input-modelo" id="chat-modelo-outro" data-chat-modelo-outro hidden
                        autocomplete="off" spellcheck="false" placeholder="nome exato do modelo">
             </div>
+            <span class="chat-plano small" data-chat-plano hidden>Usando o plano do ChatGPT ·
+                <a href="https://chatgpt.com/settings/usage" target="_blank" rel="noopener noreferrer">Gerenciar uso</a></span>
             <span class="faint small" data-chat-uso></span>
         </div>
 
@@ -47,7 +49,7 @@
             <div class="chat-vazio" data-chat-vazio>
                 {% if not algum_configurado %}
                 <p><strong>Nenhum provedor de IA configurado.</strong></p>
-                <p class="muted">Clique em <em>Configurar provedores</em> e cadastre uma chave (Anthropic, OpenAI, Google Gemini, OpenRouter, DeepSeek, Groq, Mistral, xAI) ou o endereço de um modelo local (Ollama, LM Studio).</p>
+                <p class="muted">Clique em <em>Configurar provedores</em> e entre com a sua conta do ChatGPT ou do OpenRouter (sem chave), cadastre uma chave (Anthropic, OpenAI, Google Gemini, OpenRouter, DeepSeek, Groq, Mistral, xAI) ou o endereço de um modelo local (Ollama, LM Studio).</p>
                 {% else %}
                 <p><strong>Exemplos do que pedir</strong></p>
                 <ul class="chat-exemplos">
@@ -81,6 +83,14 @@
     </div>
     <p class="hint">As chaves ficam só neste computador (banco do app) e nunca voltam para o navegador. Valores do arquivo <code>.env</code> têm prioridade. Veja <code>CHAT_IA.md</code>.</p>
     <div class="chat-config-lista" data-chat-config-lista></div>
+</dialog>
+
+<dialog class="chat-config chat-boasvindas" data-chat-boasvindas aria-labelledby="t-boasvindas">
+    <h2 id="t-boasvindas">Você está usando o seu plano do ChatGPT</h2>
+    <p>O uso elegível neste app consome o seu plano do ChatGPT. Gerencie o uso nas
+        <a href="https://chatgpt.com/settings/usage" target="_blank" rel="noopener noreferrer">configurações do ChatGPT</a>.
+        Este app é gratuito e não cobra nada à parte.</p>
+    <div class="chat-prov-acoes"><button type="button" class="btn btn-primary btn-sm" data-chat="entendi">Entendi</button></div>
 </dialog>
 
 <script src="{{ static_url('js/chat.js') }}" defer></script>

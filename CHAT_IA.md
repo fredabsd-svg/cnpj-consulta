@@ -19,6 +19,7 @@ os valores do `.env` têm prioridade sobre os cadastrados na tela.
 |---|---|---|
 | Anthropic (Claude) | `ANTHROPIC_API_KEY` | Claude Opus 5.5 (padrão), Sonnet 5.5, Haiku 5.5, Fable 5.1 e os demais da sua conta |
 | OpenAI | `OPENAI_API_KEY` | lista carregada da sua conta |
+| ChatGPT (sua conta) | (sem chave: botão **Continuar com o ChatGPT**) | modelos liberados pelo seu plano do ChatGPT |
 | Google Gemini | `GEMINI_API_KEY` | lista carregada da sua conta |
 | OpenRouter | `OPENROUTER_API_KEY` | centenas de modelos de vários fabricantes com uma chave só |
 | DeepSeek | `DEEPSEEK_API_KEY` | lista carregada da sua conta |
@@ -52,12 +53,22 @@ nunca a vê. Cada login fica na auditoria (`chat.provedor.login`, sem a chave).
 | OpenRouter | **Sim** (login oficial com OAuth/PKCE). Dá acesso aos modelos de vários fabricantes, **inclusive o Grok** (`x-ai/grok-…`), Claude, GPT, Gemini e Llama, com uma conta só |
 | xAI (Grok) direto | Não: a xAI só libera login por assinatura (SuperGrok/X Premium) para parceiros escolhidos por ela, sem programa aberto. Use a chave de API, ou o Grok pelo OpenRouter |
 | Anthropic (Claude) | Não: a Anthropic proíbe login do Claude.ai em aplicativos de terceiros. Use a chave do Console |
-| OpenAI | Existe em prévia (“Entrar com o ChatGPT” para apps locais e de código aberto), mas só pela Responses API; ainda não está no app |
+| ChatGPT | **Sim** (**Continuar com o ChatGPT**, login oficial da OpenAI para apps locais, em prévia). Usa o seu plano do ChatGPT (Plus, Pro…), não créditos de API |
 | Groq, Mistral, DeepSeek | Não oferecem; só chave de API |
 
 O endereço de retorno do login é `/chat/login/<provedor>/retorno` no próprio
 app: abra o app pelo mesmo endereço que você usa no dia a dia (ex.:
 `http://localhost:8000`).
+
+**ChatGPT, em detalhe.** A OpenAI só devolve o login para
+`http://127.0.0.1:<porta>`, então o app precisa estar ouvindo em 127.0.0.1 (o
+padrão, `APP_HOST=127.0.0.1`). No primeiro login o app se registra na sua conta
+(aparece como “CNPJ Consulta” nas configurações do ChatGPT) e mostra o aviso de
+que o uso consome o seu plano; ao lado do modelo aparece **Usando o plano do
+ChatGPT · Gerenciar uso**. O acesso vale 1 hora e é renovado sozinho por até 30
+dias de inatividade; o login fica em `data/chatgpt.json` (só o dono do arquivo
+lê) e **Sair** revoga o acesso na OpenAI. Limites do plano e modelos disponíveis
+são os que a OpenAI libera para a sua conta.
 - **Escolha de modelo:** o modelo precisa saber usar ferramentas (*tool calling*).
   Os grandes modelos dos provedores em nuvem sabem; entre os locais, use modelos
   com suporte a ferramentas (o Ollama marca isso como *tools*) e de bom tamanho.

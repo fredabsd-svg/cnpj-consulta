@@ -21,6 +21,8 @@
         modelo: $("[data-chat-modelo]"),
         modeloOutro: $("[data-chat-modelo-outro]"),
         uso: $("[data-chat-uso]"),
+        plano: $("[data-chat-plano]"),
+        boasVindas: $("[data-chat-boasvindas]"),
         dialogo: $("[data-chat-dialogo]"),
         config: $("[data-chat-config-lista]"),
     };
@@ -300,6 +302,8 @@
         definirModelo(manterValor ? anterior : (p ? p.modelo_padrao : ""));
         ui.modelo.disabled = !p;
         ui.modeloOutro.disabled = !p;
+        if (!p) ui.modeloOutro.hidden = true;
+        ui.plano.hidden = !(p && p.id === "chatgpt");  // "Usando o plano do ChatGPT"
     }
 
     function preencherProvedores() {
@@ -619,9 +623,29 @@
                 // Login oficial do provedor (OAuth): abre a pagina de login dele e
                 // volta com a chave da conta, sem copiar e colar.
                 const entrar = el("div", "chat-prov-login");
-                const a = el("a", "btn btn-primary btn-sm", (p.tem_chave ? "Entrar de novo com " : "Entrar com ") + p.nome.split(" (")[0]);
-                a.href = "/chat/login/" + encodeURIComponent(p.id) + "/iniciar";
-                entrar.append(a, el("span", "hint", "Abre o login da sua conta; não precisa copiar a chave."));
+                const conta = p.conta || null;
+                if (p.id === "chatgpt" && conta && conta.conectado) {
+                    entrar.appendChild(el("span", "small", "Conectado" + (conta.email ? " como " + conta.email : "") + "."));
+                    const sair = el("button", "btn btn-ghost btn-sm", "Sair");
+                    sair.type = "button";
+                    sair.addEventListener("click", () => sairChatGPT());
+                    const uso = el("a", "small", "Gerenciar uso");
+                    uso.href = conta.gerenciar_uso; uso.target = "_blank"; uso.rel = "noopener noreferrer";
+                    entrar.append(sair, uso);
+                } else {
+                    const rotulo = p.id === "chatgpt" ? "Continuar com o ChatGPT"
+                        : (p.tem_chave ? "Entrar de novo com " : "Entrar com ") + p.nome.split(" (")[0];
+                    const a = el("a", "btn btn-primary btn-sm", rotulo);
+                    a.href = "/chat/login/" + encodeURIComponent(p.id) + "/iniciar";
+                    entrar.append(a, el("span", "hint", p.id === "chatgpt"
+                        ? "Usa o seu plano do ChatGPT; abre o login da OpenAI, sem chave."
+                        : "Abre o login da sua conta; não precisa copiar a chave."));
+                    if (p.id === "chatgpt" && conta && conta.registrado) {
+                        const outra = el("a", "small", "Entrar com outra conta");
+                        outra.href = "/chat/login/chatgpt/iniciar?nova_conta=1";
+                        entrar.appendChild(outra);
+                    }
+                }
                 card.appendChild(entrar);
             }
 
@@ -676,6 +700,17 @@
         }
     }
 
+    async function sairChatGPT() {
+        try {
+            const r = await (await api("/chat/api/provedores/chatgpt/sair", { method: "POST", body: {} })).json();
+            toast(r.revogacao_confirmada ? "Você saiu do ChatGPT."
+                : "Login apagado deste computador, mas a OpenAI não confirmou. Desconecte o app nas configurações do ChatGPT.");
+            await carregarProvedores();
+        } catch (e) {
+            toast("ChatGPT: " + e.message);
+        }
+    }
+
     async function salvarProvedor(p, dados) {
         try {
             await api("/chat/api/provedores/" + p.id, { method: "POST", body: { habilitado: true, ...dados } });
@@ -704,6 +739,7 @@
     $('[data-chat="nova"]').addEventListener("click", novaConversa);
     $('[data-chat="configurar"]').addEventListener("click", abrirConfig);
     $('[data-chat="fechar"]').addEventListener("click", () => ui.dialogo.close());
+    $('[data-chat="entendi"]').addEventListener("click", () => ui.boasVindas.close());
     ui.msgs.addEventListener("click", (ev) => {
         const b = ev.target.closest("[data-exemplo]");
         if (b) enviar(b.textContent);
@@ -711,14 +747,17 @@
 
     (async function iniciar() {
         const q = new URLSearchParams(location.search);
-        if (q.has("login_ok") || q.has("login_erro")) {
+        const boasVindas = q.get("login_ok") === "chatgpt" && q.get("primeiro") === "1" && !!ui.boasVindas.showModal;
+        if (boasVindas) {
+            ui.boasVindas.showModal();  // so no primeiro login
+        } else if (q.has("login_ok") || q.has("login_erro")) {
             toast(q.has("login_ok") ? "Login feito: " + q.get("login_ok") + " configurado." : q.get("login_erro"));
-            history.replaceState(null, "", location.pathname + location.hash);
         }
+        if (q.has("login_ok") || q.has("login_erro")) history.replaceState(null, "", location.pathname + location.hash);
         await carregarProvedores();
         await carregarConversas();
         const m = /^#c(\d+)$/.exec(location.hash);
         if (m) abrirConversa(Number(m[1]));
-        else if (raiz.dataset.algum !== "sim") abrirConfig();
+        else if (raiz.dataset.algum !== "sim" && !boasVindas) abrirConfig();
     })();
 })();

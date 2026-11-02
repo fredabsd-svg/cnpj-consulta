@@ -28,6 +28,32 @@ def configurar(conn: duckdb.DuckDBPyConnection, temp_dir: Path | None, settings:
     conn.execute("SET preserve_insertion_order = false")
 
 
+def limitar_threads(conn: duckdb.DuckDBPyConnection, mb_por_thread: int = 512) -> int:
+    """Junçoes grandes reservam memoria por thread: com muitos nucleos e pouca
+    memoria o DuckDB fica sem espaco. Garante ~mb_por_thread MB por thread."""
+    limite = conn.execute("SELECT current_setting('memory_limit')").fetchone()[0]
+    atual = int(conn.execute("SELECT current_setting('threads')").fetchone()[0])
+    mb = _em_mb(str(limite))
+    if mb is None:
+        return atual
+    maximo = max(1, int(mb // mb_por_thread))
+    if atual > maximo:
+        conn.execute(f"SET threads = {maximo}")
+        return maximo
+    return atual
+
+
+def _em_mb(valor: str) -> float | None:
+    """'3.7 GiB', '4GB', '512.0 MiB' -> MB."""
+    import re
+
+    m = re.fullmatch(r"\s*([\d.]+)\s*([KMGT]?)I?B\s*", valor.upper())
+    if not m:
+        return None
+    fator = {"": 1 / 1_000_000, "K": 1 / 1000, "M": 1, "G": 1000, "T": 1_000_000}[m[2]]
+    return float(m[1]) * fator
+
+
 def _safe_size(valor: str) -> str:
     v = valor.strip().upper().replace(" ", "")
     num = v.rstrip("KMGTIB%")

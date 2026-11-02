@@ -14,7 +14,7 @@ from urllib.parse import urlencode
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse
 
-from app.chat import conversas, motor, oauth, provedores
+from app.chat import chatgpt, conversas, motor, oauth, provedores
 from app.chat.ferramentas import arquivo_exportado_valido
 from app.config import get_settings
 from app.receita import jobs
@@ -36,6 +36,13 @@ api = [Depends(_habilitado), Depends(exigir_admin_api)]
 
 def _nomes(modelos: list[str]) -> dict[str, str]:
     return {m: n for m in modelos if (n := provedores.nome_modelo(m))}
+
+
+def _extras_login(pid: str) -> dict[str, Any]:
+    """Login sem chave (OAuth) disponivel para o provedor e, no ChatGPT, a conta conectada."""
+    if pid == "chatgpt":
+        return {"login": True, "conta": chatgpt.conta()}
+    return {"login": oauth.disponivel(pid)}
 
 
 def _modelo_padrao(prov: provedores.Provedor) -> str:
@@ -61,7 +68,7 @@ async def listar_provedores() -> list[dict]:
     provs = await asyncio.to_thread(provedores.provedores)
     modelos = await asyncio.gather(*(provedores.listar_modelos(p) for p in provs))
     cfg = get_settings()
-    return [{**p.publico(), "modelos": m, "nomes_modelos": _nomes(m), "login": oauth.disponivel(p.id),
+    return [{**p.publico(), "modelos": m, "nomes_modelos": _nomes(m), **_extras_login(p.id),
              "modelo_padrao": _modelo_padrao(p) or (m[0] if m else ""),
              "padrao": p.id == cfg.chat_provedor_padrao} for p, m in zip(provs, modelos, strict=True)]
 
@@ -86,7 +93,7 @@ async def salvar_provedor(request: Request, pid: str, dados: dict[str, Any] = Bo
                  detalhe=f"provedor={pid} chave_alterada={bool(chave) or bool(dados.get('apagar_chave'))} "
                          f"habilitado={p.configurado}")
     modelos = await provedores.listar_modelos(p)
-    return {**p.publico(), "modelos": modelos, "nomes_modelos": _nomes(modelos), "login": oauth.disponivel(p.id),
+    return {**p.publico(), "modelos": modelos, "nomes_modelos": _nomes(modelos), **_extras_login(p.id),
             "modelo_padrao": _modelo_padrao(p) or (modelos[0] if modelos else "")}
 
 
@@ -95,6 +102,42 @@ pagina = [Depends(_habilitado), Depends(exigir_admin_pagina)]
 
 def _voltar_ao_chat(**params: str) -> RedirectResponse:
     return RedirectResponse("/chat?" + urlencode(params), status_code=303)
+
+
+@router.get("/chat/login/chatgpt/iniciar", dependencies=pagina)
+async def login_chatgpt_iniciar(request: Request, nova_conta: str = "") -> RedirectResponse:
+    """Continuar com o ChatGPT: login oficial da OpenAI (o retorno vai para 127.0.0.1)."""
+    porta = request.url.port or (443 if request.url.scheme == "https" else 80)
+    origem = f"{request.url.scheme}://{request.url.netloc}"
+    url = await asyncio.to_thread(chatgpt.iniciar, porta, origem, nova_conta=nova_conta == "1")
+    return RedirectResponse(url, status_code=303)
+
+
+@router.get(chatgpt.CAMINHO_RETORNO, dependencies=[Depends(_habilitado)])
+async def login_chatgpt_retorno(request: Request, code: str = "", state: str = "", client_id: str = "",
+                                error: str = "") -> RedirectResponse:
+    # Sem exigir o cookie do admin: a OpenAI devolve para 127.0.0.1, e o admin pode
+    # estar usando o app por "localhost" (outro cookie). Quem protege e o `state`,
+    # que so o admin consegue criar (rota /iniciar) e vale uma vez, por 10 minutos.
+    pend = chatgpt.pendente(state)
+    voltar = pend["voltar_para"] if pend else ""
+    try:
+        r = await chatgpt.concluir(codigo=code, estado=state, cliente_retorno=client_id, erro=error)
+    except chatgpt.LoginInvalido as e:
+        jobs.auditar("chat.provedor.login", ip=ip_de(request), detalhe="provedor=chatgpt ok=False")
+        return RedirectResponse(voltar + "/chat?" + urlencode({"login_erro": str(e)}), status_code=303)
+    provedores._cache_modelos.pop("chatgpt", None)
+    jobs.auditar("chat.provedor.login", ip=ip_de(request), detalhe="provedor=chatgpt ok=True")
+    params = {"login_ok": "chatgpt", **({"primeiro": "1"} if r["primeiro_login"] else {})}
+    return RedirectResponse(r["voltar_para"] + "/chat?" + urlencode(params), status_code=303)
+
+
+@router.post("/chat/api/provedores/chatgpt/sair", dependencies=api)
+async def login_chatgpt_sair(request: Request) -> dict:
+    confirmada = await chatgpt.sair()
+    provedores._cache_modelos.pop("chatgpt", None)
+    jobs.auditar("chat.provedor.sair", ip=ip_de(request), detalhe=f"provedor=chatgpt revogado={confirmada}")
+    return {"saiu": True, "revogacao_confirmada": confirmada}
 
 
 @router.get("/chat/login/{pid}/iniciar", dependencies=pagina)

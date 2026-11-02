@@ -761,6 +761,8 @@ select[multiple].select { background-image: none; padding-right: var(--space-1);
 .chat-select-modelo { min-width: 240px; }
 .chat-prov-login { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0 8px; }
 .chat-prov-login .hint { margin: 0; }
+.chat-plano[hidden] { display: none; }
+.chat-boasvindas { max-width: 460px; }
 .chat-input-modelo[hidden] { display: none; }
 .chat-composer-acoes .btn[hidden] { display: none; }
 .chat-input-modelo { width: 230px; min-height: 32px; height: 32px; font-family: var(--font-mono); font-size: var(--text-sm); }
