@@ -9,11 +9,12 @@ from __future__ import annotations
 import asyncio
 import json
 from typing import Any
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse
 
-from app.chat import conversas, motor, provedores
+from app.chat import conversas, motor, oauth, provedores
 from app.chat.ferramentas import arquivo_exportado_valido
 from app.config import get_settings
 from app.receita import jobs
@@ -31,6 +32,10 @@ def _habilitado() -> None:
 
 
 api = [Depends(_habilitado), Depends(exigir_admin_api)]
+
+
+def _nomes(modelos: list[str]) -> dict[str, str]:
+    return {m: n for m in modelos if (n := provedores.nome_modelo(m))}
 
 
 def _modelo_padrao(prov: provedores.Provedor) -> str:
@@ -56,7 +61,8 @@ async def listar_provedores() -> list[dict]:
     provs = await asyncio.to_thread(provedores.provedores)
     modelos = await asyncio.gather(*(provedores.listar_modelos(p) for p in provs))
     cfg = get_settings()
-    return [{**p.publico(), "modelos": m, "modelo_padrao": _modelo_padrao(p) or (m[0] if m else ""),
+    return [{**p.publico(), "modelos": m, "nomes_modelos": _nomes(m), "login": oauth.disponivel(p.id),
+             "modelo_padrao": _modelo_padrao(p) or (m[0] if m else ""),
              "padrao": p.id == cfg.chat_provedor_padrao} for p, m in zip(provs, modelos, strict=True)]
 
 
@@ -80,7 +86,41 @@ async def salvar_provedor(request: Request, pid: str, dados: dict[str, Any] = Bo
                  detalhe=f"provedor={pid} chave_alterada={bool(chave) or bool(dados.get('apagar_chave'))} "
                          f"habilitado={p.configurado}")
     modelos = await provedores.listar_modelos(p)
-    return {**p.publico(), "modelos": modelos, "modelo_padrao": _modelo_padrao(p) or (modelos[0] if modelos else "")}
+    return {**p.publico(), "modelos": modelos, "nomes_modelos": _nomes(modelos), "login": oauth.disponivel(p.id),
+            "modelo_padrao": _modelo_padrao(p) or (modelos[0] if modelos else "")}
+
+
+pagina = [Depends(_habilitado), Depends(exigir_admin_pagina)]
+
+
+def _voltar_ao_chat(**params: str) -> RedirectResponse:
+    return RedirectResponse("/chat?" + urlencode(params), status_code=303)
+
+
+@router.get("/chat/login/{pid}/iniciar", dependencies=pagina)
+async def login_iniciar(request: Request, pid: str) -> RedirectResponse:
+    """Abre o login do provedor (OAuth com PKCE): sem copiar e colar chave."""
+    if not oauth.disponivel(pid):
+        raise HTTPException(status_code=404, detail="Este provedor não oferece login para outros aplicativos.")
+    retorno = str(request.url_for("login_retorno", pid=pid))
+    return RedirectResponse(oauth.iniciar(pid, retorno), status_code=303)
+
+
+@router.get("/chat/login/{pid}/retorno", name="login_retorno", dependencies=pagina)
+async def login_retorno(request: Request, pid: str, code: str = "", state: str = "") -> RedirectResponse:
+    if not oauth.disponivel(pid):
+        raise HTTPException(status_code=404, detail="Provedor desconhecido.")
+    try:
+        chave = await oauth.concluir(pid, code, state)
+        await asyncio.to_thread(provedores.salvar, pid, api_key=chave)
+    except oauth.LoginInvalido as e:
+        jobs.auditar("chat.provedor.login", ip=ip_de(request), detalhe=f"provedor={pid} ok=False")
+        return _voltar_ao_chat(login_erro=str(e))
+    except ValueError as e:
+        return _voltar_ao_chat(login_erro=str(e))
+    provedores._cache_modelos.pop(pid, None)
+    jobs.auditar("chat.provedor.login", ip=ip_de(request), detalhe=f"provedor={pid} ok=True")
+    return _voltar_ao_chat(login_ok=pid)
 
 
 @router.get("/chat/api/conversas", dependencies=api)
@@ -131,10 +171,10 @@ async def alterar_conversa(conversa_id: int, dados: dict[str, Any] = Body(...)) 
     if dados.get("provedor") or dados.get("modelo"):
         prov, modelo = await asyncio.to_thread(_validar_modelo, {"provedor": dados.get("provedor") or c["provedor"],
                                                                  "modelo": dados.get("modelo")})
-        atual = await asyncio.to_thread(provedores.resolver, c["provedor"])
-        if prov.tipo != atual.tipo and c["exibicao"]:
-            raise HTTPException(status_code=409, detail="Para trocar entre Claude e os outros provedores, "
-                                                        "comece uma nova conversa.")
+        if conversa_id in motor._em_andamento:
+            raise HTTPException(status_code=409, detail="Aguarde a resposta terminar para trocar o modelo.")
+        # Qualquer provedor/modelo, mesmo no meio da conversa: o motor converte o
+        # historico para o formato do provedor escolhido (motor.para_anthropic/para_openai).
         c = await asyncio.to_thread(conversas.trocar_modelo, conversa_id, prov.id, modelo)
     return c
 

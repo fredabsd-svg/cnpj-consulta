@@ -17,7 +17,7 @@ os valores do `.env` têm prioridade sobre os cadastrados na tela.
 
 | Provedor | Variável no `.env` | Modelos |
 |---|---|---|
-| Anthropic (Claude) | `ANTHROPIC_API_KEY` | Claude Opus 5.5 (padrão), Sonnet 5.5, Haiku 5.5, Fable 5.1 |
+| Anthropic (Claude) | `ANTHROPIC_API_KEY` | Claude Opus 5.5 (padrão), Sonnet 5.5, Haiku 5.5, Fable 5.1 e os demais da sua conta |
 | OpenAI | `OPENAI_API_KEY` | lista carregada da sua conta |
 | Google Gemini | `GEMINI_API_KEY` | lista carregada da sua conta |
 | OpenRouter | `OPENROUTER_API_KEY` | centenas de modelos de vários fabricantes com uma chave só |
@@ -29,14 +29,35 @@ os valores do `.env` têm prioridade sobre os cadastrados na tela.
 | LM Studio (local) | `LMSTUDIO_URL=http://localhost:1234/v1` | modelo carregado no LM Studio |
 | Personalizado | `CHAT_CUSTOM_URL`, `CHAT_CUSTOM_API_KEY`, `CHAT_CUSTOM_MODELOS` | qualquer servidor compatível com a API da OpenAI (vLLM, LiteLLM, Azure OpenAI…). Parâmetros do endereço são mantidos (ex.: Azure: `https://RECURSO.openai.azure.com/openai/deployments/MODELO?api-version=AAAA-MM-DD`) |
 
-- A lista de modelos dos provedores compatíveis com OpenAI vem do próprio
-  provedor (`/models`) e é atualizada a cada 10 minutos. O campo de modelo também
-  aceita digitar qualquer nome; em **Modelos extras** você fixa nomes que não
-  aparecem na lista.
-- O modelo pode ser trocado no meio da conversa dentro do mesmo tipo (entre os
-  Claude, ou entre os compatíveis com OpenAI). Para passar de um tipo ao outro,
-  comece uma nova conversa.
+- A lista de modelos vem do próprio provedor (API de modelos da Anthropic;
+  `/models` nos compatíveis com OpenAI) e é atualizada a cada 10 minutos. A lista
+  mostra todos; em **Outro modelo…** você digita qualquer nome e em **Modelos
+  extras** fixa nomes que não aparecem nela.
+- O modelo e o provedor podem ser trocados a qualquer momento, inclusive no meio
+  da conversa e entre Claude e os outros provedores: o histórico é convertido
+  para o formato do provedor escolhido (o raciocínio interno do modelo anterior
+  não passa adiante; textos, ferramentas usadas e resultados passam).
 - `CHAT_PROVEDOR_PADRAO` e `CHAT_MODELO_PADRAO` definem o que vem selecionado.
+
+### Entrar com login e senha (sem chave)
+
+Onde o provedor oferece login oficial para outros aplicativos, a tela de
+provedores mostra o botão **Entrar com …**: abre a página de login do próprio
+provedor, você entra e autoriza, e o app recebe a chave da sua conta sozinho
+(nada de copiar e colar). A senha é digitada só no site do provedor; o app
+nunca a vê. Cada login fica na auditoria (`chat.provedor.login`, sem a chave).
+
+| Provedor | Login sem chave? |
+|---|---|
+| OpenRouter | **Sim** (login oficial com OAuth/PKCE). Dá acesso aos modelos de vários fabricantes, **inclusive o Grok** (`x-ai/grok-…`), Claude, GPT, Gemini e Llama, com uma conta só |
+| xAI (Grok) direto | Não: a xAI só libera login por assinatura (SuperGrok/X Premium) para parceiros escolhidos por ela, sem programa aberto. Use a chave de API, ou o Grok pelo OpenRouter |
+| Anthropic (Claude) | Não: a Anthropic proíbe login do Claude.ai em aplicativos de terceiros. Use a chave do Console |
+| OpenAI | Existe em prévia (“Entrar com o ChatGPT” para apps locais e de código aberto), mas só pela Responses API; ainda não está no app |
+| Groq, Mistral, DeepSeek | Não oferecem; só chave de API |
+
+O endereço de retorno do login é `/chat/login/<provedor>/retorno` no próprio
+app: abra o app pelo mesmo endereço que você usa no dia a dia (ex.:
+`http://localhost:8000`).
 - **Escolha de modelo:** o modelo precisa saber usar ferramentas (*tool calling*).
   Os grandes modelos dos provedores em nuvem sabem; entre os locais, use modelos
   com suporte a ferramentas (o Ollama marca isso como *tools*) e de bom tamanho.

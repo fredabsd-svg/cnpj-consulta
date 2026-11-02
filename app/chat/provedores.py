@@ -208,19 +208,47 @@ _cache_modelos: dict[str, tuple[float, list[str]]] = {}
 _CACHE_SEG = 600.0
 
 
+_nomes_modelos: dict[str, str] = dict(NOMES_MODELOS)
+
+
+def nome_modelo(mid: str) -> str | None:
+    """Nome de exibicao do modelo (ex.: "Claude Sonnet 5.5"), quando conhecido."""
+    return _nomes_modelos.get(mid)
+
+
 async def listar_modelos(prov: Provedor) -> list[str]:
-    """Modelos sugeridos + os que o provedor informa em /models (cache de 10 min)."""
-    if prov.tipo != "openai" or not prov.configurado:
+    """Modelos sugeridos + TODOS os que a conta tem no provedor (API de modelos da
+    Anthropic ou /models dos compativeis com OpenAI), com cache de 10 min."""
+    if not prov.configurado:
         return prov.modelos
     agora = time.monotonic()
     cache = _cache_modelos.get(prov.id)
     if cache and agora - cache[0] < _CACHE_SEG:
         remotos = cache[1]
     else:
-        remotos = await _modelos_remotos(prov)
+        remotos = await (_modelos_anthropic(prov) if prov.tipo == "anthropic" else _modelos_remotos(prov))
         if remotos:  # falha (ex.: Ollama ainda fechado) nao fica em cache
             _cache_modelos[prov.id] = (agora, remotos)
     return list(dict.fromkeys([*prov.modelos, *remotos]))
+
+
+async def _modelos_anthropic(prov: Provedor) -> list[str]:
+    """Modelos ativos da conta pela API de modelos (SDK oficial), mais novos primeiro."""
+    import anthropic
+
+    try:
+        cliente = anthropic.AsyncAnthropic(api_key=prov.api_key or None, max_retries=1, timeout=10.0)
+        ids = []
+        async for m in cliente.models.list(limit=100):
+            if getattr(m, "lifecycle", None) == "retired":
+                continue
+            ids.append(m.id)
+            if getattr(m, "display_name", None):
+                _nomes_modelos[m.id] = m.display_name
+        return ids
+    except Exception as e:  # noqa: BLE001 -- sem a lista da API, ficam os modelos sugeridos
+        log.info("lista de modelos da Anthropic indisponivel: %s", type(e).__name__)
+        return []
 
 
 async def _modelos_remotos(prov: Provedor) -> list[str]:
