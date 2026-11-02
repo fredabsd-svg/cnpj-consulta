@@ -46,7 +46,7 @@ import httpx
 
 from app.config import Settings, get_settings
 from app.receita import armazenamento as arm
-from app.receita.duck import SCHEMA_VERSAO, Vigia, configurar, sql_str
+from app.receita.duck import SCHEMA_VERSAO, Vigia, configurar, limitar_threads, sql_str
 from app.receita.fonte import ArquivoRemoto, FonteError, FonteReceita, VersaoRemota
 from app.receita.layout import GRUPO_POR_NOME, GRUPOS, MES_RE, ORDEM_GRUPOS
 from app.receita.schema import (
@@ -91,6 +91,39 @@ SEGMENTO_MIN = 32 * 1024 * 1024
 
 TABELAS_COMPARADAS = ("empresas", "estabelecimentos", "socios", "simples", "cnaes", "motivos", "municipios",
                       "naturezas", "paises", "qualificacoes")
+
+
+@dataclass(frozen=True)
+class Fatias:
+    """Divide a consolidacao de uma tabela grande pelo 1o caractere da chave."""
+
+    expr_bruto: str  # chave nas tabelas brutas
+    expr_final: str  # chave nas tabelas ja consolidadas
+    caracteres: str
+    tamanho: int = 1  # prefixo de 1 caractere = 10 fatias (CNPJ); 2 = 100 fatias
+
+    def partes(self) -> list[tuple[str, str]]:
+        """[(filtro_bruto, filtro)] em ordem crescente da chave; a ultima fatia pega
+        o que nao comeca por nenhum dos prefixos (nada fica de fora)."""
+        prefixos = [""]
+        for _ in range(self.tamanho):
+            prefixos = [p + c for p in prefixos for c in self.caracteres]
+        n = self.tamanho
+        out = [(f"substr({self.expr_bruto}, 1, {n}) = '{p}'", f"substr({self.expr_final}, 1, {n}) = '{p}'")
+               for p in prefixos]
+        # resto: o 1o caractere ja basta para separar (prefixos cobrem todas as combinacoes)
+        todos = ", ".join(f"'{c}'" for c in self.caracteres)
+        resto = " OR ".join(f"substr({{e}}, {i}, 1) NOT IN ({todos})" for i in range(1, n + 1))
+        out.append((f"({resto.format(e=self.expr_bruto)})", f"({resto.format(e=self.expr_final)})"))
+        return out
+
+
+LINHAS_SEM_FATIAR = 2_000_000  # abaixo disto a tabela cabe com folga numa consulta so
+
+FATIAS_CNPJ = Fatias("trim(cnpj_basico)", "cnpj_basico", "0123456789")
+# Empresas e estabelecimentos juntam outras tabelas e ordenam: 100 fatias.
+FATIAS_CNPJ_FINAS = Fatias("trim(cnpj_basico)", "cnpj_basico", "0123456789", tamanho=2)
+FATIAS_CHAVE = Fatias("socio_chave", "socio_chave", "0123456789abcdef")  # md5 em hexadecimal
 
 
 class PipelineError(RuntimeError):
@@ -991,6 +1024,8 @@ class Atualizacao:
 
         conn = self._conectar(self.final_db)
         try:
+            threads = limitar_threads(conn)
+            log.info("consolidacao com %s thread(s)", threads)
             conn.execute(f"ATTACH {sql_str(self.bruto_db.as_posix())} AS bruto (READ_ONLY)")
             conn.execute(MACROS)
             conn.execute("CREATE TABLE IF NOT EXISTS _etapas (nome VARCHAR PRIMARY KEY, info VARCHAR, em TIMESTAMP)")
@@ -1001,30 +1036,40 @@ class Atualizacao:
             dup_est = self._duplicados(
                 conn, fmt["bruto_estabelecimentos"], "trim(cnpj_basico) || trim(cnpj_ordem) || trim(cnpj_dv)"
             )
-            passos: list[tuple[str, str]] = [
-                (t, sql_dominio(t).format(**fmt))
+            # (nome, SQL, fatias): fatias = None roda o SQL inteiro (CREATE TABLE ...);
+            # senao o SQL e so o SELECT, rodado uma vez por fatia (ver schema.py).
+            passos: list[tuple[str, str, Fatias | None]] = [
+                (t, sql_dominio(t).format(**fmt), None)
                 for t in ("cnaes", "motivos", "municipios", "naturezas", "paises", "qualificacoes")
             ]
             passos += [
-                ("simples", SQL_SIMPLES.format(**fmt)),
-                ("socios", SQL_SOCIOS.format(**fmt)),
-                ("empresas", SQL_EMPRESAS.format(
-                    distinct_empresas="DISTINCT ON (trim(cnpj_basico))" if dup_emp else "", **fmt)),
-                ("estabelecimentos", SQL_ESTABELECIMENTOS.format(
-                    distinct_estab="DISTINCT ON (trim(cnpj_basico) || trim(cnpj_ordem) || trim(cnpj_dv))" if dup_est else "",
-                    webmail=webmail, **fmt)),
-                ("socio_resumo", SQL_SOCIO_RESUMO),
-                ("nomes_busca", SQL_NOMES_BUSCA),
-                ("municipios_uf", SQL_MUNICIPIOS_UF),
+                ("simples", SQL_SIMPLES, FATIAS_CNPJ),
+                ("socios", SQL_SOCIOS, FATIAS_CNPJ),
+                ("empresas", SQL_EMPRESAS.replace(
+                    "{distinct_empresas}", "DISTINCT ON (trim(cnpj_basico))" if dup_emp else ""), FATIAS_CNPJ_FINAS),
+                ("estabelecimentos", SQL_ESTABELECIMENTOS.replace(
+                    "{distinct_estab}",
+                    "DISTINCT ON (trim(cnpj_basico) || trim(cnpj_ordem) || trim(cnpj_dv))" if dup_est else "",
+                ).replace("{webmail}", webmail), FATIAS_CNPJ_FINAS),
+                ("socio_resumo", SQL_SOCIO_RESUMO, FATIAS_CHAVE),
+                ("nomes_busca", SQL_NOMES_BUSCA, None),
+                ("municipios_uf", SQL_MUNICIPIOS_UF, None),
             ]
-            for i, (nome, sql) in enumerate(passos, 1):
+            for i, (nome, sql, fatias) in enumerate(passos, 1):
                 self._checar(forcar=True)
                 self._progresso((i - 1) / len(passos), mensagem=f"Consolidando: {nome}", arquivo_atual=nome)
                 if nome in feitas:
                     continue
                 t0 = time.monotonic()
-                self._transacao(conn, [f"DROP TABLE IF EXISTS {nome}", sql,
-                                       f"INSERT INTO _etapas VALUES ('{nome}', NULL, now())"])
+                if fatias is None:
+                    self._transacao(conn, [f"DROP TABLE IF EXISTS {nome}", sql,
+                                           f"INSERT INTO _etapas VALUES ('{nome}', NULL, now())"])
+                else:
+                    origem = "socios" if nome == "socio_resumo" else nome
+                    linhas = sum(int(info["linhas"]) for info in importados.values()
+                                 if info["tabela"] in por_grupo.get(origem, []))
+                    self._consolidar_em_fatias(conn, nome, sql, fatias if linhas > LINHAS_SEM_FATIAR else None,
+                                               fmt, feitas, (i - 1) / len(passos), 1 / len(passos))
                 n = conn.execute(f"SELECT count(*) FROM {nome}").fetchone()[0]
                 self._log(f"{nome}: {n:,} registros ({time.monotonic() - t0:.0f}s)")
 
@@ -1034,6 +1079,26 @@ class Atualizacao:
         finally:
             conn.close()
         self._progresso(1.0)
+
+    def _consolidar_em_fatias(self, conn, nome: str, sql: str, fatias: Fatias | None, fmt: dict[str, str],
+                              feitas: set[str], inicio: float, peso: float) -> None:
+        """Cria a tabela fatia por fatia, cada uma na sua transacao (retomavel:
+        fatias ja gravadas ficam em _etapas como nome#i)."""
+        prontas = {f for f in feitas if f.startswith(nome + "#")}
+        if not prontas:
+            conn.execute(f"DROP TABLE IF EXISTS {nome}")  # restos de uma tentativa sem fatias
+        partes = fatias.partes() if fatias else [("true", "true")]
+        for j, (bruto, final) in enumerate(partes):
+            marca = f"{nome}#{j}"
+            if marca in feitas:
+                continue
+            self._checar(forcar=True)
+            self._progresso(inicio + peso * j / len(partes),
+                            mensagem=f"Consolidando: {nome} (parte {j + 1} de {len(partes)})", arquivo_atual=nome)
+            select = sql.format(**fmt, filtro_bruto=bruto, filtro=final)
+            cria = f"CREATE TABLE {nome} AS {select}" if j == 0 else f"INSERT INTO {nome} {select}"
+            self._transacao(conn, [cria, f"INSERT INTO _etapas VALUES ('{marca}', NULL, now())"])
+        self._transacao(conn, [f"INSERT INTO _etapas VALUES ('{nome}', NULL, now())"])
 
     def _transacao(self, conn, comandos: list[str]) -> None:
         with Vigia(conn, self._deve_parar):

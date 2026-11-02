@@ -79,8 +79,15 @@ def sql_dominio(tabela: str) -> str:
     """
 
 
+# As tabelas grandes sao consolidadas em fatias (pelo 1o caractere da chave):
+# SQL_SIMPLES, SQL_SOCIOS, SQL_EMPRESAS, SQL_ESTABELECIMENTOS e SQL_SOCIO_RESUMO sao
+# so o SELECT, com {filtro_bruto} (tabelas brutas) e {filtro} (tabelas ja
+# consolidadas) para a fatia. Juntar + ordenar dezenas de milhoes de linhas numa
+# consulta so estoura a memoria do DuckDB (a juncao nao vai para o disco junto
+# com a ordenacao); por fatia, cada consulta usa uma fracao da memoria. As fatias
+# entram em ordem crescente, entao a tabela final continua ordenada pela chave.
+
 SQL_SIMPLES = """
-CREATE TABLE simples AS
 SELECT DISTINCT ON (cnpj_basico)
     cnpj_basico,
     upper(limpo(opcao_simples)) AS opcao_simples,
@@ -90,12 +97,11 @@ SELECT DISTINCT ON (cnpj_basico)
     data_rfb(data_opcao_mei) AS data_opcao_mei,
     data_rfb(data_exclusao_mei) AS data_exclusao_mei
 FROM {bruto_simples}
-WHERE length(trim(cnpj_basico)) = 8
+WHERE length(trim(cnpj_basico)) = 8 AND {filtro_bruto}
 ORDER BY cnpj_basico
 """
 
 SQL_SOCIOS = """
-CREATE TABLE socios AS
 SELECT *,
     substr(md5(coalesce(CAST(identificador_de_socio AS VARCHAR), '') || '|' ||
                coalesce(cpf_cnpj_socio, '') || '|' || nome_socio_norm), 1, 16) AS socio_chave
@@ -114,14 +120,13 @@ FROM (
         CAST(NULLIF(inteiro(qualificacao_representante_legal), 0) AS SMALLINT) AS qualificacao_representante_legal,
         CAST(inteiro(faixa_etaria) AS TINYINT) AS faixa_etaria
     FROM {bruto_socios}
-    WHERE length(trim(cnpj_basico)) = 8
+    WHERE length(trim(cnpj_basico)) = 8 AND {filtro_bruto}
 )
 ORDER BY cnpj_basico, nome_socio_norm
 """
 
 SQL_EMPRESAS = """
-CREATE TABLE empresas AS
-WITH qs AS (SELECT cnpj_basico, count(*) AS qtd_socios FROM socios GROUP BY cnpj_basico),
+WITH qs AS (SELECT cnpj_basico, count(*) AS qtd_socios FROM socios WHERE {filtro} GROUP BY cnpj_basico),
 base AS (
     SELECT {distinct_empresas}
         trim(cnpj_basico) AS cnpj_basico,
@@ -133,7 +138,7 @@ base AS (
         CAST(inteiro(porte_empresa) AS TINYINT) AS porte_empresa,
         limpo(ente_federativo_responsavel) AS ente_federativo_responsavel
     FROM {bruto_empresas}
-    WHERE length(trim(cnpj_basico)) = 8
+    WHERE length(trim(cnpj_basico)) = 8 AND {filtro_bruto}
 )
 SELECT base.*, coalesce(qs.qtd_socios, 0) AS qtd_socios
 FROM base LEFT JOIN qs USING (cnpj_basico)
@@ -141,11 +146,10 @@ ORDER BY cnpj_basico
 """
 
 SQL_ESTABELECIMENTOS = """
-CREATE TABLE estabelecimentos AS
 WITH r AS (
     SELECT {distinct_estab} *, trim(cnpj_basico) || trim(cnpj_ordem) || trim(cnpj_dv) AS cnpj_completo
     FROM {bruto_estabelecimentos}
-    WHERE length(trim(cnpj_basico) || trim(cnpj_ordem) || trim(cnpj_dv)) = 14
+    WHERE length(trim(cnpj_basico) || trim(cnpj_ordem) || trim(cnpj_dv)) = 14 AND {filtro_bruto}
 ),
 t AS (
     SELECT
@@ -194,13 +198,14 @@ SELECT t.*,
     (em.cnpj_basico IS NOT NULL) AS tem_empresa,
     sim.opcao_simples, sim.opcao_mei
 FROM t
-LEFT JOIN empresas em ON em.cnpj_basico = t.cnpj_basico
-LEFT JOIN simples sim ON sim.cnpj_basico = t.cnpj_basico
+LEFT JOIN (SELECT cnpj_basico, razao_social, razao_social_norm, natureza_juridica, porte_empresa, capital_social,
+                  qtd_socios FROM empresas WHERE {filtro}) em ON em.cnpj_basico = t.cnpj_basico
+LEFT JOIN (SELECT cnpj_basico, opcao_simples, opcao_mei FROM simples WHERE {filtro}) sim
+    ON sim.cnpj_basico = t.cnpj_basico
 ORDER BY t.cnpj_completo
 """
 
 SQL_SOCIO_RESUMO = """
-CREATE TABLE socio_resumo AS
 SELECT socio_chave,
     any_value(nome_socio) AS nome_socio,
     any_value(nome_socio_norm) AS nome_socio_norm,
@@ -208,6 +213,7 @@ SELECT socio_chave,
     any_value(identificador_de_socio) AS identificador_de_socio,
     count(DISTINCT cnpj_basico) AS qtd_empresas
 FROM socios
+WHERE {filtro}
 GROUP BY socio_chave
 ORDER BY socio_chave
 """

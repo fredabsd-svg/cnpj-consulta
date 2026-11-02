@@ -243,6 +243,15 @@ def _executar_job(rep: jobs.JobReporter, job_id: int, *, client=None, sleep=None
         rep.log(str(e), "erro", atual._etapa)
         rep.finalizar("falhou", mensagem=f"Falhou em: {atual._etapa}.", erro=str(e), relatorio=atual.relatorio.as_dict())
         return "falhou"
+    except duckdb.OutOfMemoryException as e:
+        limite = get_settings().receita_duckdb_memoria
+        msg = (f"Faltou memoria para o banco de dados na etapa {atual._etapa} (limite atual: {limite}). "
+               "Clique em Tentar novamente: o processo continua de onde parou. Se repetir, aumente "
+               "RECEITA_DUCKDB_MEMORIA no arquivo .env (ex.: 6GB ou 8GB, sem passar de metade da memoria "
+               "do computador) e reinicie o app. Detalhe tecnico: " + str(e).split("\n")[0][:200])
+        rep.log(msg, "erro", atual._etapa)
+        rep.finalizar("falhou", mensagem=f"Falhou em: {atual._etapa}.", erro=msg, relatorio=atual.relatorio.as_dict())
+        return "falhou"
     except duckdb.IOException as e:
         msg = str(e)
         if "lock" in msg.lower():

@@ -91,7 +91,13 @@ PostgreSQL só se justificaria para uso multiusuário em rede.
   fica num **disco externo/USB ou de rede**, aponte `RECEITA_TEMP_DIR` para um
   disco local rápido (SSD); a base publicada continua em `RECEITA_DATA_DIR`.
 - Memória: `RECEITA_DUCKDB_MEMORIA` (padrão 4GB). Mais memória acelera a
-  consolidação; o excedente sempre vai para disco.
+  consolidação; o excedente vai para disco. As tabelas grandes (empresas,
+  estabelecimentos, sócios, Simples) são consolidadas **em fatias** pelo início
+  do CNPJ, cada uma com uma fração da memória, e o número de núcleos usados é
+  limitado a ~1 por 512 MB de limite (juntar e ordenar dezenas de milhões de
+  linhas numa consulta só estourava a memória). Se mesmo assim aparecer “Faltou
+  memória”, clique em **Tentar novamente** (continua da fatia em que parou) ou
+  aumente o limite, sem passar de metade da RAM do computador.
 
 ## 4. Instalação e primeira carga
 
