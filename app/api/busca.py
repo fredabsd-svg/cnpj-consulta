@@ -73,7 +73,7 @@ async def campos() -> dict:
         "campos": ba.descricao_campos(),
         "grupos": ba.GRUPOS_CAMPOS,
         "ordenacoes": {k: v[0] for k, v in ba.ORDENACOES.items()},
-        "colunas": {k: {"rotulo": v[0], "restrita": v[2]} for k, v in ba.COLUNAS.items()},
+        "colunas": {k: {"rotulo": v[0], "pessoal": v[2]} for k, v in ba.COLUNAS.items()},
         "colunas_padrao": ba.COLUNAS_PADRAO,
     }
 
@@ -84,31 +84,15 @@ async def busca(request: Request, colunas: list[str] = Query(None), contar: bool
     """Busca avancada. Os filtros vao na query string (ver /api/busca/campos);
     valores repetidos do mesmo filtro sao OU; filtros diferentes sao E;
     `excluir_<filtro>` nega; `arvore` recebe o construtor E/OU/NAO em JSON.
-
-    Colunas de contato (telefones, e-mail) seguem a regra da exportacao: so com
-    `finalidade` (min. 10 caracteres), e o pedido fica na auditoria (sem os dados).
-    Sem finalidade elas saem da resposta, com um aviso."""
+    Todas as colunas podem ser pedidas (inclusive contatos e socios)."""
     params = params_de(request)
     params.pop("finalidade", None)
     try:
         f = ba.Filtros.de_params(params)
     except ba.FiltroInvalido as e:
         raise HTTPException(400, str(e)) from e
-    pedidas = [c for c in (colunas or ba.COLUNAS_TELA) if c in ba.COLUNAS]
+    colunas = [c for c in (colunas or ba.COLUNAS_TELA) if c in ba.COLUNAS] or ["cnpj"]
     aviso = None
-    so_exportacao = [c for c in pedidas if ba.COLUNAS[c][2] and c not in ba.COLUNAS_TELA]
-    if so_exportacao:  # nomes de socios em massa: so pela exportacao (com finalidade e auditoria)
-        pedidas = [c for c in pedidas if c not in so_exportacao]
-        aviso = "Colunas disponíveis só na exportação: " + ", ".join(so_exportacao) + "."
-    restritas = [c for c in pedidas if ba.COLUNAS[c][2]]
-    if restritas and len(finalidade.strip()) < 10:
-        pedidas = [c for c in pedidas if c not in restritas]
-        aviso = ((aviso + " ") if aviso else "") + ("Colunas de contato omitidas (" + ", ".join(restritas) + "): informe `finalidade` "
-                 "(mínimo 10 caracteres) para recebê-las, como na exportação.")
-    elif restritas:
-        jobs.auditar("busca.api_contatos", ip=ip_de(request),
-                     detalhe=f"colunas={','.join(restritas)} pagina={f.pagina} finalidade={finalidade.strip()[:200]}")
-    colunas = pedidas or ["cnpj"]
     try:
         r = await cancelavel(request, lambda ev: ba.buscar(f, colunas=colunas, cancelar=ev, contar=contar))
     except Exception as e:  # noqa: BLE001
@@ -175,19 +159,25 @@ async def busca_exportar(
         raise HTTPException(400, str(e)) from e
     settings = get_settings()
     try:
-        total = await cancelavel(request, lambda ev: ba.contar(f))
+        # Sem o tempo limite da tela: contar e bem mais barato que exportar.
+        total = await cancelavel(request, lambda ev: ba.contar(f, timeout=3600))
     except Exception as e:  # noqa: BLE001
         raise _erro(e) from e
-    limite = min(total, settings.exportacao_max_linhas)
+    limite = exportacao.limite_linhas(total)
+    linhas = total if limite is None else limite
     jobs.auditar(
         "busca.exportar",
-        detalhe=f"formato={formato} linhas={limite} colunas={','.join(cols)} finalidade={finalidade.strip()[:200]}",
+        detalhe=f"formato={formato} linhas={linhas} colunas={','.join(cols)}"
+                + (f" finalidade={finalidade.strip()[:200]}" if finalidade.strip() else ""),
         ip=ip_de(request),
     )
     if total > settings.exportacao_sincrona_max:
-        exp = await asyncio.to_thread(exportacao.criar_exportacao, f, cols, formato, finalidade, limite)
+        exp = await asyncio.to_thread(exportacao.criar_exportacao, f, cols, formato, finalidade, linhas)
+        abas = "" if formato != "xlsx" or linhas <= exportacao.LINHAS_POR_ABA else \
+            f" (em {-(-linhas // exportacao.LINHAS_POR_ABA)} abas de até 1 milhão)"
         return {"segundo_plano": True, "exportacao": exp,
-                "mensagem": f"{limite:,} linhas: a exportação continua em segundo plano.".replace(",", ".")}
+                "mensagem": f"{linhas:,} linhas{abas}: gerando o arquivo; o download começa sozinho ao terminar."
+                .replace(",", ".")}
     nome = f"busca-cnpj.{formato}"
     if formato == "csv":
         return StreamingResponse(

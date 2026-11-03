@@ -11,9 +11,8 @@ Uso:
     cnpj mcp [--http] [--porta 8765]
 
 Chama os servicos do app diretamente (nao precisa do site rodando). As mesmas
-regras da interface valem aqui: CPF de socio sempre mascarado, exportacao de
-contatos exige finalidade e fica na auditoria, contatos complementares so com
-fonte. Ferramentas que ALTERAM a base (atualizar, pausar, cancelar, contatos
+regras da interface valem aqui: CPF de socio mascarado como publicado pela
+Receita, exportacoes ficam na auditoria, contatos complementares so com fonte. Ferramentas que ALTERAM a base (atualizar, pausar, cancelar, contatos
 complementares) so aparecem com MCP_PERMITIR_ADMIN=true.
 
 Nada e escrito no stdout alem do protocolo: logs vao para o stderr.
@@ -79,7 +78,6 @@ Regras (LGPD e procedencia):
 - Diferencie dados oficiais (Receita) de complementares (cadastrados com fonte).
   Nao invente telefone, e-mail ou site que nao estejam nos resultados.
 - Simples/MEI e informacao cadastral, nao prova regularidade fiscal.
-- Exportar contatos ou nomes de socios exige informar a finalidade.
 - Os dados tem data de referencia (mes da base); cite-a ao responder.
 """
 
@@ -252,7 +250,7 @@ async def descrever_filtros() -> dict:
                     "tem_socios": "sim"},
         "campos": ba.descricao_campos(),
         "ordenacoes": {k: v[0] for k, v in ba.ORDENACOES.items()},
-        "colunas": {k: {"rotulo": v[0], "restrita": v[2]} for k, v in ba.COLUNAS.items()},
+        "colunas": {k: {"rotulo": v[0], "pessoal": v[2]} for k, v in ba.COLUNAS.items()},
         "colunas_padrao": ba.COLUNAS_TELA,
         "atividades": PALAVRAS_CHAVE,
     }
@@ -265,24 +263,15 @@ async def buscar_empresas(filtros: dict[str, Any] | None = None, ordem: str = "r
     """Busca estabelecimentos na base local com filtros combinados (veja
     `descrever_filtros`). Ex.: {"uf": ["TO"], "situacao": ["2"],
     "atividade": ["contabilidade"], "contato": "telefone_e_email"}.
-    Retorna o total, a pagina pedida (ate 100 itens) e o mes de referencia.
-    Telefones e e-mail so vem com `finalidade` (min. 10 caracteres, informada pelo
-    usuario); o pedido fica na auditoria. Sem ela essas colunas sao omitidas."""
+    Retorna o total, a pagina pedida (ate 100 itens) e o mes de referencia,
+    inclusive telefones e e-mail. `finalidade` e opcional (so para a auditoria)."""
     from app.services import busca_avancada as ba
 
     f = _filtros(filtros, ordem=ordem, direcao=direcao)
     f.pagina = max(1, int(pagina))
     f.por_pagina = max(1, min(int(por_pagina), 100))
-    pedidas = [c for c in (colunas or ba.COLUNAS_TELA) if c in ba.COLUNAS_TELA]
-    restritas = [c for c in pedidas if ba.COLUNAS[c][2]]
+    pedidas = [c for c in (colunas or ba.COLUNAS_TELA) if c in ba.COLUNAS]
     aviso = None
-    if restritas and len(finalidade.strip()) < 10:
-        pedidas = [c for c in pedidas if c not in restritas]
-        aviso = ("Telefones e e-mail omitidos: peça ao usuário a finalidade (mínimo 10 caracteres) "
-                 "e chame de novo com `finalidade`.")
-    elif restritas:
-        _auditar("busca.contatos", f"colunas={','.join(restritas)} pagina={f.pagina} "
-                                   f"finalidade={finalidade.strip()[:200]}")
     r = await _rodar(ba.buscar, f, colunas=pedidas or ["cnpj"])
     return {
         "total": r.total, "pagina": r.pagina, "paginas": r.paginas, "por_pagina": r.por_pagina,
@@ -331,22 +320,18 @@ async def listar_municipios(ufs: list[str]) -> dict:
 async def exportar_busca(filtros: dict[str, Any] | None = None, formato: str = "xlsx",
                          colunas: list[str] | None = None, finalidade: str = "") -> dict:
     """Gera planilha (xlsx ou csv) com o resultado da busca e devolve o caminho
-    do arquivo neste computador. Colunas de contato/pessoais (telefones, e-mail,
-    nomes de socios) exigem `finalidade` (min. 10 caracteres); a exportacao fica
-    na auditoria."""
+    do arquivo neste computador. Todas as colunas podem ser exportadas (inclusive
+    telefones, e-mail e socios); a exportacao fica na auditoria."""
     from app.receita.armazenamento import exportacoes_dir
     from app.services import busca_avancada as ba
     from app.services import exportacao
 
     if formato not in ("csv", "xlsx"):
         raise ToolError("Formato deve ser csv ou xlsx.")
-    try:
-        cols = exportacao.validar_colunas(colunas, finalidade)
-    except exportacao.ExportacaoInvalida as e:
-        raise ToolError(str(e)) from e
+    cols = exportacao.validar_colunas(colunas, finalidade)
     f = _filtros(filtros)
     total = await _rodar(ba.contar, f)
-    limite = min(total, get_settings().exportacao_max_linhas)
+    limite = exportacao.limite_linhas(total)
     pasta = exportacoes_dir()
     pasta.mkdir(parents=True, exist_ok=True)
     # Sufixo aleatorio: duas exportacoes no mesmo segundo (o chat roda ferramentas em
@@ -356,7 +341,7 @@ async def exportar_busca(filtros: dict[str, Any] | None = None, formato: str = "
     n = await _rodar(gravar, f, cols, limite, destino)
     _auditar("busca.exportar", f"formato={formato} linhas={n} colunas={','.join(cols)} finalidade={finalidade.strip()[:200]}")
     return {"arquivo": str(destino.resolve()), "linhas": n, "total_encontrado": total, "colunas": cols,
-            "truncado": total > limite}
+            "truncado": limite is not None and total > limite}
 
 
 # ---------------------------------------------------------------- socios
@@ -875,7 +860,7 @@ def prospeccao(perfil: str) -> str:
         "1. Chame `descrever_filtros` e traduza o perfil em filtros (atividade SEMPRE por CNAE).\n"
         "2. Use `contar_empresas` e `distribuicao_resultados` para calibrar; mostre os filtros escolhidos.\n"
         "3. Liste as primeiras empresas com `buscar_empresas`, indicando a origem dos contatos.\n"
-        "4. Se eu pedir planilha, use `exportar_busca` (contatos exigem a finalidade que eu informar).\n"
+        "4. Se eu pedir planilha, use `exportar_busca` (pode incluir telefones e e-mail).\n"
         "Não invente contatos nem trate dados públicos como autorização irrestrita de uso (LGPD)."
     )
 

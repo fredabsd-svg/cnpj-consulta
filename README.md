@@ -164,7 +164,7 @@ A Receita publica o CPF de sócio pessoa física **mascarado** (só os dígitos 
 - **busca por CPF completo:** acha a empresa do titular (empresário individual/MEI) e os sócios com os mesmos dígitos visíveis (identificação provável).
 - **guarda automaticamente** o CPF completo quando uma fonte externa consultada o devolve.
 
-O CPF completo aparece só para o administrador, na ficha da empresa e na página do sócio, e cada visualização vai para a auditoria. Ele fica criptografado no banco do app, com a chave em `data/cpf.key` ou em `CPF_CHAVE`. **Guarde uma cópia dessa chave junto com o backup.** O CPF do titular de empresário individual/MEI, que a Receita publica na razão social, aparece como campo próprio na ficha e na exportação (coluna `cpf_titular`, com finalidade).
+O CPF completo aparece na ficha da empresa e na página do sócio (o app é de uso do próprio dono, sem exigir login para isso), e cada visualização vai para a auditoria. Ele fica criptografado no banco do app, com a chave em `data/cpf.key` ou em `CPF_CHAVE`. **Guarde uma cópia dessa chave junto com o backup.** O CPF do titular de empresário individual/MEI, que a Receita publica na razão social, aparece como campo próprio na ficha e na exportação (coluna `cpf_titular`).
 
 ### Chat com IA
 
@@ -230,9 +230,9 @@ GET    /api/batch/export.csv                 ?cnpjs=A,B,C&excel=true
 GET    /api/partners/search                  ?q=nome&uf=SP&municipio=...&limit=50  (requer a base local)
 GET    /api/partners/{cnpj}/companies        empresas em que um CNPJ (PJ) é sócio
 GET    /api/busca                            busca avançada (filtros na query string; ver /api/busca/campos;
-                                              telefones/e-mail só com &finalidade=..., auditado)
+                                              todas as colunas, inclusive telefones/e-mail e sócios)
 GET    /api/busca/contar | /contadores       total e distribuição por UF, situação, porte, município, CNAE
-GET    /api/busca/exportar.csv|.xlsx         ?colunas=...&finalidade=...  (contatos exigem finalidade)
+GET    /api/busca/exportar.csv|.xlsx         ?colunas=...  (sem limite de linhas; auditado)
 GET    /api/base/empresa/{cnpj}              ficha completa da base local (+ contatos complementares)
 GET    /api/base/socio/{id}                  sócio e empresas relacionadas
 GET    /api/base/sugestoes?q=                autocompletar por CNPJ, razão social ou nome fantasia
@@ -297,7 +297,7 @@ Tudo é configurado por variáveis de ambiente (ou pelo arquivo `.env`; veja o `
 | `RECEITA_PORTAL_URL` / `RECEITA_PASTA_CNPJ` | portal oficial / `Dados/Cadastros/CNPJ` | Ponto de entrada oficial e pasta dos dados abertos (descoberta automática) |
 | `RECEITA_DUCKDB_MEMORIA` | `4GB` | Memória máxima da importação (o excedente vai para disco) |
 | `ADMIN_TOKEN` | gerado | Token da área administrativa (vazio: gerado em `data/admin_token.txt`) |
-| `EXPORTACAO_MAX_LINHAS` / `EXPORTACAO_SINCRONA_MAX` | `500000` / `20000` | Teto de exportação e limite para gerar na hora |
+| `EXPORTACAO_MAX_LINHAS` / `EXPORTACAO_SINCRONA_MAX` | `0` (sem teto) / `20000` | Teto de exportação (0 = sem limite; Excel em abas de 1 milhão) e limite para gerar na hora |
 | `RATE_LIMIT_<FONTE>` | 60 / 30 / 3 / 3 | Consultas por minuto de cada fonte |
 | `REQUEST_TIMEOUT_SECONDS` / `REQUEST_TOTAL_TIMEOUT_SECONDS` | `10` / `20` | Timeout por requisição e por consulta |
 | `CACHE_BACKEND` / `CACHE_TTL_SECONDS` | `sqlite` / `86400` | Cache persistente (ou em memória) e validade |
@@ -320,7 +320,7 @@ Tudo é configurado por variáveis de ambiente (ou pelo arquivo `.env`; veja o `
 - Histórico, cache e favoritos ficam **só no seu computador** e podem ser apagados a qualquer momento (`python -m app.cli limpar-historico`).
 - Transparência: nas consultas online, o CNPJ consultado é enviado às fontes habilitadas, porque é assim que a consulta funciona. Com a base local, nada sai do seu computador.
 - **Contatos complementares** (fora da Receita) só entram por cadastro de um administrador, com fonte e data de verificação; nunca são inferidos ou completados. Podem ser corrigidos e removidos, e há descarte por retenção.
-- **Exportações** com telefones, e-mails ou nomes de sócios exigem informar a finalidade e ficam na trilha de auditoria (sem os dados). Logs de acesso não registram a query string das buscas.
+- **Exportações** (qualquer coluna, inclusive telefones, e-mails e sócios) ficam na trilha de auditoria (número de linhas e colunas, sem os dados). Logs de acesso não registram a query string das buscas.
 
 Detalhes e canais de contato em [`politica-de-privacidade.md`](politica-de-privacidade.md).
 

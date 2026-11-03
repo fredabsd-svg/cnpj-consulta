@@ -206,12 +206,9 @@ class TestExportacao:
         assert linhas[0] == ["CNPJ", "Razão social", "Município"]
         assert len(linhas) == 4
 
-    def test_colunas_restritas_exigem_finalidade(self, base_local):
+    def test_contatos_saem_sem_finalidade_e_exportacao_e_auditada(self, base_local):
         c = TestClient(app)
         r = c.get("/api/busca/exportar.csv", params=[("colunas", "cnpj"), ("colunas", "email")])
-        assert r.status_code == 400 and "finalidade" in r.json()["detail"]
-        r = c.get("/api/busca/exportar.csv", params=[("colunas", "cnpj"), ("colunas", "email"),
-                                                      ("finalidade", "Prospecção de clientes do escritório")])
         assert r.status_code == 200 and "contato@contafacil.com.br" in r.text
         from app.receita.jobs import auditoria
 

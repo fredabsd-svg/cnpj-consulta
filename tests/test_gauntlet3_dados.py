@@ -115,21 +115,12 @@ def test_d3_3_contar_false_grava_total_menos_um_no_historico(base_local):
     assert recente["total"] in (3, None), f"historico de buscas: 'UF: TO' com total {recente['total']}"
 
 
-def test_d3_5_coluna_socios_com_finalidade_some_e_auditoria_registra_entrega(base_local):
-    """colunas=socios (restrita, anunciada em /api/busca/campos) com finalidade:
-    a API audita 'busca.api_contatos colunas=socios' como se tivesse entregado,
-    mas buscar() descarta a coluna (restrita fora de COLUNAS_TELA) em silencio:
-    nem a coluna nem um aviso."""
-    from app.receita import jobs
-
+def test_d3_5_coluna_socios_e_entregue(base_local):
+    """colunas=socios na API de busca: a coluna vem preenchida (nada some em silencio)."""
     c = TestClient(_app())
-    assert c.get("/api/busca/campos").json()["colunas"]["socios"]["restrita"] is True
-    r = c.get("/api/busca", params={"cnpj": CONTABIL, "colunas": ["socios"],
-                                    "finalidade": "diligencia cadastral de clientes"}).json()
-    auditado = [a["detalhe"] for a in jobs.auditoria() if a["acao"] == "busca.api_contatos"]
-    item = r["itens"][0]
-    assert "socios" in item or "aviso" in r, (
-        f"coluna pedida sumiu sem aviso: item={item}; auditoria diz entregue: {auditado}")
+    assert c.get("/api/busca/campos").json()["colunas"]["socios"]["pessoal"] is True
+    r = c.get("/api/busca", params={"cnpj": CONTABIL, "colunas": ["socios"]}).json()
+    assert "MARIA DA SILVA" in (r["itens"][0].get("socios") or ""), r
 
 
 def test_d3_7_sugestoes_com_ordinal_nao_acham_a_razao_publicada(base_extra):

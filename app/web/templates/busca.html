@@ -200,7 +200,7 @@
             </div>
         </details>
 
-        <input type="hidden" name="ordem" value="{{ val('ordem') or 'razao' }}">
+        {% if params.ordem %}<input type="hidden" name="ordem" value="{{ val('ordem') }}">{% endif %}
         {% if params.direcao %}<input type="hidden" name="direcao" value="{{ val('direcao') }}">{% endif %}
         {% if params.por_pagina %}<input type="hidden" name="por_pagina" value="{{ val('por_pagina') }}">{% endif %}
         <div class="filtros-acoes">
@@ -367,22 +367,22 @@
             <h2>{{ ui.icon('download') }} Exportar e salvar</h2>
             <form action="/api/busca/exportar.csv" method="get" class="export-form" data-exportar>
                 {% for k, vs in params.items() %}{% if k not in ('pagina', 'colunas', 'finalidade') %}{% for v in vs %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}{% endif %}{% endfor %}
+                <p class="muted small">Serão exportadas <strong>todas as {{ ui.numero(r.total) }}</strong> linhas do resultado (não só esta página).</p>
                 <fieldset class="checks checks-colunas">
-                    <legend>Colunas da planilha</legend>
+                    <legend>Colunas da planilha <button type="button" class="btn-link small" data-marcar-colunas="todas">marcar todas</button> · <button type="button" class="btn-link small" data-marcar-colunas="nenhuma">desmarcar</button></legend>
                     {% for col, info in colunas.items() %}
-                    <label class="check"><input type="checkbox" name="colunas" value="{{ col }}" {% if col in colunas_padrao %}checked{% endif %} {% if info[2] %}data-restrita{% endif %}> {{ info[0] }}{% if info[2] %} <span class="badge badge-warning" title="Dado de contato ou pessoal">restrita</span>{% endif %}</label>
+                    <label class="check"><input type="checkbox" name="colunas" value="{{ col }}" {% if col in colunas_padrao %}checked{% endif %}> {{ info[0] }}</label>
                     {% endfor %}
                 </fieldset>
-                <div class="field">
-                    <label for="f-finalidade">Finalidade (obrigatória com colunas restritas)</label>
-                    <input class="input" type="text" id="f-finalidade" name="finalidade" maxlength="300" placeholder="ex.: prospecção de clientes do escritório em Palmas">
-                    <span class="hint">LGPD: informe para que os contatos serão usados. A exportação fica registrada na auditoria (sem os dados).</span>
-                </div>
                 <div class="form-actions">
-                    <button type="submit" class="btn">{{ ui.icon('download') }} CSV (Excel)</button>
-                    <button type="submit" class="btn" formaction="/api/busca/exportar.xlsx">{{ ui.icon('table') }} Excel (.xlsx)</button>
+                    <button type="submit" class="btn btn-primary" formaction="/api/busca/exportar.xlsx">{{ ui.icon('table') }} Excel (.xlsx)</button>
+                    <button type="submit" class="btn">{{ ui.icon('download') }} CSV</button>
                 </div>
-                <p class="hint">Até {{ "{:,}".format(20000) | replace(",", ".") }} linhas o arquivo sai na hora; acima disso, a exportação roda em segundo plano.</p>
+                <p class="hint">Até {{ "{:,}".format(20000) | replace(",", ".") }} linhas o arquivo sai na hora. Acima disso ele é gerado em segundo plano (sem limite de linhas; no Excel, abas de até 1 milhão) e o download começa sozinho; dá para continuar usando o app.</p>
+                <div class="exportacoes" data-exportacoes hidden>
+                    <h3 class="small">Exportações recentes</h3>
+                    <ul class="quick-list" data-exportacoes-lista></ul>
+                </div>
             </form>
             <form action="/busca/salvar" method="post" class="salvar-form">
                 <input type="hidden" name="filtros" value="{{ qs(params, pagina=None) }}">

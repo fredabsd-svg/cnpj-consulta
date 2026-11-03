@@ -272,16 +272,29 @@ adicionar a uma lista, exportar selecionados), filtros a partir de um resultado
 (clicar na UF, no município ou no CNAE), contadores de distribuição, aviso de
 contato compartilhado com outras empresas (possível duplicidade) e botão
 **Parar** para buscas longas (a consulta é interrompida no servidor;
-`BUSCA_TIMEOUT_SEGUNDOS` limita o tempo).
+`BUSCA_TIMEOUT_SEGUNDOS`, padrão 300 s, limita o tempo).
+
+**Velocidade:** a ordem padrão é a do CNPJ, que é a ordem em que a tabela está
+gravada: a página sai sem ordenar nada, mesmo com milhões de resultados (ordenar
+por razão social, capital etc. continua disponível, mas lê e ordena tudo). A
+conexão com a base fica aberta enquanto o app roda (o cache do banco não se
+perde entre as buscas) e, ao iniciar, o app aquece em segundo plano as colunas
+mais usadas nos filtros. Com a base num HD externo, as primeiras buscas depois
+de ligar o computador ainda leem do disco; um SSD interno é bem mais rápido.
 
 **Busca salva × lista:** a busca salva guarda **critérios** e é executada de
 novo a cada abertura; a lista guarda **empresas escolhidas**, com data de
 inclusão e observações.
 
-**Exportação:** CSV (Excel pt-BR) ou `.xlsx` com as colunas escolhidas; até
-`EXPORTACAO_SINCRONA_MAX` linhas sai na hora, acima disso vira tarefa em
-segundo plano com link de download; o teto é `EXPORTACAO_MAX_LINHAS`. As linhas
-são lidas em lotes do banco (nunca tudo na memória).
+**Exportação:** `.xlsx` ou CSV (Excel pt-BR) com as colunas escolhidas, todas
+as linhas do resultado e **sem limite de linhas** (`EXPORTACAO_MAX_LINHAS=0`).
+Até `EXPORTACAO_SINCRONA_MAX` linhas sai na hora; acima disso o arquivo é gerado
+em segundo plano, com o progresso na tela, download automático ao terminar e a
+lista das exportações recentes. No Excel, acima de 1 milhão de linhas o
+resultado continua em novas abas (Empresas, Empresas 2, …), porque uma aba do
+Excel aceita até 1.048.576 linhas. As linhas saem em fluxo do banco, na ordem da
+busca (nunca tudo na memória); o `.xlsx` é escrito direto em XML (cerca de 5×
+mais rápido que montar célula por célula).
 
 ## 9. Dados oficiais × complementares
 
@@ -308,8 +321,9 @@ sites nem incorpora bases de terceiros.
   física sem máscara é mascarado de novo. Nomes e documentos de sócios não vão
   para pesquisas na internet, logs de processamento, histórico de buscas nem
   auditoria; o log de acesso não registra a query string.
-- Exportar telefones, e-mails ou nomes de sócios exige informar a
-  **finalidade**, registrada na auditoria com a quantidade de linhas.
+- Toda exportação fica na auditoria (quantidade de linhas e colunas, sem os
+  dados). O app é de uso do próprio dono: contatos, sócios e CPF do titular
+  saem sem exigir finalidade.
 - Contatos complementares têm retenção (`CONTATOS_RETENCAO_DIAS`) e marcação de
   desatualização (`CONTATOS_DESATUALIZADO_DIAS`).
 - Finalidade e base legal sugeridas: atendimento a obrigações de diligência

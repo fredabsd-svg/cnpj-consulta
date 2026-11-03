@@ -70,18 +70,52 @@ def sql_str(valor: str) -> str:
     return "'" + valor.replace("'", "''") + "'"
 
 
+# Conexoes somente-leitura mantidas abertas por arquivo de base: o cache do DuckDB
+# (blocos ja lidos e descompactados) fica quente entre as consultas. Abrir o
+# arquivo a cada consulta jogava esse cache fora e, numa base de 60 milhoes de
+# linhas num HD externo, cada busca relia gigabytes do disco.
+_leituras: dict[str, duckdb.DuckDBPyConnection] = {}
+_leituras_lock = threading.Lock()
+
+
+def _chave(path: str | Path) -> str:
+    return str(Path(path).expanduser().resolve())
+
+
 @contextmanager
 def conectar_leitura(path: str | Path) -> Iterator[duckdb.DuckDBPyConnection]:
-    """Uma conexao somente-leitura por consulta, fechada em seguida.
+    """Cursor somente-leitura sobre a conexao compartilhada do arquivo.
 
-    Manter conexoes abertas travaria o arquivo no Windows e impediria a
-    remocao de versoes antigas.
-    """
-    conn = duckdb.connect(str(path), read_only=True)
+    Cada uso recebe o proprio cursor (seguro entre threads). As conexoes sao
+    fechadas por fechar_leituras() quando a versao ativa muda ou um arquivo vai
+    ser apagado (no Windows, arquivo aberto nao pode ser removido)."""
+    chave = _chave(path)
+    with _leituras_lock:
+        base = _leituras.get(chave)
+        if base is None:
+            base = duckdb.connect(chave, read_only=True)
+            memoria = get_settings().receita_duckdb_memoria
+            if memoria:
+                base.execute(f"SET memory_limit = '{_safe_size(memoria)}'")
+            _leituras[chave] = base
+        cur = base.cursor()
     try:
-        yield conn
+        yield cur
     finally:
-        conn.close()
+        cur.close()
+
+
+def fechar_leituras(path: str | Path | None = None) -> None:
+    """Fecha as conexoes de leitura (de um arquivo ou todas)."""
+    with _leituras_lock:
+        chaves = [_chave(path)] if path is not None else list(_leituras)
+        for k in chaves:
+            conn = _leituras.pop(k, None)
+            if conn is not None:
+                try:
+                    conn.close()
+                except duckdb.Error:
+                    pass
 
 
 def rows_as_dicts(conn: duckdb.DuckDBPyConnection, rows: list[tuple]) -> list[dict[str, Any]]:

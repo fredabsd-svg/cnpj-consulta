@@ -110,7 +110,7 @@ async def index(request: Request) -> HTMLResponse:
 
 
 def _cpfs_visiveis(request: Request, cnpj: str, company, ficha) -> dict:
-    """CPFs completos do cofre para os socios desta empresa (so administrador).
+    """CPFs completos do cofre para os socios desta empresa.
     Cada pagina que mostra algum fica na auditoria (sem os numeros)."""
     pessoas = [(s.nome, s.documento_mascarado) for s in company.socios]
     for s in (ficha or {}).get("socios") or []:
@@ -209,7 +209,9 @@ async def empresa(
     diligence = build_diligence_checklist(company, sanctions) if company.razao_social else []
     so_local = bool(company.fontes) and all(f.fonte == "receita_local" for f in company.fontes)
     admin = eh_admin(request)
-    cpfs = await asyncio.to_thread(_cpfs_visiveis, request, normalized, company, ficha) if admin else {}
+    # App de uso do proprio dono: o CPF completo do cofre aparece sem exigir login
+    # (cada visualizacao continua na auditoria, sem o numero).
+    cpfs = await asyncio.to_thread(_cpfs_visiveis, request, normalized, company, ficha)
     natureza = 2135 if "213-5" in (company.natureza_juridica or "") or "2135" in (company.natureza_juridica or "") else None
     cpf_titular = cpf_srv.cpf_do_titular(company.razao_social, natureza) if natureza else None
     return _render(

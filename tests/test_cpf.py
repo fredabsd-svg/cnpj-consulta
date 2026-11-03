@@ -74,18 +74,14 @@ class TestCofre:
 
 
 class TestTelas:
-    def test_ficha_mostra_cpf_completo_so_ao_admin_e_audita(self, base_local, admin_headers):
+    def test_ficha_mostra_cpf_completo_do_cofre_e_audita(self, base_local):
         from app.receita import jobs
         from app.services import cpf
 
         cpf.cadastrar("MARIA DA SILVA", CPF_MARIA, fonte="contrato social", finalidade="eSocial do cliente",
                       documento_publicado="***123456**")
-        c = TestClient(app)
-        publico = c.get(f"/empresa/{CONTABIL}").text
-        assert "987.123.456-28" not in publico and "***.123.456-**" in publico
-        assert not [a for a in jobs.auditoria() if a["acao"] == "cpf.visualizar"]
-        admin = c.get(f"/empresa/{CONTABIL}", headers=admin_headers).text
-        assert "987.123.456-28" in admin
+        pagina = TestClient(app).get(f"/empresa/{CONTABIL}").text  # app de uso do dono: sem login
+        assert "987.123.456-28" in pagina
         reg = [a for a in jobs.auditoria() if a["acao"] == "cpf.visualizar"]
         assert reg and "quantidade=1" in reg[0]["detalhe"] and CPF_MARIA not in reg[0]["detalhe"]
 
@@ -182,10 +178,8 @@ class TestFerramentas:
         assert json.loads(txt)["cpf_titular"] == "123.456.789-00"
         mcp_server.configurar(admin=False)
 
-    def test_exportacao_com_cpf_do_titular_exige_finalidade(self, base_local):
+    def test_exportacao_com_cpf_do_titular(self, base_local):
         c = TestClient(app)
         r = c.get("/api/busca/exportar.csv", params={"cnpj": MEI, "colunas": ["cnpj", "cpf_titular"]})
-        assert r.status_code == 400
-        r = c.get("/api/busca/exportar.csv", params={"cnpj": MEI, "colunas": ["cnpj", "cpf_titular"],
-                                                       "finalidade": "cadastro do cliente no eSocial"})
         assert r.status_code == 200 and "12345678900" in r.content.decode("utf-8-sig")
+

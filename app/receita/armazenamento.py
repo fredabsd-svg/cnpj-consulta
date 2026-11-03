@@ -123,6 +123,9 @@ def caminho_base_ativa(settings: Settings | None = None) -> str | None:
 def limpar_cache() -> None:
     global _cache
     _cache = None
+    from app.receita.duck import fechar_leituras
+
+    fechar_leituras()  # versao ativa mudou (ou vai ser apagada): solta os arquivos
 
 
 def nome_versao(mes: str) -> str:
@@ -226,6 +229,9 @@ def remover_versao(arquivo: str, settings: Settings | None = None) -> None:
         if v["arquivo"] == arquivo:
             if v["papel"] == "ativa":
                 raise PermissionError("A versao ativa nao pode ser removida.")
+            from app.receita.duck import fechar_leituras
+
+            fechar_leituras(versoes_dir(settings) / arquivo)
             (versoes_dir(settings) / arquivo).unlink()
             atual = ler_json(data_dir(settings) / PONTEIRO) or {}
             if atual.get("anterior") == arquivo:

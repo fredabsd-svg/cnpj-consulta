@@ -186,16 +186,17 @@ def test_s2_7_cpf_do_empresario_individual_no_historico_de_consultas(base_local)
 # ---------------------------------------------------------------- S2-8 contatos em massa pela API de busca
 
 
-def test_s2_8_api_de_busca_entrega_contatos_sem_finalidade_nem_auditoria(base_local):
-    """COLUNAS marca telefone_1/telefone_2/email como restritas (exportar exige finalidade
-    e audita), mas COLUNAS_TELA as inclui: /api/busca?colunas=email&por_pagina=100&pagina=N
-    pagina a base inteira de contatos sem finalidade e sem registro na auditoria."""
+def test_s2_8_contatos_liberados_e_exportacao_auditada(base_local):
+    """Regra atual (app de uso do proprio dono): contatos saem na busca e na
+    exportacao sem finalidade; a exportacao continua na auditoria, sem os dados."""
     from app.receita import jobs
 
     c = _cli()
     exp = c.get("/api/busca/exportar.csv", params={"uf": "TO", "colunas": ["cnpj", "email"]})
-    assert exp.status_code == 400  # a exportacao exige finalidade
+    assert exp.status_code == 200
     r = c.get("/api/busca", params={"uf": "TO", "colunas": ["cnpj", "email", "telefone_1"], "por_pagina": 100})
-    com_email = [i for i in r.json().get("itens", []) if i.get("email") or i.get("telefone_1")]
-    auditado = [i for i in jobs.auditoria() if i["acao"].startswith("busca")]
-    assert not com_email or auditado, (len(com_email), com_email[:2])
+    assert [i for i in r.json()["itens"] if i.get("email") or i.get("telefone_1")]
+    reg = [a for a in jobs.auditoria() if a["acao"] == "busca.exportar"]
+    assert reg and "@" not in reg[0]["detalhe"]
+
+

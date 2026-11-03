@@ -201,14 +201,14 @@
                         <td>{{ s.nome }}{% if s.tipo == "PESSOA_JURIDICA" %} <span class="badge badge-plain">PJ</span>{% elif s.tipo == "ESTRANGEIRO" %} <span class="badge badge-plain">Estrangeiro</span>{% endif %}</td>
                         <td>{{ ui.value(s.qualificacao) }}</td>
                         <td class="nowrap">{{ s.data_entrada | data_br }}</td>
-                        <td class="mono nowrap">{% set k = chave_pessoa(s.nome, s.documento_mascarado) %}{% if cpfs and k in cpfs %}{{ cpfs[k].cpf }} <span class="badge badge-violet" title="Fonte: {{ cpfs[k].fonte }}">completo · admin</span>{% else %}{{ s.documento_mascarado or "-" }}{% endif %}</td>
+                        <td class="mono nowrap">{% set k = chave_pessoa(s.nome, s.documento_mascarado) %}{% if cpfs and k in cpfs %}{{ cpfs[k].cpf }} <span class="badge badge-violet" title="Fonte: {{ cpfs[k].fonte }}">completo (cofre)</span>{% else %}{{ s.documento_mascarado or "-" }}{% endif %}</td>
                         <td class="small muted">{{ s.fonte | fonte }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
-        <p class="muted small">CPFs aparecem mascarados, como publicados pela Receita Federal; o app não os deduz. O CPF completo só aparece para o administrador quando foi cadastrado a partir de documentos do cliente ou recebido de uma fonte consultada (<a href="/admin/cpfs">cofre de CPFs</a>).</p>
+        <p class="muted small">CPFs aparecem mascarados, como publicados pela Receita Federal; o app não os deduz. O CPF completo aparece quando foi cadastrado a partir de documentos do cliente ou recebido de uma fonte consultada (<a href="/admin/cpfs">cofre de CPFs</a>).</p>
         {% else %}
         <p class="empty-state">Nenhum sócio informado pelas fontes (comum em empresário individual e MEI).</p>
         {% endif %}

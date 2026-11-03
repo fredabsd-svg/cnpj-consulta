@@ -357,6 +357,7 @@ def apagar_base_completa(*, incluir_app: bool = False, settings: Settings | None
             falhas.append(f"{alvo}: {e.strerror or type(e).__name__}")
 
     try:
+        arm.limpar_cache()  # fecha as conexoes de leitura antes de apagar os arquivos
         raiz = arm.data_dir(settings)
         for nome in _ITENS_DA_BASE:
             remover(raiz / nome)

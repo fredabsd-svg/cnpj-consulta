@@ -256,7 +256,7 @@ async def socio(request: Request, chave: str) -> HTMLResponse:
     except ficha_srv.BaseIndisponivel as e:
         ctx["erro"], status = str(e), 503
     ctx["admin"] = admin_auth.eh_admin(request)
-    if ctx["admin"] and ctx["socio"]:
+    if ctx["socio"]:
         s = ctx["socio"]
         achados = await asyncio.to_thread(cpf_srv.revelar, [(s["nome"], s["documento"])])
         ctx["cpf_completo"] = next(iter(achados.values()), None)
