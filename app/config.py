@@ -127,7 +127,14 @@ class Settings(BaseSettings):
     chat_sql_timeout_segundos: float = 30.0
 
     # Busca avancada
-    busca_timeout_segundos: float = 300.0  # a tela tem o botao Parar
+    # Tempo maximo de cada consulta da busca (tela, API, MCP); a tela tem o botao
+    # Parar. Exportacoes rodam em segundo plano, sem este limite.
+    busca_timeout_segundos: float = 60.0
+    # Consultas pesadas ao mesmo tempo (as demais esperam a vez): evita que a tela,
+    # o chat e o MCP juntos esgotem a memoria do computador.
+    busca_simultaneas: int = 2
+    # Teto do disco temporario das consultas (o que nao cabe na memoria)
+    busca_temp_max: str = "20GB"
     busca_max_por_pagina: int = 100
     exportacao_max_linhas: int = 0  # 0 = sem limite (o Excel e dividido em abas de 1 milhao)
     # Acima disto a exportacao vira tarefa em segundo plano.
@@ -139,7 +146,7 @@ class Settings(BaseSettings):
     @field_validator("busca_timeout_segundos")
     @classmethod
     def _timeout_antigo(cls, v: float) -> float:
-        return 300.0 if v == 30 else v
+        return 60.0 if v == 30 else v
 
     @field_validator("exportacao_max_linhas")
     @classmethod

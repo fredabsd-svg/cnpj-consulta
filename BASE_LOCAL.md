@@ -272,7 +272,7 @@ adicionar a uma lista, exportar selecionados), filtros a partir de um resultado
 (clicar na UF, no município ou no CNAE), contadores de distribuição, aviso de
 contato compartilhado com outras empresas (possível duplicidade) e botão
 **Parar** para buscas longas (a consulta é interrompida no servidor;
-`BUSCA_TIMEOUT_SEGUNDOS`, padrão 300 s, limita o tempo).
+`BUSCA_TIMEOUT_SEGUNDOS`, padrão 60 s, limita cada consulta).
 
 **Velocidade:** a ordem padrão é a do CNPJ, que é a ordem em que a tabela está
 gravada: a página sai sem ordenar nada, mesmo com milhões de resultados (ordenar
@@ -281,6 +281,37 @@ conexão com a base fica aberta enquanto o app roda (o cache do banco não se
 perde entre as buscas) e, ao iniciar, o app aquece em segundo plano as colunas
 mais usadas nos filtros. Com a base num HD externo, as primeiras buscas depois
 de ligar o computador ainda leem do disco; um SSD interno é bem mais rápido.
+
+**Proteção da máquina:** no máximo `BUSCA_SIMULTANEAS` (padrão 2) consultas
+pesadas rodam ao mesmo tempo (tela, chat e MCP disparam várias em paralelo; as
+outras esperam a vez, até o tempo limite); uma exportação grande por vez; o
+banco usa no máximo `RECEITA_DUCKDB_MEMORIA` e ~1 núcleo por 512 MB desse
+limite, e o que não cabe na memória vai para disco até `BUSCA_TEMP_MAX`. A
+coluna **Sócios (nomes)** é preenchida por uma segunda consulta, só para as
+empresas da página (antes o banco agrupava os sócios da base inteira a cada
+busca, o que consumia vários GB e podia travar o computador).
+
+**Índices:** a base é colunar (DuckDB). Ela não usa índices B-tree como o
+Postgres: cada filtro lê só a coluna dele, comprimida, e pula blocos pelo
+mínimo/máximo de cada bloco. Por isso índices em `uf`, `situacao`, `porte`
+etc. não aceleram essas buscas; o tipo de telefone já é uma coluna
+pré-calculada (`tipo_telefone_1`/`tipo_telefone_2`).
+
+**Limitar a memória do processo (Linux, opcional):** rodando como serviço do
+systemd, `MemoryMax=` corta o app antes de o sistema inteiro travar:
+
+```ini
+# /etc/systemd/system/cnpj-consulta.service (trecho)
+[Service]
+WorkingDirectory=/caminho/para/cnpj-consulta
+ExecStart=/caminho/para/cnpj-consulta/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+MemoryHigh=5G
+MemoryMax=6G
+Restart=on-failure
+```
+
+Deixe `MemoryMax` acima de `RECEITA_DUCKDB_MEMORIA` (padrão 4 GB) e abaixo da
+RAM livre do computador.
 
 **Busca salva × lista:** a busca salva guarda **critérios** e é executada de
 novo a cada abertura; a lista guarda **empresas escolhidas**, com data de

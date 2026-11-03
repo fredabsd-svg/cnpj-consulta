@@ -94,9 +94,18 @@ def conectar_leitura(path: str | Path) -> Iterator[duckdb.DuckDBPyConnection]:
         base = _leituras.get(chave)
         if base is None:
             base = duckdb.connect(chave, read_only=True)
-            memoria = get_settings().receita_duckdb_memoria
-            if memoria:
-                base.execute(f"SET memory_limit = '{_safe_size(memoria)}'")
+            cfg = get_settings()
+            if cfg.receita_duckdb_memoria:
+                base.execute(f"SET memory_limit = '{_safe_size(cfg.receita_duckdb_memoria)}'")
+            if cfg.receita_duckdb_threads > 0:
+                base.execute(f"SET threads = {int(cfg.receita_duckdb_threads)}")
+            limitar_threads(base)  # muitos nucleos com pouca memoria estouram as juncoes
+            # O que nao couber na memoria vai para disco, com teto (nunca enche o disco)
+            temp = Path(cfg.receita_temp_dir.strip()).expanduser() / "cnpj-consulta" if cfg.receita_temp_dir.strip() \
+                else Path(cfg.receita_data_dir).expanduser() / "trabalho"
+            (temp / "leitura").mkdir(parents=True, exist_ok=True)
+            base.execute(f"SET temp_directory = '{_sql_path(temp / 'leitura')}'")
+            base.execute(f"SET max_temp_directory_size = '{_safe_size(cfg.busca_temp_max)}'")
             _leituras[chave] = base
         cur = base.cursor()
     try:

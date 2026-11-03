@@ -167,7 +167,17 @@ def criar_exportacao(f: Filtros, colunas: list[str], formato: str, finalidade: s
     return obter(exp_id)
 
 
+# Uma exportacao grande por vez: cada uma le a base inteira em fluxo; duas ou
+# mais juntas, mais as buscas da tela, esgotavam memoria e disco.
+_uma_por_vez = threading.Lock()
+
+
 def _executar(exp_id: int) -> None:
+    with _uma_por_vez:
+        _executar_agora(exp_id)
+
+
+def _executar_agora(exp_id: int) -> None:
     factory = get_session_factory()
     with factory() as s:
         e = s.get(Exportacao, exp_id)
