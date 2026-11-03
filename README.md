@@ -297,6 +297,8 @@ Tudo é configurado por variáveis de ambiente (ou pelo arquivo `.env`; veja o `
 | `RECEITA_PORTAL_URL` / `RECEITA_PASTA_CNPJ` | portal oficial / `Dados/Cadastros/CNPJ` | Ponto de entrada oficial e pasta dos dados abertos (descoberta automática) |
 | `RECEITA_DUCKDB_MEMORIA` | `4GB` | Memória máxima da importação (o excedente vai para disco) |
 | `ADMIN_TOKEN` | gerado | Token da área administrativa (vazio: gerado em `data/admin_token.txt`) |
+| `APP_LOGIN_REMOTO` | `true` | Fora do próprio PC (Tailscale, rede), o app exige o login de administrador |
+| `MCP_CHAVE` | gerada | Chave do MCP pela rede (`/mcp`); vazia = gerada em `data/mcp_chave.txt` (ver MCP.md) |
 | `EXPORTACAO_MAX_LINHAS` / `EXPORTACAO_SINCRONA_MAX` | `0` (sem teto) / `20000` | Teto de exportação (0 = sem limite; Excel em abas de 1 milhão) e limite para gerar na hora |
 | `RATE_LIMIT_<FONTE>` | 60 / 30 / 3 / 3 | Consultas por minuto de cada fonte |
 | `REQUEST_TIMEOUT_SECONDS` / `REQUEST_TOTAL_TIMEOUT_SECONDS` | `10` / `20` | Timeout por requisição e por consulta |

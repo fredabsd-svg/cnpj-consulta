@@ -83,6 +83,63 @@ python -m app.mcp_server --http --porta 8765     # endereço: http://127.0.0.1:8
 O modo HTTP só aceita `127.0.0.1`/`localhost`: o servidor não tem login e não
 deve ser exposto na rede.
 
+## 2.1 Pela rede, com chave (Tailscale)
+
+O mesmo MCP fica **dentro do site**, no mesmo endereço e porta: `/mcp`. Todo
+pedido exige a **chave MCP** (painel *Base de Dados → Acesso pela rede e MCP*,
+onde também dá para gerar uma nova). Pela rede, o site em si pede o login de
+administrador; no próprio PC, não.
+
+**1. Publique o app no Tailscale (no PC onde ele roda).** Deixe `APP_HOST=127.0.0.1`
+e use o proxy do próprio Tailscale, que já entrega HTTPS:
+
+```bash
+tailscale serve --bg 8000      # só os seus aparelhos (tailnet): https://SEU-PC.SUA-TAILNET.ts.net
+tailscale funnel --bg 8000     # internet aberta: necessário para claude.ai, app do Claude e ChatGPT
+```
+
+O Funnel publica o endereço na internet (ele precisa ser liberado uma vez no
+painel do Tailscale). Com ele ligado, qualquer pessoa alcança a tela de login e
+o `/mcp`, mas sem o token de administrador e sem a chave não entra (tentativas
+erradas são limitadas por IP e vão para a auditoria). Use o `serve` se as IAs
+rodam em aparelhos seus; o `funnel`, se a IA roda na nuvem.
+
+**2. Copie o endereço e a chave** no painel *Base de Dados* aberto pelo endereço
+do Tailscale. Há duas formas:
+
+- `https://SEU-PC.SUA-TAILNET.ts.net/mcp` + cabeçalho `Authorization: Bearer CHAVE`
+- `https://SEU-PC.SUA-TAILNET.ts.net/mcp/k/CHAVE` (a chave vai no endereço; para
+  quem só aceita uma URL). Quem tiver este endereço usa o app: não compartilhe.
+
+**3. Configure a IA:**
+
+| Cliente | Como |
+|---|---|
+| Claude Code | `claude mcp add --transport http cnpj-consulta https://SEU-PC.SUA-TAILNET.ts.net/mcp --header "Authorization: Bearer CHAVE"` |
+| Cursor (`.cursor/mcp.json`) | `{"mcpServers": {"cnpj-consulta": {"url": "https://SEU-PC.SUA-TAILNET.ts.net/mcp", "headers": {"Authorization": "Bearer CHAVE"}}}}` |
+| VS Code (`.vscode/mcp.json`) | `{"servers": {"cnpj-consulta": {"type": "http", "url": "https://SEU-PC.SUA-TAILNET.ts.net/mcp", "headers": {"Authorization": "Bearer CHAVE"}}}}` |
+| claude.ai / app do Claude / ChatGPT | Adicione um **conector personalizado (MCP remoto)** com o endereço **com a chave** (`.../mcp/k/CHAVE`), sem autenticação. Precisa do `tailscale funnel` |
+| Claude Desktop em outro computador | Conector personalizado com o endereço com a chave (precisa do Funnel), ou, só pela tailnet, `"command": "npx", "args": ["mcp-remote", "https://SEU-PC.SUA-TAILNET.ts.net/mcp", "--header", "Authorization: Bearer CHAVE"]` |
+
+**Ferramentas que alteram dados** (atualizar a base, contatos complementares,
+CPF do cofre) só rodam pela rede com `MCP_PERMITIR_ADMIN=true` no `.env` do PC.
+Trocar a chave no painel derruba na hora todas as IAs que usavam a anterior.
+
+**Com `tailscale serve`/`funnel`, ponha `CONFIAR_PROXY=true` no `.env`:** os
+pedidos chegam pelo proxy do Tailscale no próprio PC, e só assim o limite de
+tentativas de login conta o IP de cada pessoa (sem isso, um estranho errando a
+senha pelo Funnel bloquearia o seu login por 5 minutos). Use um token de
+administrador forte: o gerado pelo app (`cnpj admin-token`) já é.
+
+**Login pelo navegador:** cada aparelho entra uma vez com o token de
+administrador (`cnpj admin-token` mostra o token) e fica conectado por
+`ADMIN_SESSAO_HORAS` (padrão 8 h). `APP_LOGIN_REMOTO=false` desliga essa
+exigência (não recomendado com Funnel).
+
+Se preferir ligar o app direto no IP do Tailscale (`APP_HOST=0.0.0.0`, sem
+`tailscale serve`), ele também funciona, com o mesmo login e a mesma chave, mas
+sem HTTPS.
+
 ## 3. Ferramentas
 
 | Ferramenta | O que faz | Precisa de |

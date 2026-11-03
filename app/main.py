@@ -16,13 +16,13 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from app import __version__
+from app import __version__, mcp_remoto
 from app.api import admin, batch, busca, companies, health, history, partners, providers
 from app.config import assert_bind_allowed, get_settings, host_de_execucao
 from app.db import init_database
 from app.providers.registry import get_registry
 from app.receita.servico import agendador
-from app.services.admin_auth import LoginNecessario
+from app.services.admin_auth import LoginNecessario, eh_admin
 from app.services.official_docs import RECEITA_ORIGIN
 from app.web.pages import router as pages_router
 from app.web.pages_base import router as pages_base_router
@@ -61,12 +61,15 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     logging.getLogger("uvicorn.access").addFilter(SemQueryString())
     # Atualizacao agendada da base (so age se ligada no painel Base de Dados CNPJ)
     tarefa = asyncio.create_task(agendador())
+    pilha = contextlib.AsyncExitStack()
+    await pilha.enter_async_context(mcp_remoto.ciclo_de_vida())  # MCP pela rede em /mcp (com chave)
     if settings.receita_local_enabled:
         from app.services.busca_avancada import aquecer
 
         # cache da base local em segundo plano (primeira busca rapida mesmo em HD externo)
         threading.Thread(target=aquecer, daemon=True, name="aquecer-base").start()
     yield
+    await pilha.aclose()
     tarefa.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await tarefa
@@ -79,8 +82,11 @@ class SemQueryString(logging.Filter):
 
     def filter(self, record: logging.LogRecord) -> bool:
         args = record.args
-        if isinstance(args, tuple) and len(args) >= 3 and isinstance(args[2], str) and "?" in args[2]:
-            record.args = (*args[:2], args[2].split("?", 1)[0] + "?…", *args[3:])
+        if isinstance(args, tuple) and len(args) >= 3 and isinstance(args[2], str):
+            caminho = mcp_remoto.esconder_chave(args[2])  # /mcp/k/<chave> nunca vai para o log
+            if "?" in caminho:
+                caminho = caminho.split("?", 1)[0] + "?…"
+            record.args = (*args[:2], caminho, *args[3:])
         return True
 
 
@@ -109,20 +115,36 @@ def _is_cross_site(request: Request) -> bool:
 
 
 _HOSTS_LOCAIS = {"localhost", "127.0.0.1", "::1"}
+_ISENTOS_DE_LOGIN = ("/admin/entrar", "/static/", "/mcp", "/api/health", "/favicon")
+
+
+def _nome_do_host(request: Request) -> str:
+    bruto = (request.headers.get("host") or "").strip().lower()
+    if bruto.startswith("["):
+        return bruto[1:].split("]", 1)[0]
+    return bruto.rsplit(":", 1)[0] if bruto.count(":") == 1 else bruto
+
+
+def _acesso_local(request: Request) -> bool:
+    """Pedido feito no proprio computador: conexao de 127.0.0.1 E endereco
+    localhost/127.0.0.1. Pelo Tailscale (serve/Funnel) o endereco e o nome
+    *.ts.net; pelo IP da rede, a conexao vem de fora: nos dois casos, nao e local."""
+    cliente = request.client.host if request.client else ""
+    return cliente in _HOSTS_LOCAIS and _nome_do_host(request) in _HOSTS_LOCAIS
 
 
 def _host_permitido(request: Request) -> bool:
     """Protecao contra DNS rebinding: um site que passa a resolver para 127.0.0.1
     chega com o PROPRIO nome no Host. Aceita localhost, enderecos IP (o rebinding
     precisa de um nome) e os nomes de APP_HOSTS_PERMITIDOS."""
-    bruto = (request.headers.get("host") or "").strip().lower()
-    if bruto.startswith("["):
-        host = bruto[1:].split("]", 1)[0]
-    else:
-        host = bruto.rsplit(":", 1)[0] if bruto.count(":") == 1 else bruto
+    host = _nome_do_host(request)
     if not host:
         return False
     if host in _HOSTS_LOCAIS:
+        return True
+    # Nomes do Tailscale (MagicDNS/serve/Funnel): o DNS de *.ts.net e do Tailscale,
+    # um site de terceiros nao consegue fazer um desses nomes apontar para o PC.
+    if host.endswith(".ts.net"):
         return True
     try:
         ipaddress.ip_address(host)
@@ -143,6 +165,17 @@ async def security_middleware(request: Request, call_next) -> Response:
             "Host nao permitido. Acesse por localhost ou pelo endereco IP, ou inclua o nome em "
             "APP_HOSTS_PERMITIDOS.", status_code=400)
     caminho = request.url.path
+    cfg = get_settings()
+    if (cfg.app_login_remoto and not caminho.startswith(_ISENTOS_DE_LOGIN)
+            and not _acesso_local(request) and not eh_admin(request)):
+        # Acesso pela rede (Tailscale, tunel, outro computador): login obrigatorio.
+        if caminho.startswith("/api/") or request.method not in _SAFE_METHODS:
+            return JSONResponse({"detail": "Entre no app (login) para usar pela rede: /admin/entrar."},
+                                status_code=401)
+        from urllib.parse import quote
+
+        destino = caminho + (f"?{request.url.query}" if request.url.query else "")
+        return RedirectResponse(f"/admin/entrar?proximo={quote(destino)}", status_code=303)
     efeito_em_get = caminho.startswith("/api/") or caminho.endswith((".csv", ".xlsx")) or "/exportar" in caminho
     site = request.headers.get("sec-fetch-site")
     if site in ("cross-site", "same-site"):  # outro site ou outra porta do localhost
@@ -175,6 +208,13 @@ async def _login_necessario(request: Request, exc: LoginNecessario) -> Response:
 
     return RedirectResponse(f"/admin/entrar?proximo={quote(exc.destino)}", status_code=303)
 
+
+# MCP pela rede: /mcp (Authorization: Bearer <chave>) e /mcp/k/<chave> (so URL)
+from starlette.routing import Route  # noqa: E402
+
+app.router.routes.append(Route("/mcp", endpoint=mcp_remoto.EndpointMcp(), methods=["GET", "POST", "DELETE"]))
+app.router.routes.append(Route("/mcp/k/{chave:path}", endpoint=mcp_remoto.EndpointMcp(),
+                               methods=["GET", "POST", "DELETE"]))
 
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")

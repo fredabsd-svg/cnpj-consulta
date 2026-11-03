@@ -452,7 +452,18 @@ async def base_painel(request: Request) -> HTMLResponse:
         "historico": await asyncio.to_thread(jobs.historico, 20),
         "contatos": await asyncio.to_thread(contatos_srv.estatisticas),
         "settings": get_settings(),
+        "mcp": await asyncio.to_thread(_mcp_ctx, request),
     })
+
+
+def _mcp_ctx(request: Request) -> dict:
+    from app import mcp_remoto
+
+    origem = f"{request.url.scheme}://{request.url.netloc}"
+    chave = mcp_remoto.chave()
+    return {"url": f"{origem}/mcp", "url_chave": f"{origem}/mcp/k/{chave}", "chave": chave,
+            "da_env": mcp_remoto.chave_da_env(), "admin": get_settings().mcp_permitir_admin,
+            "local": request.url.hostname in ("localhost", "127.0.0.1", "::1")}
 
 
 @router.post("/base/acao", dependencies=[Depends(exigir_admin_pagina)])
@@ -522,6 +533,12 @@ async def base_acao(request: Request, acao: str = Form(...), mes: str = Form("")
                 msg = f"Base apagada: {r['liberado'] / 1024**3:.2f} GB liberados."
                 if r["falhas"]:
                     msg += " Não foi possível apagar (arquivo em uso?): " + "; ".join(r["falhas"][:3])
+        elif acao == "mcp_nova_chave":
+            from app import mcp_remoto
+
+            await asyncio.to_thread(mcp_remoto.nova_chave)
+            jobs.auditar("mcp.nova_chave", ip=ip)
+            msg = "Chave MCP trocada: atualize a configuração das IAs conectadas (a antiga não vale mais)."
         elif acao == "agenda":
             form = await request.form()
             from datetime import datetime
