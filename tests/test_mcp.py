@@ -93,17 +93,14 @@ async def test_sem_base_local(servidor):
     assert r.is_error and "Base de Dados CNPJ" in r.content[0].text
 
 
-async def test_exportacao_exige_finalidade_e_audita(base_local, servidor):
+async def test_exportacao_com_contatos_e_auditada(base_local, servidor):
     from openpyxl import load_workbook
 
     from app.receita.jobs import auditoria
 
     async with Client(servidor) as c:
-        r = await c.call_tool("exportar_busca", {"filtros": {"uf": ["TO"]}, "colunas": ["cnpj", "email"]})
-        assert r.is_error and "finalidade" in r.content[0].text
-        d = _dados(await c.call_tool("exportar_busca", {
-            "filtros": {"uf": ["TO"]}, "colunas": ["cnpj", "email"], "finalidade": "Prospecção do escritório"}))
-    assert d["linhas"] == 3
+        d = _dados(await c.call_tool("exportar_busca", {"filtros": {"uf": ["TO"]}, "colunas": ["cnpj", "email"]}))
+    assert d["linhas"] == 3 and d["truncado"] is False
     linhas = list(load_workbook(d["arquivo"], read_only=True)["Empresas"].iter_rows(values_only=True))
     assert linhas[0] == ("CNPJ", "E-mail") and len(linhas) == 4
     reg = next(a for a in auditoria() if a["acao"] == "busca.exportar")

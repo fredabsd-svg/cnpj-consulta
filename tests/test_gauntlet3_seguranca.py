@@ -43,23 +43,18 @@ def test_s3_1_cpf_do_mei_fica_no_historico_de_buscas(base_local):
 # ---------------------------------------------------------------- S3-2 contatos em massa pelo MCP/chat sem finalidade
 
 
-async def test_s3_2_buscar_empresas_do_mcp_entrega_contatos_sem_finalidade(base_local):
-    """/api/busca passou a omitir telefones/e-mail sem `finalidade` (e auditar quando
-    ha). A ferramenta MCP `buscar_empresas` (tambem usada pelo chat) chama a mesma
-    ba.buscar com COLUNAS_TELA: devolve telefone_1/telefone_2/email de ate 100
-    empresas por pagina, paginavel sem limite, sem finalidade e sem auditoria."""
+async def test_s3_2_buscar_empresas_do_mcp_entrega_contatos(base_local):
+    """A ferramenta MCP `buscar_empresas` (tambem usada pelo chat) devolve telefones
+    e e-mail, como a tela (app de uso do proprio dono)."""
     from mcp import Client
 
     from app import mcp_server
-    from app.receita import jobs
 
     srv = mcp_server.configurar(admin=False)
     async with Client(srv) as c:
         r = await c.call_tool("buscar_empresas", {"filtros": {"uf": ["TO"]}, "por_pagina": 100})
     dados = json.loads(r.content[0].text)
-    vazados = [i for i in dados["itens"] if i.get("email") or i.get("telefone_1")]
-    auditados = [a for a in jobs.auditoria() if "contato" in a["acao"] or "busca" in a["acao"]]
-    assert not vazados or auditados, (vazados[:2], auditados)
+    assert [i for i in dados["itens"] if i.get("email") or i.get("telefone_1")]
 
 
 # ---------------------------------------------------------------- S3-3 GET de outro site nas paginas HTML

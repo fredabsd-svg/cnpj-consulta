@@ -91,10 +91,10 @@ deve ser exposto na rede.
 | `consultar_cnpj` | Dados unificados com procedência, divergências entre fontes, sanções e checklist de diligência; `fontes_externas=true` compara com as APIs públicas | — |
 | `sugerir_empresas` | Autocompletar por razão social, nome fantasia ou início do CNPJ | base local |
 | `descrever_filtros` | Catálogo de filtros, ordenações, colunas e atalhos de atividade da busca avançada | — |
-| `buscar_empresas` | Busca avançada com filtros combinados, ordenação e paginação (até 100 por página); telefones e e-mail só com `finalidade` (auditado) | base local |
+| `buscar_empresas` | Busca avançada com filtros combinados, ordenação e paginação (até 100 por página), inclusive telefones e e-mail | base local |
 | `contar_empresas`, `distribuicao_resultados` | Total e distribuição por UF, situação, porte, município, CNAE… | base local |
 | `listar_codigos`, `listar_municipios` | Tabelas oficiais (CNAE, naturezas, motivos, qualificações, países) e municípios por UF | base local |
-| `exportar_busca` | Gera planilha xlsx/csv neste computador e devolve o caminho; colunas de contato exigem `finalidade` | base local |
+| `exportar_busca` | Gera planilha xlsx/csv neste computador e devolve o caminho; qualquer coluna, sem limite de linhas (auditado) | base local |
 | `buscar_socio`, `ficha_socio`, `empresas_do_socio_pj` | Empresas de um sócio, ficha do sócio, empresas em que um CNPJ é sócio | base local |
 | `consultar_lote` | Quadro-resumo de vários CNPJs (até `BATCH_MAX_ITEMS`) | — |
 | `verificar_sancoes` | CEIS/CNEP/CEPIM/CEAF | `PORTAL_TRANSPARENCIA_API_KEY` |
@@ -135,8 +135,7 @@ pedir sua confirmação antes de rodar ferramentas marcadas como de escrita.
 - As mesmas da interface: CPF de sócio sempre mascarado como publicado.
   Contatos oficiais e complementares vêm separados e com a origem. Atividade é
   filtrada pelo CNAE oficial.
-- `exportar_busca` com telefones, e-mails ou nomes de sócios exige a finalidade
-  e grava auditoria, sem os dados.
+- `exportar_busca` grava auditoria (linhas e colunas, sem os dados).
 - As instruções enviadas ao assistente pedem que ele não invente contatos, não
   tente reconstituir CPFs, cite o mês de referência da base e não trate
   Simples/MEI como prova de regularidade fiscal.

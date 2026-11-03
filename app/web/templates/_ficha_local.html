@@ -84,7 +84,7 @@
                     <span class="cell-sub">{{ s.tipo }}{% if s.pais %} · {{ s.pais }}{% endif %}{% if s.qtd_empresas and s.qtd_empresas > 1 %} · <a href="/socio/{{ s.chave }}">{{ s.qtd_empresas }} empresas</a>{% endif %}</span></td>
                 <td>{{ ui.value(s.qualificacao) }}{% if s.administrador %} <span class="badge badge-violet">Administração</span>{% endif %}</td>
                 <td class="nowrap">{{ s.data_entrada | data_br }}</td>
-                <td class="mono nowrap">{% set k = chave_pessoa(s.nome, s.documento) %}{% if cpfs and k in cpfs %}{{ cpfs[k].cpf }} <span class="badge badge-violet" title="Fonte: {{ cpfs[k].fonte }}">completo · admin</span>{% else %}{{ s.documento or "—" }}{% endif %}</td>
+                <td class="mono nowrap">{% set k = chave_pessoa(s.nome, s.documento) %}{% if cpfs and k in cpfs %}{{ cpfs[k].cpf }} <span class="badge badge-violet" title="Fonte: {{ cpfs[k].fonte }}">completo (cofre)</span>{% else %}{{ s.documento or "—" }}{% endif %}</td>
                 <td class="nowrap">{{ s.faixa_etaria or "—" }}</td>
                 <td>{% if s.representante %}{{ s.representante.nome or "" }}{% if s.representante.documento %} <span class="mono small">{{ s.representante.documento }}</span>{% endif %}{% if s.representante.qualificacao %}<span class="cell-sub">{{ s.representante.qualificacao }}</span>{% endif %}{% else %}—{% endif %}</td>
             </tr>
@@ -92,7 +92,7 @@
             </tbody>
         </table>
     </div>
-    <p class="muted small">CPFs aparecem mascarados, como publicados pela Receita Federal; o app não os deduz. O CPF completo só aparece para o administrador quando foi cadastrado a partir de documentos do cliente ou recebido de uma fonte consultada (<a href="/admin/cpfs">cofre de CPFs</a>). A base pública não informa percentual de participação.</p>
+    <p class="muted small">CPFs aparecem mascarados, como publicados pela Receita Federal; o app não os deduz. O CPF completo aparece quando foi cadastrado a partir de documentos do cliente ou recebido de uma fonte consultada (<a href="/admin/cpfs">cofre de CPFs</a>). A base pública não informa percentual de participação.</p>
     {% else %}
     <p class="empty-state">A base da Receita não traz quadro societário para esta empresa (comum em empresário individual e MEI).</p>
     {% endif %}

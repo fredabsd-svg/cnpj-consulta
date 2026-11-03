@@ -4,9 +4,9 @@
   resposta (CSV linha a linha; Excel em modo write_only num arquivo temporario).
 - Acima disso: vira tarefa em segundo plano (thread do servidor), com arquivo
   em data/receita/exportacoes e link de download quando terminar.
-- Colunas de contato/pessoais (telefones, e-mail, nomes de socios) so saem
-  quando o usuario informa a finalidade; a exportacao fica na auditoria (so o
-  numero de linhas, as colunas e a finalidade -- nunca os dados).
+- Qualquer coluna pode ser exportada (telefones, e-mail, socios, CPF do titular):
+  o app e de uso do proprio dono. A exportacao fica na auditoria (numero de
+  linhas e colunas -- nunca os dados).
 - Celulas que comecam com = + - @ sao neutralizadas (injecao de formula).
 """
 
@@ -45,15 +45,21 @@ class ExportacaoInvalida(ValueError):
     pass
 
 
-def validar_colunas(colunas: list[str] | None, finalidade: str | None) -> list[str]:
-    cols = [c for c in (colunas or []) if c in COLUNAS] or list(COLUNAS_PADRAO)
-    restritas = [COLUNAS[c][0] for c in cols if COLUNAS[c][2]]
-    if restritas and len((finalidade or "").strip()) < 10:
-        raise ExportacaoInvalida(
-            "As colunas " + ", ".join(restritas) + " trazem dados de contato ou pessoais. "
-            "Informe a finalidade da exportação (mínimo 10 caracteres) ou remova essas colunas."
-        )
-    return cols
+def validar_colunas(colunas: list[str] | None, finalidade: str | None = None) -> list[str]:
+    """Colunas pedidas que existem (ou as padrao). `finalidade` e opcional e so vai
+    para a auditoria."""
+    return [c for c in dict.fromkeys(colunas or []) if c in COLUNAS] or list(COLUNAS_PADRAO)
+
+
+LINHAS_POR_ABA = 1_000_000  # o Excel aceita 1.048.576 linhas por aba
+
+
+def limite_linhas(total: int | None = None) -> int | None:
+    """Teto de linhas da exportacao (None = sem teto, o padrao)."""
+    teto = get_settings().exportacao_max_linhas
+    if teto <= 0:
+        return None
+    return min(total, teto) if total is not None else teto
 
 
 def _valor(v: Any) -> Any:
@@ -75,7 +81,7 @@ def _celula_csv(v: Any) -> Any:
     return csv_cell(v)
 
 
-def gerar_csv(f: Filtros, colunas: list[str], limite: int) -> Iterator[bytes]:
+def gerar_csv(f: Filtros, colunas: list[str], limite: int | None) -> Iterator[bytes]:
     yield "﻿".encode()
     buf = io.StringIO()
     w = csv.writer(buf, delimiter=";")
@@ -96,28 +102,34 @@ def _celula_xlsx(v: Any) -> Any:
     return v
 
 
-def gravar_xlsx(f: Filtros, colunas: list[str], limite: int, destino: Path,
+def gravar_xlsx(f: Filtros, colunas: list[str], limite: int | None, destino: Path,
                 progresso=None) -> int:
-    from openpyxl import Workbook
+    """Excel em fluxo (xlsx_rapido). Acima de 1 milhao de linhas continua em novas
+    abas (Empresas, Empresas 2, ...): o Excel nao abre mais que 1.048.576 linhas
+    numa aba."""
+    from app.services.xlsx_rapido import PlanilhaRapida
 
-    wb = Workbook(write_only=True)
-    ws = wb.create_sheet("Empresas")
-    ws.append([COLUNAS[c][0] for c in colunas])
+    pl = PlanilhaRapida(destino, LINHAS_POR_ABA)
     n = 0
-    for it in iterar_exportacao(f, colunas, limite):
-        ws.append([_celula_xlsx(it.get(c)) for c in colunas])
-        n += 1
-        if progresso and n % 5000 == 0:
-            progresso(n)
-    info = wb.create_sheet("Fonte")
-    info.append(["Fonte", "Receita Federal — dados abertos do CNPJ (base local)"])
-    info.append(["Gerado em", datetime.now().strftime("%d/%m/%Y %H:%M")])
-    info.append(["Observação", "Contatos são os declarados pela empresa à Receita e podem estar desatualizados."])
-    wb.save(destino)
+    try:
+        pl.nova_aba("Empresas", [COLUNAS[c][0] for c in colunas])
+        for it in iterar_exportacao(f, colunas, limite):
+            pl.linha([_celula_xlsx(it.get(c)) for c in colunas])
+            n += 1
+            if progresso and n % 5000 == 0:
+                progresso(n)
+        pl.aba_simples("Fonte", [
+            ["Fonte", "Receita Federal — dados abertos do CNPJ (base local)"],
+            ["Gerado em", datetime.now().strftime("%d/%m/%Y %H:%M")],
+            ["Linhas", n],
+            ["Observação", "Contatos são os declarados pela empresa à Receita e podem estar desatualizados."],
+        ])
+    finally:
+        pl.fechar()
     return n
 
 
-def xlsx_temporario(f: Filtros, colunas: list[str], limite: int) -> Path:
+def xlsx_temporario(f: Filtros, colunas: list[str], limite: int | None) -> Path:
     tmp = tempfile.NamedTemporaryFile(prefix="busca-", suffix=".xlsx", delete=False)  # noqa: SIM115
     tmp.close()
     path = Path(tmp.name)
@@ -125,7 +137,7 @@ def xlsx_temporario(f: Filtros, colunas: list[str], limite: int) -> Path:
     return path
 
 
-def gravar_csv(f: Filtros, colunas: list[str], limite: int, destino: Path, progresso=None) -> int:
+def gravar_csv(f: Filtros, colunas: list[str], limite: int | None, destino: Path, progresso=None) -> int:
     n = 0
     with destino.open("w", encoding="utf-8-sig", newline="") as fh:
         w = csv.writer(fh, delimiter=";")
@@ -168,7 +180,7 @@ def _executar(exp_id: int) -> None:
     pasta.mkdir(parents=True, exist_ok=True)
     nome = f"exportacao-{exp_id}-{datetime.now().strftime('%Y%m%d%H%M%S')}.{formato}"
     destino = pasta / nome
-    limite = get_settings().exportacao_max_linhas
+    limite = limite_linhas()
 
     def progresso(n: int) -> None:
         with factory() as s2:

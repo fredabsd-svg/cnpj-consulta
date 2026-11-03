@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import ipaddress
 import logging
+import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -60,6 +61,11 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     logging.getLogger("uvicorn.access").addFilter(SemQueryString())
     # Atualizacao agendada da base (so age se ligada no painel Base de Dados CNPJ)
     tarefa = asyncio.create_task(agendador())
+    if settings.receita_local_enabled:
+        from app.services.busca_avancada import aquecer
+
+        # cache da base local em segundo plano (primeira busca rapida mesmo em HD externo)
+        threading.Thread(target=aquecer, daemon=True, name="aquecer-base").start()
     yield
     tarefa.cancel()
     with contextlib.suppress(asyncio.CancelledError):

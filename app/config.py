@@ -9,6 +9,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -121,11 +122,24 @@ class Settings(BaseSettings):
     chat_sql_timeout_segundos: float = 30.0
 
     # Busca avancada
-    busca_timeout_segundos: float = 30.0
+    busca_timeout_segundos: float = 300.0  # a tela tem o botao Parar
     busca_max_por_pagina: int = 100
-    exportacao_max_linhas: int = 500_000
+    exportacao_max_linhas: int = 0  # 0 = sem limite (o Excel e dividido em abas de 1 milhao)
     # Acima disto a exportacao vira tarefa em segundo plano.
     exportacao_sincrona_max: int = 20_000
+
+    # O .env criado pelo instalador copiava estes valores antigos de fabrica (30 s e
+    # 500 mil linhas), que derrubavam buscas e cortavam exportacoes em bases grandes:
+    # exatamente esses valores passam a valer o padrao novo.
+    @field_validator("busca_timeout_segundos")
+    @classmethod
+    def _timeout_antigo(cls, v: float) -> float:
+        return 300.0 if v == 30 else v
+
+    @field_validator("exportacao_max_linhas")
+    @classmethod
+    def _teto_antigo(cls, v: int) -> int:
+        return 0 if v == 500_000 else v
 
     # Contatos complementares (fontes fora da Receita, sempre com origem)
     contatos_desatualizado_dias: int = 365

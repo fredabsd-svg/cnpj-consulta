@@ -21,6 +21,7 @@ lista de CNPJs. Celular/fixo seguem o plano de numeracao da Anatel.
 from __future__ import annotations
 
 import json
+import logging
 import math
 import re
 import threading
@@ -50,6 +51,9 @@ from app.services.cnae_palavras import PALAVRAS_CHAVE, faixas
 MAX_PROFUNDIDADE = 4
 MAX_ITENS_ARVORE = 40
 MAX_VALORES = 500
+
+
+log = logging.getLogger(__name__)
 
 
 class FiltroInvalido(ValueError):
@@ -698,23 +702,28 @@ GRUPOS_CAMPOS = {
     "qualidade": "Qualidade dos dados",
 }
 
+# Ordem padrao = CNPJ crescente, que e a ordem em que a tabela esta gravada: a
+# consulta nao precisa ordenar nada e para assim que acha a pagina (instantaneo
+# mesmo com milhoes de resultados). Ordenar por nome exige ler e ordenar todos.
+ORDEM_PADRAO = "cnpj"
 ORDENACOES = {
+    "cnpj": ("CNPJ (mais rápido)", "e.cnpj_completo", "ASC"),
     "razao": ("Razão social", "e.razao_social_norm", "ASC"),
     "abertura": ("Data de abertura", "e.data_inicio_atividade", "DESC"),
     "capital": ("Capital social", "e.capital_social", "DESC"),
     "local": ("UF e município", "e.uf, e.municipio", "ASC"),
     "situacao": ("Situação", "e.situacao_cadastral", "ASC"),
-    "cnpj": ("CNPJ", "e.cnpj_completo", "ASC"),
     "socios": ("Quantidade de sócios", "e.qtd_socios", "DESC"),
 }
 
-# Colunas de resultado/exportacao: (rotulo, expressao sobre pg/aux, restrita)
-# "restrita" = dado de contato ou pessoal: exportar exige informar a finalidade.
+# Colunas de resultado/exportacao: (rotulo, expressao sobre pg/aux, pessoal).
+# "pessoal" = dado de contato ou de pessoa fisica: so informativo (o app e de uso
+# do proprio dono; a exportacao continua registrada na auditoria, sem os dados).
 COLUNAS: dict[str, tuple[str, str, bool]] = {
     "cnpj": ("CNPJ", "pg.cnpj_completo", False),
     "razao_social": ("Razão social", "pg.razao_social", False),
     # CPF do titular de empresario individual/MEI: publicado pela Receita no fim da
-    # razao social. Dado pessoal: so na exportacao, com finalidade e auditoria.
+    # razao social.
     "cpf_titular": ("CPF do titular (empresário individual/MEI)",
                     "CASE WHEN pg.natureza_juridica = 2135 THEN "
                     "nullif(regexp_extract(pg.razao_social, '([0-9]{11})\\s*$', 1), '') END", True),
@@ -746,9 +755,10 @@ COLUNAS: dict[str, tuple[str, str, bool]] = {
     "socios": ("Sócios (nomes)", "(SELECT string_agg(s.nome_socio, '; ' ORDER BY s.nome_socio) FROM socios s "
                                  "WHERE s.cnpj_basico = pg.cnpj_basico)", True),
 }
-# Padrao sem colunas restritas: contatos so saem quando escolhidos (com finalidade).
-COLUNAS_PADRAO = ["cnpj", "razao_social", "nome_fantasia", "situacao", "municipio", "uf",
-                  "cnae_principal", "cnae_descricao", "abertura", "porte", "qtd_socios"]
+# Colunas marcadas por padrao na exportacao (o usuario pode marcar todas).
+COLUNAS_PADRAO = ["cnpj", "razao_social", "nome_fantasia", "situacao", "abertura", "cnae_principal",
+                  "cnae_descricao", "logradouro", "bairro", "cep", "municipio", "uf", "telefone_1",
+                  "telefone_2", "email", "porte", "capital_social", "qtd_socios", "simples", "mei"]
 COLUNAS_TELA = ["cnpj", "razao_social", "nome_fantasia", "matriz_filial", "situacao", "abertura",
                 "porte", "capital_social", "cnae_principal", "cnae_descricao", "municipio", "municipio_codigo", "uf",
                 "bairro", "telefone_1", "tipo_telefone_1", "telefone_2", "tipo_telefone_2", "email",
@@ -763,7 +773,7 @@ class Filtros:
     campos: dict[str, Any] = field(default_factory=dict)  # nome -> valor (formulario)
     excluir: dict[str, Any] = field(default_factory=dict)  # nome -> valor (NAO)
     arvore: dict | None = None
-    ordem: str = "razao"
+    ordem: str = ORDEM_PADRAO
     direcao: str | None = None
     pagina: int = 1
     por_pagina: int = 25
@@ -805,7 +815,7 @@ class Filtros:
         d.update({f"excluir_{k}": v for k, v in self.excluir.items()})
         if self.arvore:
             d["arvore"] = json.dumps(self.arvore, ensure_ascii=False)
-        if self.ordem != "razao":
+        if self.ordem != ORDEM_PADRAO:
             d["ordem"] = self.ordem
         if self.direcao:
             d["direcao"] = self.direcao
@@ -971,14 +981,17 @@ def compilar(f: Filtros) -> Sql:
 
 
 def _ordem_sql(f: Filtros) -> str:
+    """Clausula ORDER BY completa, ou "" para a ordem gravada (CNPJ crescente)."""
     if f.ordem not in ORDENACOES:
         raise FiltroInvalido("Ordenação inválida.")
     _, expr, padrao = ORDENACOES[f.ordem]
     direcao = (f.direcao or padrao).upper()
     if direcao not in ("ASC", "DESC"):
         raise FiltroInvalido("Direção de ordenação inválida.")
+    if f.ordem == "cnpj" and direcao == "ASC":
+        return ""  # a tabela ja esta gravada em ordem de CNPJ (consolidacao ORDER BY cnpj_completo)
     cols = [f"{c.strip()} {direcao} NULLS LAST" for c in expr.split(",")]
-    return ", ".join(cols + ["e.cnpj_completo ASC"])
+    return "ORDER BY " + ", ".join(cols + ["e.cnpj_completo ASC"])
 
 
 # ---------------------------------------------------------------- execucao
@@ -1045,7 +1058,7 @@ def _executar(conn, ctrl: _Controle, sql: str, params: list) -> list[tuple]:
 _SELECT_PAGINA = """
 WITH pg AS (
     SELECT e.*, row_number() OVER () AS _ord FROM (
-        SELECT e.* FROM estabelecimentos e WHERE {where} ORDER BY {ordem} LIMIT ? OFFSET ?
+        SELECT e.* FROM estabelecimentos e WHERE {where} {ordem} LIMIT ? OFFSET ?
     ) e
 )
 SELECT {colunas}, pg._ord
@@ -1063,7 +1076,7 @@ def _colunas_sql(colunas: list[str]) -> str:
 
 def buscar(f: Filtros, *, colunas: list[str] | None = None, cancelar: threading.Event | None = None,
            timeout: float | None = None, contar: bool = True) -> Resultado:
-    colunas = [c for c in (colunas or COLUNAS_TELA) if c in COLUNAS and (c in COLUNAS_TELA or not COLUNAS[c][2])]
+    colunas = [c for c in (colunas or COLUNAS_TELA) if c in COLUNAS]
     if "cnpj" not in colunas:
         colunas.insert(0, "cnpj")
     where, params = compilar(f)
@@ -1110,33 +1123,77 @@ def _rotular(it: dict) -> None:
         it["cnae_principal"] = f"{int(it['cnae_principal']):07d}"
 
 
-def iterar_exportacao(f: Filtros, colunas: list[str], limite: int, lote: int = 5000,
+# Colunas que sao nomes de tabelas pequenas: na exportacao o nome e preenchido em
+# Python (um JOIN no SQL embaralharia a ordem e obrigaria a ordenar tudo de novo).
+_NOMES_EXPORT = {"municipio": ("municipios", "pg.municipio"), "natureza": ("naturezas", "pg.natureza_juridica"),
+                 "cnae_descricao": ("cnaes", "pg.cnae_fiscal_principal")}
+
+
+def iterar_exportacao(f: Filtros, colunas: list[str], limite: int | None = None, lote: int = 5000,
                       cancelar: threading.Event | None = None):
-    """Gera linhas em lotes (fetchmany): a exportacao nunca carrega tudo na RAM."""
+    """Gera as linhas em fluxo, na ordem pedida, sem carregar tudo na RAM e sem
+    teto de linhas (limite=None). Na ordem padrao (CNPJ) nada e ordenado: a
+    primeira linha sai logo."""
     colunas = [c for c in colunas if c in COLUNAS] or COLUNAS_PADRAO
     where, params = compilar(f)
     ordem = _ordem_sql(f)
     ativa = _base()
+    exprs = []
+    for c in colunas:
+        if c in _NOMES_EXPORT:
+            exprs.append(f"{_NOMES_EXPORT[c][1]} AS {c}")
+        elif c == "socios":
+            exprs.append("pg.cnpj_basico AS socios")  # nomes preenchidos por lote, abaixo
+        else:
+            exprs.append(f"{COLUNAS[c][1]} AS {c}")
     with conectar_leitura(ativa.caminho) as conn:
         _checar_schema(conn)
-        sql = f"""
-            WITH pg AS (SELECT e.* FROM estabelecimentos e WHERE {where} ORDER BY {ordem} LIMIT ?)
-            SELECT {_colunas_sql(colunas)} FROM pg
-            LEFT JOIN municipios mun ON mun.codigo = pg.municipio
-            LEFT JOIN naturezas nat ON nat.codigo = pg.natureza_juridica
-            LEFT JOIN cnaes cn ON cn.codigo = pg.cnae_fiscal_principal
-        """
-        cur = conn.execute(sql, [*params, limite])
+        nomes = {c: dict(conn.execute(f"SELECT codigo, descricao FROM {_NOMES_EXPORT[c][0]}").fetchall())
+                 for c in colunas if c in _NOMES_EXPORT}
+        sql = (f"WITH pg AS (SELECT e.* FROM estabelecimentos e WHERE {where} {ordem}"
+               f"{' LIMIT ?' if limite else ''}) SELECT {', '.join(exprs)} FROM pg")
+        cur = conn.execute(sql, [*params, *([limite] if limite else [])])
+        socios_cur = conn.cursor() if "socios" in colunas else None
         while True:
             if cancelar is not None and cancelar.is_set():
                 raise BuscaCancelada("Exportação cancelada.")
             rows = cur.fetchmany(lote)
             if not rows:
                 break
-            for r in rows:
-                it = dict(zip(colunas, r, strict=True))
+            itens = [dict(zip(colunas, r, strict=True)) for r in rows]
+            if socios_cur is not None:
+                basicos = list({it["socios"] for it in itens if it["socios"]})
+                mapa = dict(socios_cur.execute(
+                    "SELECT cnpj_basico, string_agg(nome_socio, '; ' ORDER BY nome_socio) FROM socios "
+                    "WHERE cnpj_basico IN (SELECT unnest(?::VARCHAR[])) GROUP BY 1", [basicos]).fetchall())
+                for it in itens:
+                    it["socios"] = mapa.get(it["socios"])
+            for it in itens:
+                for c, tabela in nomes.items():
+                    it[c] = tabela.get(it[c])
                 _rotular(it)
                 yield it
+
+
+def aquecer() -> None:
+    """Le para o cache as colunas que os filtros mais usam (situacao, UF, municipio,
+    CNAE, porte, Simples/MEI, contatos). Roda em segundo plano ao iniciar o app:
+    numa base de 60 milhoes de linhas num HD externo, a primeira busca deixa de
+    ter de ler tudo do disco."""
+    ativa = base_ativa()
+    if ativa is None:
+        return
+    t0 = time.monotonic()
+    try:
+        with conectar_leitura(ativa.caminho) as conn:
+            conn.execute(
+                "SELECT count(situacao_cadastral), count(uf), count(municipio), count(cnae_fiscal_principal), "
+                "count(identificador_matriz_filial), count(porte_empresa), count(opcao_simples), count(opcao_mei), "
+                "count(telefone_1), count(email), count(data_inicio_atividade), count(natureza_juridica) "
+                "FROM estabelecimentos").fetchall()
+        log.info("base local aquecida em %.0fs", time.monotonic() - t0)
+    except duckdb.Error as e:  # base em atualizacao/formato antigo: a busca avisa quando for usada
+        log.info("aquecimento da base local ignorado: %s", type(e).__name__)
 
 
 def contar(f: Filtros, timeout: float | None = None) -> int:

@@ -274,6 +274,25 @@
         form.addEventListener("input", atualizarPrevia);
         form.addEventListener("change", atualizarPrevia);
 
+        // So os filtros preenchidos vao na URL (campos vazios deixavam a URL enorme)
+        form.addEventListener("submit", () => {
+            Array.from(form.elements).forEach((c) => {
+                if (!c.name || c.disabled || c.type === "submit" || c.type === "button") return;
+                const vazio = c.type === "checkbox" || c.type === "radio" ? false
+                    : c.multiple ? !Array.from(c.selectedOptions).length : String(c.value).trim() === "";
+                if (vazio) {
+                    c.disabled = true;
+                    c.dataset.vazioDesativado = "1";
+                }
+            });
+        });
+        window.addEventListener("pageshow", () =>
+            Array.from(form.elements).filter((c) => c.dataset.vazioDesativado).forEach((c) => {
+                c.disabled = false;
+                delete c.dataset.vazioDesativado;
+            })
+        );
+
         // Buscas longas: botao para parar (interrompe a consulta no servidor)
         form.addEventListener("submit", () => {
             const caixa = el("div", "cancelar-busca");
@@ -534,15 +553,15 @@
     }
 
     // Exportacao: pequena = download direto; grande = segundo plano com aviso
-    async function exportar(url, params) {
-        const restritas = $$("form[data-exportar] input[data-restrita]:checked");
-        const fin = params.get("finalidade") || "";
-        if (restritas.length && fin.trim().length < 10) {
-            toast("Informe a finalidade (mín. 10 caracteres) para exportar colunas de contato ou pessoais.");
-            const f = document.getElementById("f-finalidade");
-            if (f) f.focus();
-            return;
+    async function exportar(url, params, botao) {
+        if (botao) {
+            botao.disabled = true;
+            botao.dataset.rotulo = botao.dataset.rotulo || botao.textContent;
         }
+        const aviso = el("div", "cancelar-busca");
+        aviso.setAttribute("role", "status");
+        aviso.append(el("span", "spinner"), el("span", "", "Preparando a exportação…"));
+        document.body.appendChild(aviso);
         try {
             const r = await fetch(url + "?" + params.toString());
             const tipo = r.headers.get("content-type") || "";
@@ -553,7 +572,7 @@
             if (tipo.includes("application/json")) {
                 const d = await r.json();
                 toast(d.mensagem || "Exportação em segundo plano iniciada.");
-                acompanharExportacao(d.exportacao.id);
+                acompanharExportacao(d.exportacao.id, d.exportacao.total);
                 return;
             }
             const blob = await r.blob();
@@ -568,28 +587,72 @@
             }, 1000);
         } catch (e) {
             toast("Falha na exportação: " + e.message);
+        } finally {
+            aviso.remove();
+            if (botao) botao.disabled = false;
         }
     }
 
-    function acompanharExportacao(id) {
+    // Exportacao em segundo plano: caixa fixa com o progresso e o link ao terminar
+    function acompanharExportacao(id, total) {
+        const caixa = el("div", "exportacao-progresso");
+        caixa.setAttribute("role", "status");
+        const texto = el("span", "", "Gerando a exportação…");
+        const fechar = el("button", "btn btn-sm btn-ghost", "Fechar");
+        fechar.type = "button";
+        fechar.addEventListener("click", () => caixa.remove());
+        caixa.append(el("span", "spinner"), texto, fechar);
+        document.body.appendChild(caixa);
         const tick = async () => {
             try {
                 const d = await api("GET", "/api/exportacoes/" + id);
                 if (d.status === "concluido") {
-                    toast("Exportação pronta: " + fmtNum(d.feitas) + " linhas. Baixando…");
-                    location.href = "/api/exportacoes/" + id + "/arquivo";
+                    caixa.querySelector(".spinner")?.remove();
+                    const a = el("a", "btn btn-sm btn-primary", "Baixar (" + fmtNum(d.feitas) + " linhas)");
+                    a.href = "/api/exportacoes/" + id + "/arquivo";
+                    texto.replaceWith(a);
+                    location.href = a.href;
+                    carregarExportacoes();
                     return;
                 }
                 if (d.status === "falhou") {
-                    toast("A exportação falhou: " + (d.erro || ""));
+                    caixa.querySelector(".spinner")?.remove();
+                    texto.textContent = "A exportação falhou: " + (d.erro || "");
                     return;
                 }
-                setTimeout(tick, 3000);
+                texto.textContent = "Gerando a exportação: " + fmtNum(d.feitas || 0) + (total ? " de " + fmtNum(total) : "") + " linhas…";
+                setTimeout(tick, 2000);
             } catch (e) {
                 setTimeout(tick, 5000);
             }
         };
-        setTimeout(tick, 2000);
+        setTimeout(tick, 1000);
+    }
+
+    async function carregarExportacoes() {
+        const box = $("[data-exportacoes]");
+        if (!box) return;
+        try {
+            const itens = (await api("GET", "/api/exportacoes")).slice(0, 5);
+            const ul = $("[data-exportacoes-lista]", box);
+            ul.replaceChildren();
+            itens.forEach((x) => {
+                const li = el("li");
+                const quando = (x.criado_em || "").replace("T", " ").slice(0, 16);
+                if (x.status === "concluido" && x.arquivo) {
+                    const a = el("a", "", "");
+                    a.href = "/api/exportacoes/" + x.id + "/arquivo";
+                    a.append(el("span", "quick-title", x.formato.toUpperCase() + " · " + fmtNum(x.feitas) + " linhas"), el("span", "quick-meta", quando));
+                    li.appendChild(a);
+                } else {
+                    li.append(el("span", "quick-title", x.formato.toUpperCase() + " · " + (x.status === "falhou" ? "falhou" : "gerando… " + fmtNum(x.feitas || 0))), el("span", "quick-meta", quando));
+                }
+                ul.appendChild(li);
+            });
+            box.hidden = !itens.length;
+        } catch (e) {
+            /* opcional */
+        }
     }
 
     function initExportar() {
@@ -599,8 +662,19 @@
             ev.preventDefault();
             const btn = ev.submitter;
             const url = (btn && btn.getAttribute("formaction")) || form.getAttribute("action");
-            exportar(url, new URLSearchParams(new FormData(form)));
+            if (!$$("input[name=colunas]:checked", form).length) {
+                toast("Marque pelo menos uma coluna.");
+                return;
+            }
+            exportar(url, new URLSearchParams(new FormData(form)), btn);
         });
+        $$("[data-marcar-colunas]", form).forEach((b) =>
+            b.addEventListener("click", () => {
+                const marcar = b.dataset.marcarColunas === "todas";
+                $$("input[name=colunas]", form).forEach((c) => (c.checked = marcar));
+            })
+        );
+        carregarExportacoes();
     }
 
     // Contadores (distribuicao do resultado) e possiveis duplicidades

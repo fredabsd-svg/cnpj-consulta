@@ -124,11 +124,9 @@ def test_historico_nao_guarda_documento_de_socio_excluido(base_local):
 # ---------------------------------------------------------------- LGPD: colunas restritas sem finalidade
 
 
-def test_api_busca_nao_entrega_nomes_de_socios_sem_finalidade(base_local):
+def test_api_busca_entrega_nomes_de_socios(base_local):
     r = _cli().get("/api/busca", params={"uf": "TO", "colunas": ["cnpj", "socios"]})
-    nomes = json.dumps(r.json(), ensure_ascii=False)
-    # a exportacao exige finalidade para a mesma coluna; a API de busca nao
-    assert r.status_code == 400 or "MARIA DA SILVA" not in nomes, nomes[:300]
+    assert r.status_code == 200 and "MARIA DA SILVA" in json.dumps(r.json(), ensure_ascii=False)
 
 
 # ---------------------------------------------------------------- acesso: DNS rebinding
