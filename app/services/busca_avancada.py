@@ -1043,16 +1043,37 @@ class _Controle:
         return False
 
 
+_vagas_lock = threading.Lock()
+_vagas: list[Any] = []  # [semaforo, tamanho]
+
+
+def _vaga() -> threading.BoundedSemaphore:
+    n = max(1, get_settings().busca_simultaneas)
+    with _vagas_lock:
+        if not _vagas or _vagas[1] != n:
+            _vagas[:] = [threading.BoundedSemaphore(n), n]
+        return _vagas[0]
+
+
 def _executar(conn, ctrl: _Controle, sql: str, params: list) -> list[tuple]:
+    vaga = _vaga()
+    espera = max(0.0, ctrl.limite - time.monotonic())
+    if not vaga.acquire(timeout=espera):
+        raise BuscaCancelada("O app está ocupado com outras buscas pesadas. Tente de novo em instantes.")
     try:
+        if ctrl.deve_parar():
+            raise duckdb.InterruptException("tempo esgotado na fila")
         with Vigia(conn, ctrl.deve_parar, intervalo=0.2):
             return conn.execute(sql, params).fetchall()
     except duckdb.InterruptException as e:
         if ctrl.motivo == "tempo":
             raise BuscaCancelada(
-                "A busca passou do tempo limite. Acrescente filtros (UF, município, situação) para reduzir o volume."
+                f"A busca passou do tempo limite ({get_settings().busca_timeout_segundos:.0f} s) e foi interrompida. "
+                "Acrescente filtros (UF, município, situação) ou use a exportação, que roda em segundo plano."
             ) from e
         raise BuscaCancelada("Busca cancelada.") from e
+    finally:
+        vaga.release()
 
 
 _SELECT_PAGINA = """
@@ -1074,11 +1095,25 @@ def _colunas_sql(colunas: list[str]) -> str:
     return ", ".join(f"{COLUNAS[c][1]} AS {c}" for c in colunas)
 
 
+def _socios_por_basico(conn, basicos: list[str], ctrl: _Controle | None = None) -> dict[str, str]:
+    """Nomes dos socios (texto 'A; B') so das empresas pedidas. Agregar na mesma
+    consulta da pagina fazia o banco juntar os socios da base INTEIRA (dezenas de
+    milhoes de linhas e varios GB de memoria) para mostrar 50 empresas."""
+    if not basicos:
+        return {}
+    sql = ("SELECT cnpj_basico, string_agg(nome_socio, '; ' ORDER BY nome_socio) FROM socios "
+           "WHERE cnpj_basico IN (SELECT unnest(?::VARCHAR[])) GROUP BY 1")
+    rows = _executar(conn, ctrl, sql, [basicos]) if ctrl else conn.execute(sql, [basicos]).fetchall()
+    return dict(rows)
+
+
 def buscar(f: Filtros, *, colunas: list[str] | None = None, cancelar: threading.Event | None = None,
            timeout: float | None = None, contar: bool = True) -> Resultado:
     colunas = [c for c in (colunas or COLUNAS_TELA) if c in COLUNAS]
     if "cnpj" not in colunas:
         colunas.insert(0, "cnpj")
+    com_socios = "socios" in colunas
+    colunas_sql = [c for c in colunas if c != "socios"]
     where, params = compilar(f)
     ordem = _ordem_sql(f)
     ativa = _base()
@@ -1087,10 +1122,15 @@ def buscar(f: Filtros, *, colunas: list[str] | None = None, cancelar: threading.
     with conectar_leitura(ativa.caminho) as conn:
         meta = _checar_schema(conn)
         offset = (f.pagina - 1) * f.por_pagina
-        sql = _SELECT_PAGINA.format(where=where, ordem=ordem, colunas=_colunas_sql(colunas))
+        sql = _SELECT_PAGINA.format(where=where, ordem=ordem,
+                                    colunas=_colunas_sql(colunas_sql) + ", pg.cnpj_basico AS _basico")
         rows = _executar(conn, ctrl, sql, [*params, f.por_pagina, offset])
-        nomes = [*colunas, "_ord"]
+        nomes = [*colunas_sql, "_basico", "_ord"]
         itens = [dict(zip(nomes, r, strict=True)) for r in rows]
+        if com_socios:
+            mapa = _socios_por_basico(conn, list({it["_basico"] for it in itens if it["_basico"]}), ctrl)
+            for it in itens:
+                it["socios"] = mapa.get(it["_basico"])
         if contar:
             if f.pagina == 1 and len(itens) < f.por_pagina:
                 total = len(itens)
@@ -1100,6 +1140,7 @@ def buscar(f: Filtros, *, colunas: list[str] | None = None, cancelar: threading.
             total = -1
     for it in itens:
         it.pop("_ord", None)
+        it.pop("_basico", None)
         _rotular(it)
     _, _, padrao = ORDENACOES[f.ordem]
     return Resultado(
@@ -1162,10 +1203,7 @@ def iterar_exportacao(f: Filtros, colunas: list[str], limite: int | None = None,
                 break
             itens = [dict(zip(colunas, r, strict=True)) for r in rows]
             if socios_cur is not None:
-                basicos = list({it["socios"] for it in itens if it["socios"]})
-                mapa = dict(socios_cur.execute(
-                    "SELECT cnpj_basico, string_agg(nome_socio, '; ' ORDER BY nome_socio) FROM socios "
-                    "WHERE cnpj_basico IN (SELECT unnest(?::VARCHAR[])) GROUP BY 1", [basicos]).fetchall())
+                mapa = _socios_por_basico(socios_cur, list({it["socios"] for it in itens if it["socios"]}))
                 for it in itens:
                     it["socios"] = mapa.get(it["socios"])
             for it in itens:

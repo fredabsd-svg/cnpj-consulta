@@ -27,9 +27,12 @@ class Settings(BaseSettings):
     app_env: Literal["development", "production"] = "development"
     app_debug: bool = True
     app_port: int = 8000
-    # Mantenha 127.0.0.1: o app nao tem login. Em production/nao-debug,
-    # host nao-loopback e recusado na inicializacao (ver assert_bind_allowed).
+    # Prefira 127.0.0.1 e publique com `tailscale serve` (ver MCP.md). Host
+    # nao-loopback so e aceito com APP_LOGIN_REMOTO=true (ver assert_bind_allowed).
     app_host: str = "127.0.0.1"
+    # Acesso que nao vem do proprio computador (Tailscale, tunel, rede local) exige
+    # o login de administrador em todas as paginas. No proprio PC (localhost), nao.
+    app_login_remoto: bool = True
     # Nomes de host (alem de localhost e enderecos IP) aceitos no cabecalho Host,
     # separados por virgula: ex. "meuservidor.local". Protege contra DNS rebinding.
     app_hosts_permitidos: str = ""
@@ -90,6 +93,8 @@ class Settings(BaseSettings):
 
     # Servidor MCP: ferramentas que alteram dados so com true (ver MCP.md)
     mcp_permitir_admin: bool = False
+    # Chave do MCP pela rede (/mcp). Vazio = gerada em data/mcp_chave.txt.
+    mcp_chave: str = ""
 
     # Chat com IA (/chat, so administrador; ver CHAT_IA.md). As chaves tambem
     # podem ser cadastradas na propria pagina do chat. Vazio = provedor desligado.
@@ -122,7 +127,14 @@ class Settings(BaseSettings):
     chat_sql_timeout_segundos: float = 30.0
 
     # Busca avancada
-    busca_timeout_segundos: float = 300.0  # a tela tem o botao Parar
+    # Tempo maximo de cada consulta da busca (tela, API, MCP); a tela tem o botao
+    # Parar. Exportacoes rodam em segundo plano, sem este limite.
+    busca_timeout_segundos: float = 60.0
+    # Consultas pesadas ao mesmo tempo (as demais esperam a vez): evita que a tela,
+    # o chat e o MCP juntos esgotem a memoria do computador.
+    busca_simultaneas: int = 2
+    # Teto do disco temporario das consultas (o que nao cabe na memoria)
+    busca_temp_max: str = "20GB"
     busca_max_por_pagina: int = 100
     exportacao_max_linhas: int = 0  # 0 = sem limite (o Excel e dividido em abas de 1 milhao)
     # Acima disto a exportacao vira tarefa em segundo plano.
@@ -134,7 +146,7 @@ class Settings(BaseSettings):
     @field_validator("busca_timeout_segundos")
     @classmethod
     def _timeout_antigo(cls, v: float) -> float:
-        return 300.0 if v == 30 else v
+        return 60.0 if v == 30 else v
 
     @field_validator("exportacao_max_linhas")
     @classmethod
@@ -235,25 +247,26 @@ def host_de_execucao(argv: list[str] | None = None) -> str | None:
 
 
 def assert_bind_allowed(settings: Settings | None = None, host_real: str | None = None) -> None:
-    """Recusa subir com host nao-loopback em production ou sem debug.
+    """Recusa subir com host nao-loopback sem o login para acesso remoto.
 
-    O app e single-user local e nao tem autenticacao. Expor em 0.0.0.0
-    transformaria as consultas em proxy aberto das APIs de terceiros.
+    Com APP_LOGIN_REMOTO=true (padrao) todo acesso que nao vem do proprio
+    computador exige login, entao ouvir na rede (ex.: IP do Tailscale) e aceito.
+    Sem ele, so em laboratorio (APP_ENV=development e APP_DEBUG=true).
     Confere o APP_HOST e tambem o `--host` real do uvicorn.
     """
     cfg = settings or get_settings()
     loopback = {"127.0.0.1", "localhost", "::1"}
     for valor in (cfg.app_host, host_real):
         host = (valor or "").strip().lower().strip("[]")
-        if valor is None or host in loopback:
+        if valor is None or host in loopback or cfg.app_login_remoto:
             continue
         if cfg.app_env != "production" and cfg.app_debug:
             continue
         raise RuntimeError(
             f"Endereco {valor!r} nao e loopback, mas app_env={cfg.app_env!r} "
-            f"e app_debug={cfg.app_debug}. O app nao tem autenticacao: use "
-            "127.0.0.1/localhost, ou (apenas em laboratorio) APP_ENV=development "
-            "e APP_DEBUG=true."
+            f"e app_debug={cfg.app_debug} com APP_LOGIN_REMOTO=false: use "
+            "127.0.0.1/localhost, ligue APP_LOGIN_REMOTO=true, ou (apenas em "
+            "laboratorio) APP_ENV=development e APP_DEBUG=true."
         )
 
 

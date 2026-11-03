@@ -3,6 +3,7 @@ na ordem gravada (CNPJ) por padrao."""
 
 from __future__ import annotations
 
+import pytest
 from openpyxl import load_workbook
 
 from app.services import busca_avancada as ba
@@ -60,7 +61,7 @@ def test_env_antigo_do_instalador_nao_limita_mais(monkeypatch):
     monkeypatch.setenv("BUSCA_TIMEOUT_SEGUNDOS", "30")
     monkeypatch.setenv("EXPORTACAO_MAX_LINHAS", "500000")
     s = Settings()
-    assert s.busca_timeout_segundos == 300 and s.exportacao_max_linhas == 0
+    assert s.busca_timeout_segundos == 60 and s.exportacao_max_linhas == 0
     monkeypatch.setenv("BUSCA_TIMEOUT_SEGUNDOS", "45")
     monkeypatch.setenv("EXPORTACAO_MAX_LINHAS", "1000")
     s = Settings()
@@ -77,3 +78,48 @@ def test_conexao_de_leitura_reaproveitada_e_fechada_na_troca(base_local):
     assert len(duck._leituras) == 1  # mesma conexao (cache quente)
     arm.limpar_cache()  # versao ativa mudou / vai ser apagada
     assert duck._leituras == {}
+
+
+def test_coluna_socios_nao_agrega_a_base_inteira(base_local):
+    """Os socios da pagina vem de uma segunda consulta, so dos CNPJs da pagina."""
+    consultas: list[str] = []
+    original = ba._executar
+
+    def espiar(conn, ctrl, sql, params):
+        consultas.append(sql)
+        return original(conn, ctrl, sql, params)
+
+    mp = pytest.MonkeyPatch()
+    mp.setattr(ba, "_executar", espiar)
+    try:
+        r = ba.buscar(ba.Filtros.de_params({"cnpj": ["12345678000195"]}), colunas=["cnpj", "socios"])
+    finally:
+        mp.undo()
+    assert r.itens[0]["socios"] == "JOAO SOUZA; MARIA DA SILVA"
+    pagina = consultas[0]
+    assert "FROM socios" not in pagina  # a pagina nao toca na tabela de socios
+    assert any("FROM socios" in c and "unnest" in c for c in consultas[1:])
+
+
+def test_fila_de_consultas_pesadas(base_local, monkeypatch):
+    monkeypatch.setenv("BUSCA_SIMULTANEAS", "1")
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+    vaga = ba._vaga()
+    assert vaga.acquire(timeout=1)  # alguem ocupando a unica vaga
+    try:
+        with pytest.raises(ba.BuscaCancelada, match="ocupado"):
+            ba.contar(ba.Filtros(), timeout=0.3)
+    finally:
+        vaga.release()
+    assert ba.contar(ba.Filtros()) == 4  # livre de novo
+
+
+def test_conexao_de_leitura_com_limites(base_local):
+    from app.receita import duck
+    from app.receita.armazenamento import base_ativa
+
+    with duck.conectar_leitura(base_ativa().caminho) as c:
+        assert c.execute("SELECT current_setting('max_temp_directory_size')").fetchone()[0]
+        assert "leitura" in c.execute("SELECT current_setting('temp_directory')").fetchone()[0]

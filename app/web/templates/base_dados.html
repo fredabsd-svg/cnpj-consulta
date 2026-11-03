@@ -223,6 +223,29 @@
     </section>
 </div>
 
+{# ------------------------------------------------------------- acesso pela rede e MCP #}
+<section class="card section" aria-labelledby="t-mcp">
+    <h2 id="t-mcp">{{ ui.icon('lock') }} Acesso pela rede e MCP (IA)</h2>
+    <p class="muted small">Pela rede (Tailscale, outro computador) o app pede o login de administrador; no próprio PC, não. As IAs entram pelo <strong>MCP</strong> com a chave abaixo. Passo a passo em <code>MCP.md</code>.</p>
+    {% if mcp.local %}<div class="alert alert-info">{{ ui.icon('info') }}<div><p>Você está abrindo pelo próprio PC: o endereço abaixo vale só aqui. Abra este painel pelo endereço do Tailscale (ex.: <code>https://seu-pc.sua-tailnet.ts.net</code>) para ver o endereço que as IAs devem usar.</p></div></div>{% endif %}
+    <dl class="kv">
+        <dt>Endereço (com cabeçalho)</dt>
+        <dd><code>{{ mcp.url }}</code> + <code>Authorization: Bearer &lt;chave&gt;</code><span class="hint">Claude Code, Cursor, VS Code, Claude Desktop.</span></dd>
+        <dt>Endereço com a chave</dt>
+        <dd><details><summary>Mostrar</summary><code class="quebra">{{ mcp.url_chave }}</code></details><span class="hint">Para quem só aceita um endereço: conector do claude.ai, ChatGPT. Quem tem este endereço usa o app: não compartilhe.</span></dd>
+        <dt>Chave</dt>
+        <dd><details><summary>Mostrar</summary><code class="quebra">{{ mcp.chave }}</code></details>{% if mcp.da_env %}<span class="hint">Definida em MCP_CHAVE no .env.</span>{% endif %}</dd>
+        <dt>Ferramentas que alteram dados</dt>
+        <dd>{% if mcp.admin %}<span class="badge badge-success">ligadas</span>{% else %}<span class="badge badge-plain">desligadas</span> <span class="hint">Ligue com MCP_PERMITIR_ADMIN=true no .env (atualizar a base, contatos complementares, CPF do cofre).</span>{% endif %}</dd>
+    </dl>
+    {% if not mcp.da_env %}
+    <form action="/base/acao" method="post" class="linha-acao" data-confirmar="Gerar uma nova chave MCP? A atual deixa de funcionar e as IAs conectadas precisam da nova.">
+        <input type="hidden" name="acao" value="mcp_nova_chave">
+        <button type="submit" class="btn btn-sm">{{ ui.icon('history') }} Gerar nova chave</button>
+    </form>
+    {% endif %}
+</section>
+
 {# ------------------------------------------------------------- versoes e arquivos #}
 <div class="grid-2 section">
     <section class="card" aria-labelledby="t-versoes">
