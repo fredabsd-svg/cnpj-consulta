@@ -387,6 +387,18 @@ def _email_dominio(v) -> Sql | None:
     return f"e.email_dominio IN ({_ph(len(vals))})", vals
 
 
+def _email_contem(v) -> Sql | None:
+    """Parte do e-mail (antes ou depois do @), ex.: 'parreira' acha
+    contato@parreira.com.br e joao.parreira@gmail.com. Varios valores = OU."""
+    vals = [x.strip().lower() for x in _lista(v) if x.strip()]
+    if not vals:
+        return None
+    if any(len(x) < 3 or len(x) > 100 for x in vals):
+        raise FiltroInvalido("E-mail contém: informe de 3 a 100 caracteres.")
+    curingas = [x.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") for x in vals]
+    return "(" + " OR ".join("e.email LIKE ? ESCAPE '\\'" for _ in vals) + ")", [f"%{x}%" for x in curingas]
+
+
 def _email_tipo(v) -> Sql | None:
     vals = _lista(v)
     if not vals:
@@ -626,6 +638,8 @@ _CAMPOS: list[Campo] = [
     Campo("ddd", "DDD", "contatos", "multi", _ddd),
     Campo("tem_email", "Tem e-mail (oficial)", "contatos", "bool", _sim_nao(_MAIL, f"NOT {_MAIL}"), SIM_NAO),
     Campo("email_dominio", "Domínio do e-mail", "contatos", "texto", _email_dominio),
+    Campo("email_contem", "E-mail contém", "contatos", "texto", _email_contem,
+          ajuda="Parte do e-mail, antes ou depois do @ (ex.: parreira). Vários separados por vírgula = OU."),
     Campo("email_tipo", "Tipo de e-mail", "contatos", "enum", _email_tipo,
           (("dominio_proprio", "Domínio próprio provável"), ("webmail", "Webmail gratuito")),
           ajuda="Domínio próprio = não pertence a provedores gratuitos conhecidos (Gmail, Hotmail...). Não confirma que seja corporativo."),

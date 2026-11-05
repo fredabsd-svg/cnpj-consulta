@@ -24,7 +24,7 @@ from typing import Any
 import duckdb
 
 from app.config import get_settings
-from app.receita.duck import Vigia, _safe_size
+from app.receita.duck import Vigia, conectar_leitura
 
 TABELAS_BLOQUEADAS = {"chat_provedor", "socio_cpf"}  # chaves de API e o cofre de CPFs
 
@@ -60,30 +60,15 @@ def _caminho_base() -> Path:
     return Path(ba._base().caminho)
 
 
-def _conectar_base(path: Path) -> duckdb.DuckDBPyConnection:
-    cfg = get_settings()
-    conn = duckdb.connect(str(path), read_only=True)
-    try:
-        if cfg.receita_duckdb_memoria:
-            conn.execute(f"SET memory_limit = '{_safe_size(cfg.receita_duckdb_memoria)}'")
-        if cfg.receita_duckdb_threads > 0:
-            conn.execute(f"SET threads = {int(cfg.receita_duckdb_threads)}")
-        conn.execute("SET enable_external_access = false")
-        conn.execute("SET lock_configuration = true")
-    except Exception:
-        conn.close()
-        raise
-    return conn
-
-
 def consultar_base(sql: str, limite: int | None = None) -> dict[str, Any]:
     """Executa um SELECT na base da Receita (versao ativa)."""
     sql = (sql or "").strip().rstrip(";").strip()
     if not sql:
         raise ConsultaInvalida("Informe a consulta SQL.")
     limite = _limite(limite)
-    conn = _conectar_base(_caminho_base())
-    try:
+    # Conexao de leitura compartilhada do app: ja vem sem acesso externo e com a
+    # configuracao travada (duck.conectar_leitura).
+    with conectar_leitura(_caminho_base()) as conn:
         try:
             instrucoes = conn.extract_statements(sql)
         except duckdb.Error as e:
@@ -102,20 +87,15 @@ def consultar_base(sql: str, limite: int | None = None) -> dict[str, Any]:
         except duckdb.Error as e:
             raise ConsultaInvalida(f"Erro na consulta: {e}") from e
         return _resultado([d[0] for d in cur.description], linhas, limite, t0)
-    finally:
-        conn.close()
 
 
 def esquema_base() -> dict[str, Any]:
-    conn = _conectar_base(_caminho_base())
-    try:
+    with conectar_leitura(_caminho_base()) as conn:
         cols = conn.execute(
             "SELECT table_name, column_name, data_type FROM information_schema.columns "
             "WHERE table_schema = 'main' ORDER BY table_name, ordinal_position").fetchall()
         meta = dict(conn.execute("SELECT chave, valor FROM metadata").fetchall()) \
             if any(c[0] == "metadata" for c in cols) else {}
-    finally:
-        conn.close()
     tabelas: dict[str, list[str]] = {}
     for tabela, coluna, tipo in cols:
         tabelas.setdefault(tabela, []).append(f"{coluna} {tipo}")

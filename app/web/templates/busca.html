@@ -129,7 +129,7 @@
             <datalist id="lista-cnaes"></datalist>
         </details>
 
-        <details class="filtro-grupo" {% if params.contato or params.tem_telefone or params.tem_email or params.tipo_telefone %}open{% endif %}>
+        <details class="filtro-grupo" {% if params.contato or params.tem_telefone or params.tem_email or params.tipo_telefone or params.email_contem or params.email_dominio %}open{% endif %}>
             <summary>Contatos oficiais</summary>
             <div class="field"><label for="f-contato">Combinação</label>
                 <select class="select" id="f-contato" name="contato">
@@ -144,6 +144,7 @@
             {{ campo("tem_email") }}
             {{ campo("email_tipo") }}
             {{ campo("email_dominio", placeholder="ex.: empresa.com.br") }}
+            {{ campo("email_contem", placeholder="ex.: parreira") }}
             <p class="hint">Contatos oficiais são os declarados pela empresa à Receita e podem estar desatualizados.</p>
         </details>
 
