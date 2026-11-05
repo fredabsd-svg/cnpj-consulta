@@ -75,6 +75,8 @@ def sql_str(valor: str) -> str:
 # arquivo a cada consulta jogava esse cache fora e, numa base de 60 milhoes de
 # linhas num HD externo, cada busca relia gigabytes do disco.
 _leituras: dict[str, duckdb.DuckDBPyConnection] = {}
+_em_uso: dict[int, int] = {}  # id(conexao) -> cursores abertos
+_aposentadas: dict[int, duckdb.DuckDBPyConnection] = {}  # fechar quando o ultimo cursor sair
 _leituras_lock = threading.Lock()
 
 
@@ -94,42 +96,75 @@ def conectar_leitura(path: str | Path) -> Iterator[duckdb.DuckDBPyConnection]:
         base = _leituras.get(chave)
         if base is None:
             base = duckdb.connect(chave, read_only=True)
-            cfg = get_settings()
-            if cfg.receita_duckdb_memoria:
-                base.execute(f"SET memory_limit = '{_safe_size(cfg.receita_duckdb_memoria)}'")
-            if cfg.receita_duckdb_threads > 0:
-                base.execute(f"SET threads = {int(cfg.receita_duckdb_threads)}")
-            limitar_threads(base)  # muitos nucleos com pouca memoria estouram as juncoes
-            # O que nao couber na memoria vai para disco, com teto (nunca enche o disco)
-            temp = Path(cfg.receita_temp_dir.strip()).expanduser() / "cnpj-consulta" if cfg.receita_temp_dir.strip() \
-                else Path(cfg.receita_data_dir).expanduser() / "trabalho"
-            (temp / "leitura").mkdir(parents=True, exist_ok=True)
-            base.execute(f"SET temp_directory = '{_sql_path(temp / 'leitura')}'")
-            base.execute(f"SET max_temp_directory_size = '{_safe_size(cfg.busca_temp_max)}'")
-            # Somente leitura de verdade: sem ler/gravar outros arquivos, rede ou
-            # extensoes, e configuracao travada (vale tambem para o SQL do chat, que
-            # usa esta mesma conexao). Ajustes so aqui, na criacao.
-            base.execute("SET enable_external_access = false")
-            base.execute("SET lock_configuration = true")
+            # O DuckDB reaproveita o banco ja aberto neste processo (ex.: uma consulta
+            # ainda rodando na conexao antiga quando a versao foi trocada). Esse banco
+            # ja foi configurado e travado aqui: so confere a protecao.
+            travada = base.execute("SELECT current_setting('lock_configuration')").fetchone()[0]
+            if travada:
+                if base.execute("SELECT current_setting('enable_external_access')").fetchone()[0]:
+                    base.close()
+                    raise RuntimeError("Conexao de leitura travada sem a protecao de acesso externo.")
+            else:
+                _configurar_leitura(base)
             _leituras[chave] = base
         cur = base.cursor()
+        _em_uso[id(base)] = _em_uso.get(id(base), 0) + 1
     try:
         yield cur
     finally:
         cur.close()
+        with _leituras_lock:
+            restantes = _em_uso.get(id(base), 1) - 1
+            if restantes > 0:
+                _em_uso[id(base)] = restantes
+            else:
+                _em_uso.pop(id(base), None)
+                velha = _aposentadas.pop(id(base), None)
+                if velha is not None:  # versao trocada durante esta consulta: fecha agora
+                    _fechar(velha)
+
+
+def _fechar(conn: duckdb.DuckDBPyConnection) -> None:
+    try:
+        conn.close()
+    except duckdb.Error:
+        pass
+
+
+def _configurar_leitura(base: duckdb.DuckDBPyConnection) -> None:
+    cfg = get_settings()
+    if cfg.receita_duckdb_memoria:
+        base.execute(f"SET memory_limit = '{_safe_size(cfg.receita_duckdb_memoria)}'")
+    if cfg.receita_duckdb_threads > 0:
+        base.execute(f"SET threads = {int(cfg.receita_duckdb_threads)}")
+    limitar_threads(base)  # muitos nucleos com pouca memoria estouram as juncoes
+    # O que nao couber na memoria vai para disco, com teto (nunca enche o disco)
+    temp = Path(cfg.receita_temp_dir.strip()).expanduser() / "cnpj-consulta" if cfg.receita_temp_dir.strip() \
+        else Path(cfg.receita_data_dir).expanduser() / "trabalho"
+    (temp / "leitura").mkdir(parents=True, exist_ok=True)
+    base.execute(f"SET temp_directory = '{_sql_path(temp / 'leitura')}'")
+    base.execute(f"SET max_temp_directory_size = '{_safe_size(cfg.busca_temp_max)}'")
+    # Somente leitura de verdade: sem ler/gravar outros arquivos, rede ou extensoes,
+    # e configuracao travada (vale tambem para o SQL do chat, que usa esta mesma
+    # conexao). Ajustes so aqui, na criacao.
+    base.execute("SET enable_external_access = false")
+    base.execute("SET lock_configuration = true")
 
 
 def fechar_leituras(path: str | Path | None = None) -> None:
-    """Fecha as conexoes de leitura (de um arquivo ou todas)."""
+    """Fecha as conexoes de leitura (de um arquivo ou todas). Novas consultas ja
+    abrem conexao nova; uma conexao com consulta em andamento (ex.: a versao
+    ativa mudou no meio de uma busca) so fecha quando essa consulta termina."""
     with _leituras_lock:
         chaves = [_chave(path)] if path is not None else list(_leituras)
         for k in chaves:
             conn = _leituras.pop(k, None)
-            if conn is not None:
-                try:
-                    conn.close()
-                except duckdb.Error:
-                    pass
+            if conn is None:
+                continue
+            if _em_uso.get(id(conn)):
+                _aposentadas[id(conn)] = conn
+            else:
+                _fechar(conn)
 
 
 def rows_as_dicts(conn: duckdb.DuckDBPyConnection, rows: list[tuple]) -> list[dict[str, Any]]:

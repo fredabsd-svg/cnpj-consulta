@@ -70,3 +70,32 @@ async def test_sequencia_do_chat_que_falhava(base_local):
     assert dados["linhas"] == [[4]]
     ok, txt = await ferramentas.executar("buscar_empresas", {"filtros": {"email_contem": ["contafacil"]}}, max_chars=50_000)
     assert json.loads(txt)["total"] == 1
+
+
+def test_troca_de_versao_nao_derruba_consulta_em_andamento(base_local):
+    """Publicar uma versao nova fecha as conexoes de leitura; uma consulta que
+    ainda usa a conexao antiga termina normalmente, e ela so fecha depois."""
+    from app.receita import duck
+    from app.receita.armazenamento import base_ativa, limpar_cache
+
+    with duck.conectar_leitura(base_ativa().caminho) as cur:
+        limpar_cache()  # o que a publicacao faz
+        assert duck._leituras == {}
+        assert cur.execute("SELECT count(*) FROM estabelecimentos").fetchone()[0] == 4  # ainda funciona
+        assert len(duck._aposentadas) == 1
+    assert duck._aposentadas == {} and duck._em_uso == {}  # fechada ao terminar
+    assert ba.contar(ba.Filtros()) == 4  # nova conexao
+
+
+def test_nova_consulta_enquanto_a_conexao_antiga_ainda_roda(base_local):
+    """A conexao aposentada mantem o banco aberto e travado; abrir de novo o
+    mesmo arquivo nesse intervalo reaproveita o banco ja protegido."""
+    from app.receita import duck
+    from app.receita.armazenamento import base_ativa, limpar_cache
+
+    with duck.conectar_leitura(base_ativa().caminho) as velho:
+        limpar_cache()
+        with duck.conectar_leitura(base_ativa().caminho) as novo:
+            assert novo.execute("SELECT current_setting('enable_external_access')").fetchone()[0] is False
+            assert novo.execute("SELECT count(*) FROM estabelecimentos").fetchone()[0] == 4
+        assert velho.execute("SELECT count(*) FROM estabelecimentos").fetchone()[0] == 4
