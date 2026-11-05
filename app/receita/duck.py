@@ -106,6 +106,11 @@ def conectar_leitura(path: str | Path) -> Iterator[duckdb.DuckDBPyConnection]:
             (temp / "leitura").mkdir(parents=True, exist_ok=True)
             base.execute(f"SET temp_directory = '{_sql_path(temp / 'leitura')}'")
             base.execute(f"SET max_temp_directory_size = '{_safe_size(cfg.busca_temp_max)}'")
+            # Somente leitura de verdade: sem ler/gravar outros arquivos, rede ou
+            # extensoes, e configuracao travada (vale tambem para o SQL do chat, que
+            # usa esta mesma conexao). Ajustes so aqui, na criacao.
+            base.execute("SET enable_external_access = false")
+            base.execute("SET lock_configuration = true")
             _leituras[chave] = base
         cur = base.cursor()
     try:
