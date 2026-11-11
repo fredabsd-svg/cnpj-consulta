@@ -729,24 +729,53 @@
             if (vazio) vazio.textContent = "Contadores indisponíveis (" + e.message + ").";
         }
 
+    }
+
+    // Atalhos de prospeccao: lembra o ultimo estado escolhido (so neste navegador)
+    function initLembrarUf() {
+        $$("[data-lembrar-uf]").forEach((sel) => {
+            try {
+                const salvo = window.localStorage.getItem("cnpj-consulta:uf-atalho");
+                if (salvo && Array.from(sel.options).some((o) => o.value === salvo)) sel.value = salvo;
+                sel.addEventListener("change", () => window.localStorage.setItem("cnpj-consulta:uf-atalho", sel.value));
+            } catch (e) {
+                /* sem armazenamento local: so nao lembra */
+            }
+        });
+    }
+
+    // Contatos repetidos: so quando pedido (a conferencia le a base inteira e
+    // deixava toda busca mais lenta sem necessidade)
+    function initDuplicidades() {
+        const botao = $("[data-ver-duplicidades]");
         const tabela = $("[data-resultados]");
-        if (!tabela) return;
-        const cnpjs = $$("tr[data-cnpj]", tabela).map((tr) => tr.dataset.cnpj);
-        try {
-            const dup = await api("POST", "/api/busca/duplicidades", { cnpjs });
-            Object.entries(dup).forEach(([cnpj, info]) => {
-                const alvo = tabela.querySelector('tr[data-cnpj="' + cnpj + '"] [data-dup]');
-                if (!alvo) return;
-                const partes = [];
-                if (info.telefone_compartilhado) partes.push("telefone usado por mais " + info.telefone_compartilhado + " empresa(s)");
-                if (info.email_compartilhado) partes.push("e-mail usado por mais " + info.email_compartilhado + " empresa(s)");
-                const b = el("span", "badge badge-warning", "Contato compartilhado");
-                b.title = partes.join("; ") + ". Pode ser duplicidade ou o contato do escritório de contabilidade.";
-                alvo.appendChild(b);
-            });
-        } catch (e) {
-            /* opcional */
-        }
+        if (!botao || !tabela) return;
+        botao.addEventListener("click", async () => {
+            const cnpjs = $$("tr[data-cnpj]", tabela).map((tr) => tr.dataset.cnpj);
+            const rotulo = botao.textContent;
+            botao.disabled = true;
+            botao.textContent = "Conferindo…";
+            try {
+                const dup = await api("POST", "/api/busca/duplicidades", { cnpjs });
+                let n = 0;
+                Object.entries(dup).forEach(([cnpj, info]) => {
+                    const alvo = tabela.querySelector('tr[data-cnpj="' + cnpj + '"] [data-dup]');
+                    if (!alvo || alvo.firstChild) return;
+                    const partes = [];
+                    if (info.telefone_compartilhado) partes.push("telefone usado por mais " + info.telefone_compartilhado + " empresa(s)");
+                    if (info.email_compartilhado) partes.push("e-mail usado por mais " + info.email_compartilhado + " empresa(s)");
+                    const b = el("span", "badge badge-warning", "Contato compartilhado");
+                    b.title = partes.join("; ") + ". Pode ser duplicidade ou o contato do escritório de contabilidade.";
+                    alvo.appendChild(b);
+                    n += 1;
+                });
+                botao.textContent = n ? n + " com contato repetido" : "Nenhum contato repetido nesta página";
+            } catch (e) {
+                botao.disabled = false;
+                botao.textContent = rotulo;
+                toast("Não foi possível conferir: " + e.message);
+            }
+        });
     }
 
     // ------------------------------------------------------------ painel da base
@@ -845,6 +874,8 @@
         initColunas();
         initExportar();
         initContadores();
+        initDuplicidades();
+        initLembrarUf();
         initApiForms();
         initPainelBase();
     });

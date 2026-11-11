@@ -127,6 +127,49 @@ python -m app.cli base restaurar            # volta para a versão anterior
 python -m app.cli base limpar               # apaga temporários de tentativas antigas
 ```
 
+### Buscas rápidas: base organizada por estado
+
+O DuckDB guarda cada coluna em blocos de ~120 mil linhas e pula os blocos que não
+podem conter o valor procurado. Com a tabela `estabelecimentos` em ordem de CNPJ,
+os estados ficam espalhados por todos os blocos: uma busca “UF = TO” (0,6% da
+base) lia a tabela inteira. A partir da versão 0.6 a base é gravada **agrupada
+por UF** (e por CNPJ dentro de cada UF): a mesma busca lê só os blocos do
+Tocantins. A consulta por CNPJ continua direta graças à tabela `cnpj_uf`
+(CNPJ → UF, em ordem de CNPJ), e a página do sócio usa `socios_por_chave`.
+
+- **Atualizações novas** já saem organizadas (etapa “Organização por estado”,
+  desligável com `RECEITA_ORGANIZAR_POR_UF=false`). Se faltar espaço para a cópia
+  extra (≈ 1,15× o tamanho da base), a etapa é pulada com aviso e a base é
+  publicada em ordem de CNPJ, funcionando como antes.
+- **Base já instalada**: painel Base de Dados CNPJ → **Organizar por estado
+  agora**, ou `python -m app.cli base organizar`. Roda em fatias (memória
+  limitada), a base atual continua em uso, e no fim o arquivo novo toma o lugar
+  do antigo (mesma versão, mesmo conteúdo). Precisa de ≈ 1,15× o tamanho da base
+  livre no disco; se for cancelada ou falhar, nada muda.
+- Outras economias de leitura: os contadores do resultado saem de **uma** leitura
+  (antes eram seis), totais e contadores ficam em cache enquanto a base não
+  muda, a ordem padrão não reordena nada, filtrar só por município já aplica a
+  UF, e a conferência de “contatos repetidos” só roda quando pedida.
+
+Medição numa base sintética de 30 milhões de estabelecimentos (SSD, limite de
+4 GB; tempos em ms, primeira leitura / leitura repetida):
+
+| Operação | Antes | Depois |
+|---|---|---|
+| Busca ativas em TO | 278 / 67 | 96 / 19 |
+| Contadores do resultado (TO) | 751 / 340 | 160 / 29 |
+| Razão social contém, em TO | 677 / 382 | 151 / 49 |
+| E-mail contém, em TO | 633 / 288 | 123 / 16 |
+| Abertura + ordenação, em TO | 724 / 160 | 140 / 38 |
+| Município (sem informar UF) | 258 / 52 | 91 / 23 |
+| Página do sócio | 851 / 325 | 321 / 80 |
+| Exportar inaptas de TO (166 mil linhas) | 2160 / 1930 | 1368 / 1014 |
+| Ficha por CNPJ | 148 / 48 | 159 / 67 |
+| Busca sem filtro de estado (Brasil) | 859 / 618 | 810 / 597 |
+
+Em HD externo a diferença na primeira leitura tende a ser maior (o ganho vem de
+ler menos disco); buscas sem filtro de estado não mudam.
+
 ## 5. Pipeline de atualização
 
 | Etapa | O que acontece | Retomada |
@@ -136,6 +179,7 @@ python -m app.cli base limpar               # apaga temporários de tentativas a
 | Download e importação | `RECEITA_DOWNLOADS_PARALELOS` conexões (padrão 4); arquivos grandes são divididos em **partes baixadas em paralelo** (`Range` + `If-Range`/ETag), até 6 tentativas por parte. Cada arquivo é conferido (tamanho, ZIP) e **importado assim que termina de baixar**, enquanto os outros continuam baixando: extração protegida (sem caminhos maliciosos, sem ZIP-bomba, CRC conferido), validação de colunas/codificação, importação numa **transação**, contagem de linhas rejeitadas (só o tipo do erro). Se o servidor não aceitar partes, baixa o arquivo inteiro numa conexão | cada parte continua do byte em que parou; arquivos já importados (registrados na mesma transação) são pulados; um arquivo interrompido é refeito inteiro |
 | Consolidação | tabelas tipadas, deduplicadas e ordenadas + tabelas auxiliares | cada tabela é uma etapa registrada |
 | Validação | colunas obrigatórias, contagens, queda em relação à versão ativa (`RECEITA_QUEDA_MAXIMA_PCT`), órfãos (`RECEITA_ORFAOS_MAX_PCT`), CNPJs repetidos, consultas de amostra | — |
+| Organização por estado | copia a base validada para um arquivo agrupado por UF, em fatias, e confere as contagens (`RECEITA_ORGANIZAR_POR_UF`) | refeita do início; sem espaço, é pulada com aviso |
 | Publicação | move para `versoes/` e troca o ponteiro `ATIVA.json` (atômico) | — |
 | Limpeza | remove a área de trabalho | — |
 
@@ -184,7 +228,9 @@ consultas usam as APIs públicas até uma nova atualização.
 | Tabela | Conteúdo | Ordenação |
 |---|---|---|
 | `empresas` | uma linha por CNPJ básico (8 dígitos): razão social, natureza, qualificação do responsável, capital, porte, ente federativo, quantidade de sócios | `cnpj_basico` |
-| `estabelecimentos` | uma linha por CNPJ completo (matriz/filial) com todos os campos oficiais + derivados (telefones normalizados e classificados, e-mail validado e domínio, CNAEs secundários em lista, endereço completo?) + cópia dos campos da empresa usados em filtros | `cnpj_completo` |
+| `estabelecimentos` | uma linha por CNPJ completo (matriz/filial) com todos os campos oficiais + derivados (telefones normalizados e classificados, e-mail validado e domínio, CNAEs secundários em lista, endereço completo?) + cópia dos campos da empresa usados em filtros | `uf, cnpj_completo` (base organizada) ou `cnpj_completo` |
+| `cnpj_uf` | CNPJ completo, CNPJ básico e UF: leva a consulta por CNPJ ao bloco do estado (só na base organizada) | `cnpj_completo` |
+| `socios_por_chave` | participações (`socio_chave`, `cnpj_basico`, qualificação, entrada) para a página do sócio (só na base organizada) | `socio_chave` |
 | `socios` | QSA como publicado (CPF mascarado pela Receita), nome normalizado, `socio_chave` | `cnpj_basico` |
 | `socio_resumo` | um registro por sócio (`socio_chave`) e em quantas empresas aparece | `socio_chave` |
 | `simples` | opção/exclusão do Simples e do MEI | `cnpj_basico` |

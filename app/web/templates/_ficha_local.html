@@ -9,7 +9,7 @@
         <h2>Identificação</h2>
         <span class="small muted">{{ ui.origem_badge("oficial") }} referência {{ f.base.mes }}</span>
     </div>
-    <dl class="kv">
+    <dl class="kv kv-duplo">
         <dt>CNPJ</dt><dd class="mono">{{ i.cnpj | cnpj }} <button type="button" class="icon-btn icon-btn-sm" data-copy="{{ i.cnpj | cnpj }}" aria-label="Copiar CNPJ">{{ ui.icon('copy') }}</button></dd>
         <dt>Tipo</dt><dd>{{ ui.value(i.matriz_filial) }}</dd>
         <dt>Razão social</dt><dd>{{ i.razao_social }} <button type="button" class="icon-btn icon-btn-sm" data-copy="{{ i.razao_social }}" aria-label="Copiar razão social">{{ ui.icon('copy') }}</button></dd>

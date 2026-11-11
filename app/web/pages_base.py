@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 import io
 import json
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 from urllib.parse import urlencode
 
@@ -26,7 +26,7 @@ from app.services import ficha as ficha_srv
 from app.services import listas as listas_srv
 from app.services.admin_auth import exigir_admin_pagina, ip_de
 from app.services.cnae_palavras import PALAVRAS_CHAVE
-from app.web.pages import UFS, _render
+from app.web.pages import UFS, _render, templates
 
 router = APIRouter(include_in_schema=False)
 
@@ -61,9 +61,66 @@ def _qs_sem(params: dict[str, list[str]], nome: str, valor: str | None) -> str:
 # ---------------------------------------------------------------- busca
 
 
+def _dias_atras(dias: int) -> str:
+    return (date.today() - timedelta(days=dias)).isoformat()
+
+
+# Atalhos de prospeccao (tela inicial e busca vazia): viram filtros comuns da busca.
+ATALHOS: dict[str, tuple[str, str, str, Any]] = {
+    "novas": ("Abertas nos últimos 30 dias", "Empresas novas: quem acabou de abrir e ainda escolhe contador.",
+              "calendar", lambda: {"situacao": ["2"], "abertura_de": [_dias_atras(30)], "ordem": ["abertura"],
+                                   "direcao": ["desc"]}),
+    "ativas_contato": ("Ativas com telefone e e-mail", "Prontas para contato: telefone e e-mail informados.",
+                       "phone", lambda: {"situacao": ["2"], "contato": ["telefone_e_email"]}),
+    "inaptas": ("Inaptas", "Empresas com pendência na Receita, para oferta de regularização.",
+                "alerta", lambda: {"situacao": ["4"]}),
+    "mei": ("MEIs ativos", "Microempreendedores individuais em atividade.",
+            "users", lambda: {"situacao": ["2"], "mei": ["sim"]}),
+    "baixadas": ("Baixadas nos últimos 12 meses", "Encerradas recentemente.",
+                 "ban", lambda: {"situacao": ["8"], "data_situacao_de": [_dias_atras(365)]}),
+    "contabilidade": ("Escritórios de contabilidade", "Ativos, pela atividade principal (CNAE 69.20-6).",
+                      "building", lambda: {"situacao": ["2"], "atividade": ["contabilidade"]}),
+}
+
+templates.env.globals["atalhos_busca"] = [{"chave": k, "rotulo": v[0], "detalhe": v[1], "icone": v[2]}
+                                          for k, v in ATALHOS.items()]
+templates.env.globals["ufs_brasil"] = UFS
+
+# Filtros rapidos acima do resultado: um clique liga, outro desliga.
+_RAPIDOS: list[tuple[str, str, Any]] = [
+    ("Só ativas", "situacao", "2"),
+    ("Só matriz", "matriz_filial", "1"),
+    ("Com telefone", "tem_telefone", "sim"),
+    ("Com celular", "tipo_telefone", "celular"),
+    ("Com e-mail", "tem_email", "sim"),
+    ("Com sócios", "tem_socios", "sim"),
+    ("Sem MEI", "mei", "nao"),
+    ("Abertas nos últimos 12 meses", "abertura_de", lambda: _dias_atras(365)),
+]
+
+
+def _filtros_rapidos(params: dict[str, list[str]]) -> list[dict[str, Any]]:
+    out = []
+    for rotulo, nome, valor in _RAPIDOS:
+        v = valor() if callable(valor) else valor
+        ativo = v in params.get(nome, []) if not callable(valor) else nome in params
+        if ativo:
+            href = _qs_sem(params, nome, None if callable(valor) else v)
+        elif nome in ("situacao", "tipo_telefone"):  # campos de varios valores: soma ao que ja esta marcado
+            href = _qs(params, **{nome: [*params.get(nome, []), v]}, pagina=None)
+        else:
+            href = _qs(params, **{nome: [v]}, pagina=None)
+        out.append({"rotulo": rotulo, "ativo": ativo, "href": href})
+    return out
+
+
 @router.get("/busca", response_class=HTMLResponse)
 async def busca(request: Request, salva: int | None = None) -> HTMLResponse:
     params = _params(request)
+    atalho = (params.pop("atalho", None) or [""])[-1]
+    if atalho in ATALHOS:
+        uf = [u for u in params.get("uf", []) if u]
+        return RedirectResponse(f"/busca?{urlencode({**({'uf': uf} if uf else {}), **ATALHOS[atalho][3]()}, doseq=True)}", 303)
     if salva and not any(k for k in params if k != "salva"):
         b = await asyncio.to_thread(listas_srv.obter_busca, salva)
         if b:
@@ -84,6 +141,7 @@ async def busca(request: Request, salva: int | None = None) -> HTMLResponse:
         "municipios": [], "salva_id": salva, "qs": _qs, "qs_sem": _qs_sem,
         "combinacoes": ba.COMBINACOES_CONTATO,
         "naturezas": [], "motivos": [], "qualificacoes": [],
+        "rapidos": _filtros_rapidos(params),
     }
     status = 200
     try:
@@ -322,7 +380,7 @@ async def cpfs_remover(request: Request, registro_id: int) -> Response:
 
 @router.get("/empresa/{cnpj}/ficha.xlsx")
 async def ficha_xlsx(cnpj: str) -> Response:
-    from openpyxl import Workbook
+    from app.services import ficha_xlsx
 
     n = normalize_or_none(cnpj)
     if n is None:
@@ -334,62 +392,8 @@ async def ficha_xlsx(cnpj: str) -> Response:
     if f is None:
         return Response("CNPJ não encontrado na base local.", status_code=404)
     comp = await asyncio.to_thread(contatos_srv.listar, n)
-
-    def cel(v: Any) -> Any:
-        if isinstance(v, date):
-            return v.strftime("%d/%m/%Y")
-        if isinstance(v, dict):
-            return "Sim" if v.get("optante") else "Não"
-        if isinstance(v, str) and v[:1] in "=+-@":
-            return "'" + v
-        return v
-
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Identificação"
-    ws.append(["Campo", "Valor"])
-    rotulos = {
-        "cnpj": "CNPJ", "matriz_filial": "Matriz/filial", "razao_social": "Razão social",
-        "nome_fantasia": "Nome fantasia", "situacao": "Situação", "data_situacao": "Data da situação",
-        "motivo": "Motivo", "situacao_especial": "Situação especial", "data_abertura": "Abertura",
-        "natureza": "Natureza jurídica", "porte": "Porte", "capital_social": "Capital social",
-        "ente_federativo": "Ente federativo responsável", "qualificacao_responsavel": "Qualificação do responsável",
-        "simples": "Optante pelo Simples", "mei": "Optante pelo MEI",
-    }
-    for k, r in rotulos.items():
-        v = f["identificacao"].get(k)
-        if v not in (None, ""):
-            ws.append([r, cel(v)])
-    e = f["endereco"]
-    for r, v in (("Logradouro", " ".join(filter(None, [e["tipo_logradouro"], e["logradouro"]]))), ("Número", e["numero"]),
-                 ("Complemento", e["complemento"]), ("Bairro", e["bairro"]), ("CEP", e["cep"]),
-                 ("Município", e["municipio_nome"]), ("UF", e["uf"]), ("País", e["pais_nome"])):
-        if v:
-            ws.append([r, cel(v)])
-    ws.append(["Fonte", f"{f['base']['fonte']} — referência {f['base']['mes']}"])
-    wc = wb.create_sheet("Contatos")
-    wc.append(["Tipo", "Valor", "Classificação", "Origem", "Verificado em"])
-    for c in f["contatos_oficiais"]:
-        wc.append([c["tipo"], cel(c["formatado"]), c["subtipo"], "Oficial (Receita)", f"ref. {c['data_referencia']}"])
-    for c in comp:
-        wc.append([c["tipo"], cel(c["valor"]), c["subtipo"], f"Complementar: {c['fonte']}",
-                   cel(c["data_verificacao"]) if c["verificado"] else "não verificado"])
-    wn = wb.create_sheet("CNAEs")
-    wn.append(["Tipo", "Código", "Descrição"])
-    if f["cnaes"]["principal"]:
-        wn.append(["Principal", f"{f['cnaes']['principal']['codigo']:07d}", f["cnaes"]["principal"]["descricao"]])
-    for c in f["cnaes"]["secundarios"]:
-        wn.append(["Secundária", f"{c['codigo']:07d}", c["descricao"]])
-    wsoc = wb.create_sheet("Sócios")
-    wsoc.append(["Nome", "Tipo", "Documento (como publicado)", "Qualificação", "Entrada", "Faixa etária",
-                 "Representante legal", "Qualificação do representante"])
-    for s in f["socios"]:
-        rep = s["representante"] or {}
-        wsoc.append([cel(s["nome"]), s["tipo"], s["documento"], s["qualificacao"], cel(s["data_entrada"]),
-                     s["faixa_etaria"], cel(rep.get("nome")), rep.get("qualificacao")])
-    out = io.BytesIO()
-    wb.save(out)
-    return Response(out.getvalue(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    dados = await asyncio.to_thread(ficha_xlsx.montar, f, comp)
+    return Response(dados, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     headers={"Content-Disposition": f'attachment; filename="ficha-{n}.xlsx"'})
 
 
@@ -496,6 +500,10 @@ async def base_acao(request: Request, acao: str = Form(...), mes: str = Form("")
             job = await asyncio.to_thread(servico.iniciar_validacao)
             jobs.auditar("base.validar", detalhe=f"job={job['id']}", ip=ip)
             msg = "Validação iniciada."
+        elif acao == "organizar":
+            job = await asyncio.to_thread(servico.iniciar_organizacao)
+            jobs.auditar("base.organizar", detalhe=f"job={job['id']}", ip=ip)
+            msg = f"Organização por estado iniciada (tarefa #{job['id']}). As consultas continuam funcionando."
         elif acao == "restaurar":
             if confirmar.upper() != "CONFIRMAR":
                 msg = "Para restaurar a versão anterior, digite CONFIRMAR."

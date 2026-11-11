@@ -20,7 +20,7 @@ from app.db import get_session_factory
 from app.models.base_cnpj import BaseJob
 from app.receita import armazenamento as arm
 from app.receita import jobs, trava
-from app.receita.duck import SCHEMA_VERSAO, conectar_leitura, metadados
+from app.receita.duck import SCHEMA_VERSAO, conectar_leitura, metadados, organizada_por_uf
 from app.receita.fonte import FonteError, FonteReceita
 from app.receita.layout import MES_RE
 from app.receita.pipeline import ETAPAS, Atualizacao, Interrompido, PipelineError, validar_base
@@ -58,6 +58,7 @@ def info_base_ativa(settings: Settings | None = None) -> dict[str, Any] | None:
                 if t in existentes:
                     out["contagens"][t] = conn.execute(f"SELECT count(*) FROM {t}").fetchone()[0]
             out["schema_atual"] = meta.get("schema_versao") == SCHEMA_VERSAO
+        out["por_uf"] = organizada_por_uf(ativa.caminho)
     except duckdb.Error as e:
         out["erro"] = f"Nao foi possivel abrir a base: {e}"
     return out
@@ -149,6 +150,19 @@ def iniciar_validacao(em_processo: bool = True) -> dict:
     return job
 
 
+def iniciar_organizacao(em_processo: bool = True) -> dict:
+    """Reorganiza a base ativa por estado (UF), em segundo plano."""
+    ativa = arm.base_ativa()
+    if ativa is None:
+        raise ValueError("Nenhuma base instalada para organizar.")
+    if organizada_por_uf(ativa.caminho):
+        raise ValueError("A base ativa já está organizada por estado.")
+    job = jobs.criar_job("organizar", ativa.mes)
+    if em_processo:
+        jobs.iniciar_processo(job["id"], arm.data_dir() / "logs")
+    return job
+
+
 def retomar(job_id: int, em_processo: bool = True) -> dict:
     job = jobs.preparar_retomada(job_id)
     if em_processo:
@@ -220,6 +234,8 @@ def _executar_job(rep: jobs.JobReporter, job_id: int, *, client=None, sleep=None
     settings = get_settings()
     if job["tipo"] == "validar":
         return _executar_validacao(rep)
+    if job["tipo"] == "organizar":
+        return _executar_organizacao(rep)
     kwargs = {"sleep": sleep} if sleep else {}
     try:
         atual = Atualizacao(
@@ -275,6 +291,88 @@ def _executar_job(rep: jobs.JobReporter, job_id: int, *, client=None, sleep=None
     rep.finalizar("concluido", mensagem=f"Base {relatorio['mes']} publicada.", relatorio=relatorio)
     jobs.config_set(CFG_VERIFICACAO, {**jobs.config_get(CFG_VERIFICACAO), "mes_local": relatorio["mes"],
                                       "nova_versao": False})
+    return "concluido"
+
+
+def _executar_organizacao(rep: jobs.JobReporter) -> str:
+    """Grava a base ativa agrupada por UF num arquivo novo, confere e troca o
+    arquivo da versao ativa (mesmo conteudo; a versao anterior nao muda)."""
+    from app.receita.reorganizar import Interrompida, reorganizar
+
+    settings = get_settings()
+    ativa = arm.base_ativa(settings)
+    if ativa is None:
+        rep.finalizar("falhou", erro="Nenhuma base instalada para organizar.")
+        return "falhou"
+    if organizada_por_uf(ativa.caminho):
+        rep.finalizar("concluido", mensagem="A base ativa já está organizada por estado.")
+        return "concluido"
+    pasta = arm.data_dir(settings) / "trabalho" / "organizar"
+    shutil.rmtree(pasta, ignore_errors=True)
+    pasta.mkdir(parents=True, exist_ok=True)
+    tamanho = ativa.caminho.stat().st_size
+    livre = arm.espaco_livre(pasta)
+    gb = 1024**3
+    if livre < tamanho * 1.15:
+        msg = (f"Espaço em disco insuficiente para organizar a base: são necessários ~{tamanho * 1.15 / gb:.1f} GB "
+               f"livres em {pasta.parent.parent} (há {livre / gb:.1f} GB). O arquivo atual só é apagado no fim.")
+        rep.log(msg, "erro", "organizacao")
+        rep.finalizar("falhou", mensagem="Falhou em: organizacao.", erro=msg)
+        return "falhou"
+    destino = pasta / "final_uf.duckdb"
+    temp = (Path(settings.receita_temp_dir.strip()).expanduser() / "cnpj-consulta" / "organizar" / "tmp"
+            if settings.receita_temp_dir.strip() else pasta / "tmp")
+    rep.atualizar(forcar=True, etapa="organizacao", progresso=1,
+                  mensagem="Organizando a base por estado (a base atual continua em uso)")
+    rep.log(f"Organizando {ativa.caminho.name} por estado (UF). As consultas continuam funcionando.", "info", "organizacao")
+    ultimo = {"t": 0.0, "pedido": None}
+
+    def deve_parar() -> bool:
+        if ultimo["pedido"] is None and time.monotonic() - ultimo["t"] > 2:
+            ultimo["t"] = time.monotonic()
+            ultimo["pedido"] = rep.solicitacao()
+        return ultimo["pedido"] in ("pausar", "cancelar")
+
+    def progresso(frac: float, tabela: str) -> None:
+        rep.atualizar(etapa="organizacao", progresso=1 + frac * 94, progresso_etapa=frac * 100,
+                      arquivo_atual=tabela, mensagem=f"Organizando: {tabela}")
+
+    try:
+        contagens = reorganizar(ativa.caminho, destino, settings=settings, temp_dir=temp,
+                                progresso=progresso, deve_parar=deve_parar)
+        rep.atualizar(forcar=True, etapa="validacao", progresso=96, mensagem="Conferindo a base organizada")
+        with duckdb.connect(str(destino), read_only=True) as conn:
+            res = validar_base(conn, settings)
+        if res["erros"]:
+            raise PipelineError("Validacao falhou: " + " | ".join(res["erros"]))
+        novo = arm.substituir_ativa(destino, settings)
+    except Interrompida:
+        shutil.rmtree(pasta, ignore_errors=True)
+        rep.log("Organização cancelada; a base ativa não foi alterada.", "aviso", "organizacao")
+        rep.finalizar("cancelado", mensagem="Cancelada pelo usuário.")
+        return "cancelado"
+    except duckdb.OutOfMemoryException as e:
+        shutil.rmtree(pasta, ignore_errors=True)
+        msg = (f"Faltou memória para organizar a base (limite atual: {settings.receita_duckdb_memoria}). Aumente "
+               "RECEITA_DUCKDB_MEMORIA no .env e tente de novo. Detalhe técnico: " + str(e).split("\n")[0][:200])
+        rep.log(msg, "erro", "organizacao")
+        rep.finalizar("falhou", mensagem="Falhou em: organizacao.", erro=msg)
+        return "falhou"
+    except Exception as e:  # noqa: BLE001 -- a base ativa nao foi tocada; a tarefa pode ser refeita
+        log.exception("organizacao por UF falhou")
+        shutil.rmtree(pasta, ignore_errors=True)
+        detalhe = "".join(traceback.format_exception_only(type(e), e)).strip()
+        rep.log(f"Erro ao organizar: {detalhe}", "erro", "organizacao")
+        rep.finalizar("falhou", mensagem="Falhou em: organizacao.", erro=detalhe)
+        return "falhou"
+    shutil.rmtree(pasta, ignore_errors=True)
+    if temp != pasta / "tmp":
+        shutil.rmtree(temp.parent, ignore_errors=True)
+    rep.log(f"Base organizada por estado em {contagens['_segundos']:.0f}s: {novo.name}", "info", "organizacao")
+    rep.atualizar(forcar=True, progresso=100.0, etapa="limpeza", arquivo_atual=None)
+    rep.finalizar("concluido", mensagem="Base organizada por estado: buscas com filtro de UF ficam bem mais rápidas.",
+                  relatorio={"arquivo": novo.name, "segundos": contagens["_segundos"],
+                             "contagens": {k: v for k, v in contagens.items() if not k.startswith("_")}})
     return "concluido"
 
 

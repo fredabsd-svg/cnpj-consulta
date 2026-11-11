@@ -96,34 +96,82 @@ def gerar_csv(f: Filtros, colunas: list[str], limite: int | None) -> Iterator[by
 
 
 def _celula_xlsx(v: Any) -> Any:
-    v = _valor(v)
+    if isinstance(v, Decimal):
+        return float(v)
+    if isinstance(v, date):  # date e datetime: o Excel recebe a data de verdade
+        return v
+    if isinstance(v, list):
+        return ",".join(str(x) for x in v)
     if isinstance(v, str) and v[:1] in ("=", "+", "-", "@"):
         return "'" + v
     return v
+
+
+# Largura (em caracteres) e formato de cada coluna da planilha
+_LARGURAS = {"cnpj": 17, "razao_social": 46, "cpf_titular": 16, "nome_fantasia": 30, "matriz_filial": 12,
+             "situacao": 12, "data_situacao": 14, "abertura": 12, "natureza": 34, "porte": 18, "capital_social": 18,
+             "cnae_principal": 13, "cnae_descricao": 46, "cnaes_secundarios": 32, "logradouro": 44, "bairro": 22,
+             "cep": 11, "municipio": 24, "municipio_codigo": 13, "uf": 6, "telefone_1": 15, "tipo_telefone_1": 11,
+             "telefone_2": 15, "tipo_telefone_2": 11, "email": 34, "qtd_socios": 10, "simples": 9, "mei": 7,
+             "socios": 60}
+_FORMATOS = {"capital_social": "moeda", "qtd_socios": "inteiro"}
+
+
+def _aba_resumo(f: Filtros, colunas: list[str], linhas: int) -> list[list[Any]]:
+    """Aba "Resumo": de onde veio a planilha (filtros, data, total, fonte)."""
+    from app.receita.armazenamento import base_ativa
+    from app.services import busca_avancada as ba
+
+    try:
+        filtros = [c["texto"] for c in ba.chips(f, ba.nomes_para_chips(f))]
+    except Exception:  # noqa: BLE001 -- o resumo nunca derruba a exportacao
+        log.debug("resumo da exportacao sem os filtros", exc_info=True)
+        filtros = []
+    ativa = base_ativa()
+    ordem = ba.ORDENACOES.get(f.ordem, ("",))[0]
+    if (f.direcao or "").lower() == "desc":
+        ordem += " (decrescente)"
+    out: list[list[Any]] = [
+        [("Relatório de empresas", "titulo")],
+        [("CNPJ Consulta · base local da Receita Federal", "nota")],
+        [],
+        [("Gerado em", "rotulo"), datetime.now()],
+        [("Empresas na planilha", "rotulo"), f"{linhas:,}".replace(",", ".")],
+        [("Referência da base", "rotulo"), (ativa.mes if ativa else None) or "—"],
+        [("Ordenação", "rotulo"), ordem or "—"],
+    ]
+    for i, texto in enumerate(filtros or ["Nenhum filtro (base inteira)"]):
+        out.append([("Filtros aplicados" if i == 0 else "", "rotulo"), (texto, "quebra")])
+    out += [
+        [("Colunas", "rotulo"), (", ".join(COLUNAS[c][0] for c in colunas), "quebra")],
+        [],
+        [("Fonte", "rotulo"), "Receita Federal — dados abertos do CNPJ (base local)"],
+        [("Observação", "rotulo"), ("Telefones e e-mails são os declarados pela empresa à Receita e podem estar "
+                                    "desatualizados. Simples/MEI é informação cadastral e não comprova "
+                                    "regularidade fiscal.", "quebra")],
+    ]
+    return out
 
 
 def gravar_xlsx(f: Filtros, colunas: list[str], limite: int | None, destino: Path,
                 progresso=None) -> int:
     """Excel em fluxo (xlsx_rapido). Acima de 1 milhao de linhas continua em novas
     abas (Empresas, Empresas 2, ...): o Excel nao abre mais que 1.048.576 linhas
-    numa aba."""
+    numa aba. A ultima aba ("Resumo") diz de onde veio a planilha."""
     from app.services.xlsx_rapido import PlanilhaRapida
 
     pl = PlanilhaRapida(destino, LINHAS_POR_ABA)
     n = 0
     try:
-        pl.nova_aba("Empresas", [COLUNAS[c][0] for c in colunas])
+        pl.nova_aba("Empresas", [COLUNAS[c][0] for c in colunas],
+                    larguras=[_LARGURAS.get(c, 18) for c in colunas],
+                    formatos=[_FORMATOS.get(c) for c in colunas])
         for it in iterar_exportacao(f, colunas, limite):
             pl.linha([_celula_xlsx(it.get(c)) for c in colunas])
             n += 1
             if progresso and n % 5000 == 0:
                 progresso(n)
-        pl.aba_simples("Fonte", [
-            ["Fonte", "Receita Federal — dados abertos do CNPJ (base local)"],
-            ["Gerado em", datetime.now().strftime("%d/%m/%Y %H:%M")],
-            ["Linhas", n],
-            ["Observação", "Contatos são os declarados pela empresa à Receita e podem estar desatualizados."],
-        ])
+        pl.aba_simples("Resumo", _aba_resumo(f, colunas, n), larguras=[24, 100])
     finally:
         pl.fechar()
     return n

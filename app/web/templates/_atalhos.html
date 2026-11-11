@@ -1,0 +1,28 @@
+{# Atalhos de prospeccao (tela inicial e busca sem filtros): buscas prontas por estado.
+   Globais: atalhos_busca, ufs_brasil (app/web/pages_base.py). #}
+{% import "_macros.html" as ui %}
+<form class="card section atalhos-card" action="/busca" method="get" data-atalhos>
+    <div class="card-header">
+        <div>
+            <h2>{{ ui.icon('zap') }} Comece por um atalho</h2>
+            <p class="muted small">Escolha o estado e clique numa das buscas prontas. Depois é só refinar pelos filtros da busca.</p>
+        </div>
+        <div class="field atalhos-uf">
+            <label for="atalho-uf">Estado</label>
+            <select class="select" id="atalho-uf" name="uf" data-lembrar-uf>
+                <option value="">Todo o Brasil</option>
+                {% for u in ufs_brasil %}<option value="{{ u }}">{{ u }}</option>{% endfor %}
+            </select>
+        </div>
+    </div>
+    <div class="atalhos">
+        {% for a in atalhos_busca %}
+        <button type="submit" class="atalho" name="atalho" value="{{ a.chave }}">
+            <span class="ico">{{ ui.icon(a.icone) }}</span>
+            <span><strong>{{ a.rotulo }}</strong><span class="muted small">{{ a.detalhe }}</span></span>
+        </button>
+        {% endfor %}
+    </div>
+    <p class="hint">Ou monte a sua busca com os filtros (situação, cidade, atividade, contatos, sócios…) —
+        <a href="/busca?situacao=2&uf=TO&municipio_nome=PALMAS&municipio_nome=ARAGUAINA&atividade=contabilidade&contato=telefone_e_email&idade_min=2&tem_socios=sim">ver um exemplo completo</a>.</p>
+</form>

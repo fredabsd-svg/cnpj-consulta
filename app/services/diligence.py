@@ -78,7 +78,8 @@ def _capital_item(company: CompanyUnified) -> DiligenceItem:
 def _qsa_item(company: CompanyUnified) -> DiligenceItem:
     if not company.socios:
         return DiligenceItem("qsa", "Quadro societário", "info", "Nenhum sócio informado.")
-    return DiligenceItem("qsa", "Quadro societário", "ok", f"{len(company.socios)} sócio(s) listado(s).")
+    n = len(company.socios)
+    return DiligenceItem("qsa", "Quadro societário", "ok", "1 sócio listado." if n == 1 else f"{n} sócios listados.")
 
 
 def _divergencias_item(company: CompanyUnified) -> DiligenceItem:
@@ -100,7 +101,8 @@ def _fontes_item(company: CompanyUnified) -> DiligenceItem:
         return DiligenceItem("fontes_ok", "Fontes", "falha", "Nenhuma fonte respondeu.")
     if ok < total:
         return DiligenceItem("fontes_ok", "Fontes", "alerta", f"{ok} de {total} fontes responderam.")
-    return DiligenceItem("fontes_ok", "Fontes", "ok", f"{ok} fontes responderam.")
+    return DiligenceItem("fontes_ok", "Fontes", "ok",
+                         "1 fonte respondeu." if ok == 1 else f"{ok} fontes responderam.")
 
 
 def _sancoes_item(sanctions: SanctionsCheck | None) -> DiligenceItem:

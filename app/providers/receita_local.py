@@ -28,6 +28,7 @@ import duckdb
 
 from app.providers.base import Provider, ProviderError, ProviderResult
 from app.receita.armazenamento import caminho_base_ativa
+from app.receita.duck import conectar_leitura, dica_uf
 from app.receita.layout import PORTES, SITUACOES  # noqa: F401 -- reexportados
 
 TIPOS_SOCIO = {1: "PESSOA_JURIDICA", 2: "PESSOA_FISICA", 3: "ESTRANGEIRO"}
@@ -42,11 +43,9 @@ def code_to_int(value: Any) -> int | None:
 
 @contextmanager
 def connect_readonly(path: str | Path) -> Iterator[duckdb.DuckDBPyConnection]:
-    conn = duckdb.connect(str(path), read_only=True)
-    try:
+    """Cursor da conexao de leitura compartilhada (cache quente entre consultas)."""
+    with conectar_leitura(path) as conn:
         yield conn
-    finally:
-        conn.close()
 
 
 def existing_tables(conn: duckdb.DuckDBPyConnection) -> set[str]:
@@ -77,6 +76,8 @@ def _fetch_company_sync(db_path: str, cnpj: str) -> dict[str, Any] | None:
         j_mun, d_mun = lookup_join(tables, "municipios", "mun", "est.municipio")
         j_mot, d_mot = lookup_join(tables, "motivos", "mot", "est.motivo_situacao_cadastral")
         j_cnae, d_cnae = lookup_join(tables, "cnaes", "cn", "est.cnae_fiscal_principal")
+        # Base organizada por UF: cnpj_uf leva a leitura direto ao bloco do estado
+        dica, p_dica = dica_uf(conn, db_path, "est", cnpj=cnpj)
         if "simples" in tables:
             j_simples = "LEFT JOIN simples sim ON sim.cnpj_basico = est.cnpj_basico"
             simples_cols = "sim.opcao_simples, sim.opcao_mei"
@@ -105,10 +106,10 @@ def _fetch_company_sync(db_path: str, cnpj: str) -> dict[str, Any] | None:
             FROM estabelecimentos est
             JOIN empresas e ON e.cnpj_basico = est.cnpj_basico
             {j_nat} {j_mun} {j_mot} {j_cnae} {j_simples}
-            WHERE est.cnpj_completo = ?
+            WHERE est.cnpj_completo = ?{dica}
             LIMIT 1
             """,
-            [cnpj],
+            [cnpj, *p_dica],
         ).fetchall()
         if not row:
             return None
@@ -147,10 +148,11 @@ def _fetch_company_sync(db_path: str, cnpj: str) -> dict[str, Any] | None:
         data["socios"] = rows_as_dicts(conn, socios)
 
         # Demais estabelecimentos da mesma empresa (matriz/filiais)
+        dica_b, p_b = dica_uf(conn, db_path, "est", basicos=[data["cnpj_basico"]])
         filiais = conn.execute(
-            "SELECT cnpj_completo FROM estabelecimentos "
-            "WHERE cnpj_basico = ? AND cnpj_completo <> ? ORDER BY cnpj_ordem LIMIT 1000",
-            [data["cnpj_basico"], cnpj],
+            "SELECT est.cnpj_completo FROM estabelecimentos est "
+            f"WHERE est.cnpj_basico = ? AND est.cnpj_completo <> ?{dica_b} ORDER BY est.cnpj_ordem LIMIT 1000",
+            [data["cnpj_basico"], cnpj, *p_b],
         ).fetchall()
         data["filiais"] = [r[0] for r in filiais]
 

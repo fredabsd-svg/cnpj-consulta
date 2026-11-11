@@ -340,6 +340,22 @@ def base_validar() -> None:
     _executar_com_saida(job["id"], executar_job)
 
 
+@base_app.command("organizar")
+def base_organizar() -> None:
+    """Organiza a base ativa por estado (UF): buscas com filtro de UF ficam bem mais rapidas."""
+    from app.db import init_database
+    from app.receita import jobs
+    from app.receita.servico import executar_job, iniciar_organizacao
+
+    init_database()
+    try:
+        job = iniciar_organizacao(em_processo=False)
+    except (ValueError, jobs.JobEmAndamento) as e:
+        err_console.print(f"[red]Erro:[/red] {e}")
+        raise typer.Exit(code=2) from e
+    _executar_com_saida(job["id"], executar_job)
+
+
 @base_app.command("restaurar")
 def base_restaurar() -> None:
     """Volta para a versao anterior da base."""

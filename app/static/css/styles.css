@@ -822,3 +822,62 @@ select[multiple].select { background-image: none; padding-right: var(--space-1);
 button.btn-link { padding: 0; border: 0; background: none; color: var(--color-primary); cursor: pointer; text-decoration: underline; font: inherit; }
 .exportacao-progresso { position: fixed; right: 16px; bottom: 16px; z-index: 60; display: flex; align-items: center; gap: 10px; max-width: calc(100vw - 32px); padding: 10px 14px; border-radius: 10px; background: var(--color-surface, #fff); border: 1px solid var(--color-border, rgba(127,127,127,.3)); box-shadow: 0 8px 24px rgba(0,0,0,.18); font-size: var(--text-sm); }
 .exportacoes { margin-top: var(--space-3); }
+
+/* So com JavaScript (acoes que dependem dele) */
+html:not(.js) .js-only { display: none; }
+
+/* =============================================================================
+   Layout 0.6: filtros rapidos, atalhos de prospeccao, contato rapido na ficha
+   ============================================================================= */
+
+/* Busca: filtros rapidos (um clique liga, outro desliga) */
+.rapidos { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: var(--space-4); padding-top: var(--space-3); border-top: 1px solid var(--color-border); }
+.rapidos-titulo { display: inline-flex; align-items: center; gap: var(--space-1); margin-right: var(--space-1); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--color-text-muted); }
+.rapidos-titulo .i { width: 14px; height: 14px; }
+.chip-rapido { gap: 6px; min-height: 32px; font-family: var(--font-body); font-size: var(--text-sm); font-weight: 600; cursor: pointer; }
+.chip-rapido .i { width: 14px; height: 14px; }
+.chip-rapido.ativo { background: var(--color-primary); border-color: var(--color-primary); color: var(--color-on-primary); }
+.chip-rapido.ativo:hover { color: var(--color-on-primary); filter: brightness(1.08); }
+
+/* Busca: UFs como botoes (a caixinha some; o botao inteiro marca) */
+.checks-uf { gap: var(--space-1); }
+.checks-uf .check { position: relative; justify-content: center; min-height: 32px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); font-weight: 600; font-variant-numeric: tabular-nums; }
+.checks-uf .check input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.checks-uf .check:hover { border-color: var(--color-primary-border); color: var(--color-primary); }
+.checks-uf .check:has(input:checked) { background: var(--color-primary); border-color: var(--color-primary); color: var(--color-on-primary); }
+.checks-uf .check:has(input:focus-visible) { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+
+/* Busca: total, ordenacao e exportar ficam a vista ao rolar a tabela */
+.resultado-topo { position: sticky; top: 60px; z-index: 5; margin: calc(-1 * var(--space-2)) calc(-1 * var(--space-2)) var(--space-3); padding: var(--space-2); border-radius: var(--radius-md); background: var(--color-popover); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); }
+.resultado-topo h2 { font-size: var(--text-lg); }
+
+/* Atalhos de prospeccao */
+.atalhos-card .card-header { align-items: flex-end; flex-wrap: nowrap; }
+.atalhos-card .card-header > div:first-child { flex: 1 1 0; min-width: 0; }
+.atalhos-uf { flex: none; width: 170px; margin: 0; }
+.atalhos { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: var(--space-3); margin-top: var(--space-4); }
+.atalho { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-3); align-items: center; padding: var(--space-3) var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); color: var(--color-text); font: inherit; text-align: left; cursor: pointer; transition: border-color var(--dur) var(--ease), transform var(--dur) var(--ease), background var(--dur) var(--ease); }
+.atalho:hover { border-color: var(--color-primary-border); background: var(--color-surface-hover); transform: translateY(-1px); }
+.atalho:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.atalho strong { display: block; font-family: var(--font-heading); font-size: var(--text-base); }
+.atalho > span:last-child > span { display: block; }
+.atalhos-card .hint { margin-top: var(--space-4); }
+
+/* Ficha: contato rapido logo abaixo dos indicadores */
+.contato-rapido { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: var(--space-4); padding-top: var(--space-4); border-top: 1px solid var(--color-border); }
+.contato-rapido-titulo { margin-right: var(--space-1); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--color-text-muted); }
+.contato-rapido .btn { max-width: 100%; }
+.contato-rapido .btn-whats { border-color: rgba(37, 211, 102, .45); color: #1faa59; }
+.contato-rapido .btn-whats:hover { background: rgba(37, 211, 102, .12); }
+
+/* Ficha: identificacao em duas colunas nas telas largas (menos rolagem) */
+@media (min-width: 1180px) {
+    .kv-duplo { grid-template-columns: 170px minmax(0, 1fr) 170px minmax(0, 1fr); }
+    .kv-duplo dt:nth-of-type(2), .kv-duplo dd:nth-of-type(2) { border-top: 0; }
+}
+
+@media (max-width: 900px) {
+    .atalhos { grid-template-columns: minmax(0, 1fr); }
+    .atalhos-card .card-header { flex-wrap: wrap; }
+    .resultado-topo { position: static; }
+}

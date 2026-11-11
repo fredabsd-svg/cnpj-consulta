@@ -68,6 +68,22 @@
             <div class="summary-item"><dt>Atividade principal</dt><dd>{% if c.cnae_principal %}<span class="mono">{{ c.cnae_principal.codigo | cnae }}</span>{% if c.cnae_principal.descricao %}<small>{{ c.cnae_principal.descricao | truncate(48) }}</small>{% endif %}{% else %}{{ ui.value(none) }}{% endif %}</dd></div>
             <div class="summary-item"><dt>Localização</dt><dd>{% if e and (e.municipio or e.uf) %}{{ e.municipio or "" }}{% if e.uf %}/{{ e.uf }}{% endif %}{% else %}{{ ui.value(none) }}{% endif %}</dd></div>
         </dl>
+        {% set mapa = ficha.endereco.mapa_url if ficha else none %}
+        {% if c.telefones or c.email or mapa %}
+        <div class="contato-rapido no-print" role="group" aria-label="Contato rápido">
+            <span class="contato-rapido-titulo">Contato rápido</span>
+            {% for t in c.telefones[:2] %}{% if t.numero %}
+            {% set num = (t.ddd or "") ~ t.numero %}
+            <a class="btn btn-sm" href="tel:+55{{ num }}" title="Ligar">{{ ui.icon('phone') }} <span class="mono">{{ t.ddd | telefone(t.numero) }}</span></a>
+            {% if t.numero | length == 9 and t.numero[0] == "9" %}
+            <a class="btn btn-sm btn-whats" href="https://wa.me/55{{ num }}" target="_blank" rel="noopener noreferrer" title="Abre o WhatsApp em nova aba (o número é enviado a esse serviço)">{{ ui.icon('message') }} WhatsApp</a>
+            {% endif %}
+            {% endif %}{% endfor %}
+            {% if c.email %}<a class="btn btn-sm" href="mailto:{{ c.email }}" title="Escrever e-mail">{{ ui.icon('mail') }} {{ c.email | lower }}</a>{% endif %}
+            {% if mapa %}<a class="btn btn-sm" href="{{ mapa }}" target="_blank" rel="noopener noreferrer" title="Abre o OpenStreetMap em nova aba">{{ ui.icon('map-pin') }} Ver no mapa</a>{% endif %}
+            <a class="btn btn-sm btn-ghost" href="#contatos" data-open-tab="contatos">Todos os contatos</a>
+        </div>
+        {% endif %}
         {% endif %}
     </header>
 

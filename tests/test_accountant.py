@@ -119,9 +119,11 @@ class TestRelatorioRoutes:
         assert "Quadro societário" in body
         assert "Atividades econômicas" in body
         assert "CNAE principal" in body
-        assert ">Qualificação</span>" in body
-        assert ">Desde</span>" in body
+        assert ">Qualificação</th>" in body
+        assert ">Desde</th>" in body
         assert "QualificaçãoDesde" not in body
+        assert "Resumo executivo" in body and "Checklist de diligência" in body
+        assert "Fontes consultadas" in body and "Parecer" in body
         assert "***123456**" in body
         assert "GAUNTLET" not in body
         assert 'class="sidebar"' not in body
