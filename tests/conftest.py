@@ -213,5 +213,11 @@ def base_local(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, db_initialized) 
 
 
 @pytest.fixture
+def base_ordem_cnpj(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pedir ANTES de base_local: publica a base no formato antigo (ordem de CNPJ)."""
+    monkeypatch.setenv("RECEITA_ORGANIZAR_POR_UF", "false")
+
+
+@pytest.fixture
 def admin_headers() -> dict[str, str]:
     return {"Authorization": "Bearer token-de-teste-123456"}

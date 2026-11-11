@@ -257,7 +257,7 @@ async def descrever_filtros() -> dict:
 
 
 @mcp.tool(annotations=LEITURA)
-async def buscar_empresas(filtros: dict[str, Any] | None = None, ordem: str = "razao",
+async def buscar_empresas(filtros: dict[str, Any] | None = None, ordem: str = "padrao",
                           direcao: str | None = None, pagina: int = 1, por_pagina: int = 20,
                           colunas: list[str] | None = None, finalidade: str = "") -> dict:
     """Busca estabelecimentos na base local com filtros combinados (veja
@@ -465,7 +465,7 @@ async def executar_busca_salva(busca_id: int, pagina: int = 1, por_pagina: int =
     if b is None:
         raise ToolError("Busca salva não encontrada.")
     filtros = dict(b["filtros"])
-    ordem = filtros.pop("ordem", "razao")
+    ordem = filtros.pop("ordem", "padrao")
     ordem = ordem[-1] if isinstance(ordem, list) else ordem
     r = await buscar_empresas(filtros, ordem=ordem, pagina=pagina, por_pagina=por_pagina)
     await asyncio.to_thread(listas.marcar_execucao, busca_id, r["total"])

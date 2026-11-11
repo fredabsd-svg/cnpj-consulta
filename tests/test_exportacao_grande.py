@@ -12,9 +12,27 @@ from app.services import exportacao
 
 def test_padrao_e_a_ordem_gravada_sem_order_by(base_local):
     f = ba.Filtros()
-    assert f.ordem == "cnpj" and ba._ordem_sql(f) == ""
-    assert ba._ordem_sql(ba.Filtros(ordem="cnpj", direcao="desc")).startswith("ORDER BY e.cnpj_completo DESC")
-    assert ba._ordem_sql(ba.Filtros(ordem="razao")).startswith("ORDER BY e.razao_social_norm ASC")
+    assert f.ordem == "padrao" and ba._ordem_sql(f) == ""
+    # base organizada por estado: a ordem de CNPJ precisa ser pedida (uma vez so, sem desempate repetido)
+    assert ba._ordem_sql(ba.Filtros(ordem="cnpj")) == "ORDER BY e.cnpj_completo ASC NULLS LAST"
+    assert ba._ordem_sql(ba.Filtros(ordem="cnpj", direcao="desc")) == "ORDER BY e.cnpj_completo DESC NULLS LAST"
+    assert ba._ordem_sql(ba.Filtros(direcao="desc")) == "ORDER BY e.cnpj_completo DESC"
+    assert ba._ordem_sql(ba.Filtros(ordem="razao")) == \
+        "ORDER BY e.razao_social_norm ASC NULLS LAST, e.cnpj_completo ASC"
+    r = ba.buscar(ba.Filtros.de_params({"uf": ["TO", "GO"]}))
+    # ordem gravada = estado e, dentro dele, CNPJ
+    chaves = [(i["uf"], i["cnpj"]) for i in r.itens]
+    assert chaves == sorted(chaves) and r.total == len(chaves) == 4
+    r = ba.buscar(ba.Filtros.de_params({"uf": ["TO", "GO"], "ordem": "cnpj"}))
+    cnpjs = [i["cnpj"] for i in r.itens]
+    assert cnpjs == sorted(cnpjs) and len(cnpjs) == 4
+
+
+def test_base_em_ordem_de_cnpj_continua_funcionando(base_ordem_cnpj, base_local):
+    from app.receita.duck import organizada_por_uf
+
+    assert not organizada_por_uf(base_local)
+    assert ba._ordem_sql(ba.Filtros(ordem="cnpj")) == ""  # ja esta em ordem de CNPJ
     r = ba.buscar(ba.Filtros.de_params({"uf": ["TO", "GO"]}))
     cnpjs = [i["cnpj"] for i in r.itens]
     assert cnpjs == sorted(cnpjs) and r.total == len(cnpjs) == 4
@@ -30,7 +48,7 @@ def test_exportacao_sem_teto_e_excel_em_abas(base_local, tmp_path, monkeypatch):
     wb = load_workbook(destino, read_only=True)
     assert wb.sheetnames[:2] == ["Empresas", "Empresas 2"]
     linhas = [r for aba in ("Empresas", "Empresas 2") for r in list(wb[aba].iter_rows(values_only=True))[1:]]
-    assert [r[0] for r in linhas] == sorted(r[0] for r in linhas)  # ordem de CNPJ preservada
+    assert sorted(r[0] for r in linhas) == sorted(set(r[0] for r in linhas)) and len(linhas) == 4  # sem repetir
     contabil = next(r for r in linhas if r[0] == "12345678000195")
     assert contabil[1] == "PALMAS" and contabil[2] == "Sociedade Empresária Limitada"
     assert contabil[3] == "Atividades de contabilidade" and contabil[4] == "JOAO SOUZA; MARIA DA SILVA"

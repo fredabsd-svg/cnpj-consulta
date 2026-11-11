@@ -54,10 +54,20 @@
         <div class="summary-item"><dt>Empresas</dt><dd>{{ ui.numero(a.contagens.get('empresas')) if a else "—" }}</dd></div>
         <div class="summary-item"><dt>Estabelecimentos</dt><dd>{{ ui.numero(a.contagens.get('estabelecimentos')) if a else "—" }}</dd></div>
         <div class="summary-item"><dt>Sócios</dt><dd>{{ ui.numero(a.contagens.get('socios')) if a else "—" }}</dd></div>
-        <div class="summary-item"><dt>Tamanho da base</dt><dd>{{ ui.bytes(a.tamanho) if a else "—" }}</dd></div>
+        <div class="summary-item"><dt>Tamanho da base</dt><dd>{{ ui.bytes(a.tamanho) if a else "—" }}{% if a and a.schema_atual %}<small>{{ "organizada por estado" if a.por_uf else "ainda não organizada por estado" }}</small>{% endif %}</dd></div>
         <div class="summary-item"><dt>Disco</dt><dd>{{ ui.bytes(e.disco.livre) }} livres<small>{{ ui.bytes(e.disco.usado) }} usados{% if e.disco.trabalho %} · {{ ui.bytes(e.disco.trabalho) }} temporários{% endif %}</small></dd></div>
     </dl>
     {% if a and a.erro %}<div class="alert alert-danger section" role="alert">{{ ui.icon('falha') }}<div><p>{{ a.erro }}</p></div></div>{% endif %}
+    {% if a and a.schema_atual and not a.por_uf and not a.erro %}
+    <div class="alert alert-info section" role="status">{{ ui.icon('zap') }}<div>
+        <span class="alert-title">Deixe as buscas mais rápidas: organize a base por estado</span>
+        <p>Hoje os estados estão espalhados pelo arquivo inteiro: uma busca no Tocantins precisa ler a base toda. Organizada por estado, a mesma busca lê só o trecho do Tocantins. É feito uma vez; as próximas atualizações já saem organizadas.</p>
+        <p class="small">Precisa de cerca de {{ ui.bytes((a.tamanho * 1.15) | int) }} livres no disco da base (há {{ ui.bytes(e.disco.livre) }}). Leva de alguns minutos a algumas horas, conforme o disco. As consultas continuam funcionando enquanto isso.</p>
+        <form action="/base/acao" method="post" data-api="/api/admin/base/organizar">
+            <input type="hidden" name="acao" value="organizar">
+            <button type="submit" class="btn btn-primary" {% if e.job_ativo %}disabled{% endif %}>{{ ui.icon('zap') }} Organizar por estado agora</button>
+        </form></div></div>
+    {% endif %}
 </section>
 
 {# ------------------------------------------------------------- tarefa #}
@@ -67,7 +77,7 @@
 <section class="card section job-card" aria-labelledby="t-job" data-job data-id="{{ j.id }}" data-status="{{ ef }}">
     <div class="card-header">
         <div>
-            <h2 id="t-job">{{ "Validação" if j.tipo == "validar" else "Atualização" }} #{{ j.id }}{% if j.mes %} · versão {{ j.mes }}{% endif %}</h2>
+            <h2 id="t-job">{{ {"validar": "Validação", "organizar": "Organização por estado"}.get(j.tipo, "Atualização") }} #{{ j.id }}{% if j.mes %} · versão {{ j.mes }}{% endif %}</h2>
             <p class="muted small"><span data-job-status>{{ rotulos_job.get(ef, ef) }}</span> · iniciada {{ (j.iniciado_em or j.criado_em) | data_br }}{% if j.origem != "manual" %} · {{ j.origem }}{% endif %}</p>
         </div>
         <div class="actions">

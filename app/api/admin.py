@@ -102,6 +102,17 @@ async def base_validar(request: Request) -> dict:
     return job
 
 
+@router.post("/base/organizar", status_code=202)
+async def base_organizar(request: Request) -> dict:
+    """Reorganiza a base ativa por estado (UF): buscas regionais leem so o trecho do estado."""
+    try:
+        job = await asyncio.to_thread(servico.iniciar_organizacao)
+    except (ValueError, jobs.JobEmAndamento) as e:
+        raise HTTPException(409, str(e)) from e
+    _auditar(request, "base.organizar", f"job={job['id']}")
+    return job
+
+
 @router.post("/base/restaurar")
 async def base_restaurar(request: Request, confirmar: str | None = Body(None, embed=True)) -> dict:
     _confirmar(confirmar)

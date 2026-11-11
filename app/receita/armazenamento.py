@@ -156,6 +156,32 @@ def publicar(arquivo_final: Path, mes: str, settings: Settings | None = None, *,
     return destino
 
 
+def substituir_ativa(arquivo_novo: Path, settings: Settings | None = None) -> Path:
+    """Troca o arquivo da versao ativa por outro com o MESMO conteudo (ex.: a base
+    reorganizada por UF): o ponteiro passa a apontar para o novo, a versao
+    "anterior" continua a mesma e o arquivo antigo e apagado."""
+    settings = settings or get_settings()
+    ponteiro = data_dir(settings) / PONTEIRO
+    atual = ler_json(ponteiro)
+    if not atual or not atual.get("arquivo"):
+        raise FileNotFoundError("Nao ha versao ativa para substituir.")
+    destino_dir = versoes_dir(settings)
+    destino = destino_dir / nome_versao(atual.get("mes") or _mes_do_nome(atual["arquivo"]) or "0000-00")
+    if destino.name == atual["arquivo"]:  # mesmo segundo: nome diferente do arquivo em uso
+        destino = destino.with_name(destino.stem + "b" + destino.suffix)
+    shutil.move(str(arquivo_novo), destino)
+    escrever_json_atomico(ponteiro, {**atual, "arquivo": destino.name,
+                                     "reorganizada_em": datetime.now(UTC).isoformat()})
+    limpar_cache()  # fecha as conexoes de leitura do arquivo antigo
+    antigo = destino_dir / atual["arquivo"]
+    try:
+        antigo.unlink(missing_ok=True)
+        (destino_dir / (atual["arquivo"] + ".wal")).unlink(missing_ok=True)
+    except OSError as e:  # em uso (Windows): fica como versao antiga e sai na proxima poda
+        log.warning("arquivo antigo %s nao removido agora: %s", antigo.name, e)
+    return destino
+
+
 def restaurar_anterior(settings: Settings | None = None) -> str:
     """Volta o ponteiro para a versao anterior (que precisa existir)."""
     settings = settings or get_settings()

@@ -75,6 +75,9 @@ class Settings(BaseSettings):
     # (SSD) quando os dados ficam num disco externo ou de rede.
     receita_temp_dir: str = ""
     receita_versoes_mantidas: int = 2  # ativa + anterior (para restaurar)
+    # Grava os estabelecimentos agrupados por UF ao publicar: buscas com filtro de
+    # estado leem so os blocos daquele estado (ver app/receita/reorganizar.py).
+    receita_organizar_por_uf: bool = True
     # Validacao: recusa publicar se uma tabela principal encolher mais que isto
     # em relacao a versao ativa (protege contra arquivo truncado na origem).
     receita_queda_maxima_pct: float = 10.0

@@ -20,12 +20,14 @@ lista de CNPJs. Celular/fixo seguem o plano de numeracao da Anatel.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import math
 import re
 import threading
 import time
+from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
@@ -37,7 +39,14 @@ from app.config import get_settings
 from app.core.cnpj_validator import is_valid
 from app.core.normalizer import normalize_name_for_search
 from app.receita.armazenamento import base_ativa
-from app.receita.duck import SCHEMA_VERSAO, Vigia, conectar_leitura, metadados
+from app.receita.duck import (
+    SCHEMA_VERSAO,
+    Vigia,
+    conectar_leitura,
+    dica_uf,
+    metadados,
+    organizada_por_uf,
+)
 from app.receita.layout import (
     MATRIZ_FILIAL,
     PORTES_CURTO,
@@ -716,12 +725,13 @@ GRUPOS_CAMPOS = {
     "qualidade": "Qualidade dos dados",
 }
 
-# Ordem padrao = CNPJ crescente, que e a ordem em que a tabela esta gravada: a
-# consulta nao precisa ordenar nada e para assim que acha a pagina (instantaneo
-# mesmo com milhoes de resultados). Ordenar por nome exige ler e ordenar todos.
-ORDEM_PADRAO = "cnpj"
+# Ordem padrao = a ordem em que a tabela esta gravada (CNPJ; ou UF e CNPJ na base
+# organizada por UF): a consulta nao ordena nada e para assim que acha a pagina
+# (instantaneo mesmo com milhoes de resultados). As outras ordens leem e ordenam tudo.
+ORDEM_PADRAO = "padrao"
 ORDENACOES = {
-    "cnpj": ("CNPJ (mais rápido)", "e.cnpj_completo", "ASC"),
+    "padrao": ("Padrão (mais rápido)", "", "ASC"),
+    "cnpj": ("CNPJ", "e.cnpj_completo", "ASC"),
     "razao": ("Razão social", "e.razao_social_norm", "ASC"),
     "abertura": ("Data de abertura", "e.data_inicio_atividade", "DESC"),
     "capital": ("Capital social", "e.capital_social", "DESC"),
@@ -991,21 +1001,96 @@ def compilar(f: Filtros) -> Sql:
         if r:
             partes.append(f"({r[0]})")
             params += r[1]
+    implicita = _uf_implicita(f)
+    if implicita:
+        partes.append(f"({implicita[0]})")
+        params += implicita[1]
     return (" AND ".join(partes) if partes else "TRUE"), params
 
 
 def _ordem_sql(f: Filtros) -> str:
-    """Clausula ORDER BY completa, ou "" para a ordem gravada (CNPJ crescente)."""
+    """Clausula ORDER BY completa, ou "" para a ordem gravada na tabela."""
     if f.ordem not in ORDENACOES:
         raise FiltroInvalido("Ordenação inválida.")
     _, expr, padrao = ORDENACOES[f.ordem]
     direcao = (f.direcao or padrao).upper()
     if direcao not in ("ASC", "DESC"):
         raise FiltroInvalido("Direção de ordenação inválida.")
+    if f.ordem == ORDEM_PADRAO:
+        # a ordem gravada nao tem "decrescente": nesse caso, CNPJ decrescente
+        return "" if direcao == "ASC" else "ORDER BY e.cnpj_completo DESC"
     if f.ordem == "cnpj" and direcao == "ASC":
-        return ""  # a tabela ja esta gravada em ordem de CNPJ (consolidacao ORDER BY cnpj_completo)
+        ativa = base_ativa()
+        if ativa is None or not organizada_por_uf(ativa.caminho):
+            return ""  # base em ordem de CNPJ: ja esta ordenada
     cols = [f"{c.strip()} {direcao} NULLS LAST" for c in expr.split(",")]
-    return "ORDER BY " + ", ".join(cols + ["e.cnpj_completo ASC"])
+    if f.ordem != "cnpj":
+        cols.append("e.cnpj_completo ASC")  # desempate: paginas estaveis
+    return "ORDER BY " + ", ".join(cols)
+
+
+# Municipio -> UF (da tabela municipios_uf), por arquivo de base. Quem filtra so pelo
+# municipio ganha o filtro de UF de graca: na base organizada por UF a leitura cai
+# direto no bloco do estado.
+_ufs_municipio: dict[str, tuple[dict[int, set[str]], dict[str, set[str]]]] = {}
+
+
+def _mapa_municipios() -> tuple[dict[int, set[str]], dict[str, set[str]]] | None:
+    ativa = base_ativa()
+    if ativa is None:
+        return None
+    chave = str(ativa.caminho)
+    if chave not in _ufs_municipio:
+        try:
+            with conectar_leitura(ativa.caminho) as conn:
+                rows = conn.execute("SELECT codigo, uf, nome FROM municipios_uf WHERE uf IS NOT NULL").fetchall()
+        except duckdb.Error:
+            return None
+        por_codigo: dict[int, set[str]] = {}
+        por_nome: dict[str, set[str]] = {}
+        for codigo, uf, nome in rows:
+            por_codigo.setdefault(int(codigo), set()).add(uf)
+            norm = normalize_name_for_search(nome or "")
+            if norm:
+                por_nome.setdefault(norm, set()).add(uf)
+        if len(_ufs_municipio) > 4:
+            _ufs_municipio.clear()
+        _ufs_municipio[chave] = (por_codigo, por_nome)
+    return _ufs_municipio[chave]
+
+
+def _uf_implicita(f: Filtros) -> Sql | None:
+    """UFs dos municipios filtrados, quando a busca nao informa a UF."""
+    if "uf" in f.campos or not ({"municipio", "municipio_nome"} & set(f.campos)):
+        return None
+    mapa = _mapa_municipios()
+    if mapa is None:
+        return None
+    por_codigo, por_nome = mapa
+    conjuntos: list[set[str]] = []
+    try:
+        if "municipio" in f.campos:
+            ufs: set[str] = set()
+            for c in _ints(f.campos["municipio"], "município"):
+                if c not in por_codigo:
+                    return None  # codigo fora do mapa: nao arrisca restringir
+                ufs |= por_codigo[c]
+            conjuntos.append(ufs)
+        if "municipio_nome" in f.campos:
+            ufs = set()
+            for nome in _lista(f.campos["municipio_nome"]):
+                norm = normalize_name_for_search(nome)
+                if not norm or norm not in por_nome:
+                    return None
+                ufs |= por_nome[norm]
+            conjuntos.append(ufs)
+    except FiltroInvalido:
+        return None  # o filtro original ja acusa o erro
+    ufs = set.intersection(*conjuntos) if conjuntos else set()
+    if not ufs:
+        return None
+    lista = sorted(ufs)
+    return f"e.uf IN ({_ph(len(lista))})", lista
 
 
 # ---------------------------------------------------------------- execucao
@@ -1055,6 +1140,50 @@ class _Controle:
             self.motivo = "tempo"
             return True
         return False
+
+
+# Cache de totais e contadores: a mesma busca (mesmos filtros, mesma versao da
+# base) nao varre a tabela de novo ao mudar de pagina, reordenar, abrir os
+# contadores ou exportar. A chave inclui o arquivo da base: versao nova = cache novo.
+_CACHE_MAX = 400
+_cache_lock = threading.Lock()
+_cache: OrderedDict[tuple, Any] = OrderedDict()
+
+
+def _chave_cache(tipo: str, caminho: Any, where: str, params: list, extra: str = "") -> tuple:
+    bruto = json.dumps(params, default=str, ensure_ascii=False)
+    return (tipo, str(caminho), where, hashlib.sha1(bruto.encode(), usedforsecurity=False).hexdigest(), extra)
+
+
+def _cache_get(chave: tuple) -> Any:
+    with _cache_lock:
+        if chave in _cache:
+            _cache.move_to_end(chave)
+            return _cache[chave]
+    return None
+
+
+def _cache_put(chave: tuple, valor: Any) -> None:
+    with _cache_lock:
+        _cache[chave] = valor
+        _cache.move_to_end(chave)
+        while len(_cache) > _CACHE_MAX:
+            _cache.popitem(last=False)
+
+
+def limpar_cache_resultados() -> None:
+    with _cache_lock:
+        _cache.clear()
+
+
+def _total(conn, ctrl: _Controle, caminho: Any, where: str, params: list) -> int:
+    """Total de resultados, com cache por (base, filtros)."""
+    chave = _chave_cache("total", caminho, where, params)
+    total = _cache_get(chave)
+    if total is None:
+        total = _executar(conn, ctrl, f"SELECT count(*) FROM estabelecimentos e WHERE {where}", params)[0][0]
+        _cache_put(chave, total)
+    return total
 
 
 _vagas_lock = threading.Lock()
@@ -1148,8 +1277,9 @@ def buscar(f: Filtros, *, colunas: list[str] | None = None, cancelar: threading.
         if contar:
             if f.pagina == 1 and len(itens) < f.por_pagina:
                 total = len(itens)
+                _cache_put(_chave_cache("total", ativa.caminho, where, params), total)
             else:
-                total = _executar(conn, ctrl, f"SELECT count(*) FROM estabelecimentos e WHERE {where}", params)[0][0]
+                total = _total(conn, ctrl, ativa.caminho, where, params)
         else:
             total = -1
     for it in itens:
@@ -1164,6 +1294,9 @@ def buscar(f: Filtros, *, colunas: list[str] | None = None, cancelar: threading.
     )
 
 
+_SIM_NAO_TELA = {"S": "Sim", "N": "Não"}
+
+
 def _rotular(it: dict) -> None:
     if "situacao" in it:
         it["situacao_codigo"] = it["situacao"]
@@ -1176,6 +1309,9 @@ def _rotular(it: dict) -> None:
         it["capital_social"] = float(it["capital_social"])
     if "cnae_principal" in it and it["cnae_principal"] is not None:
         it["cnae_principal"] = f"{int(it['cnae_principal']):07d}"
+    for c in ("simples", "mei"):
+        if c in it:
+            it[c] = _SIM_NAO_TELA.get(it[c], it[c])
 
 
 # Colunas que sao nomes de tabelas pequenas: na exportacao o nome e preenchido em
@@ -1254,7 +1390,7 @@ def contar(f: Filtros, timeout: float | None = None) -> int:
     ctrl = _Controle(None, timeout)
     with conectar_leitura(ativa.caminho) as conn:
         _checar_schema(conn)
-        return _executar(conn, ctrl, f"SELECT count(*) FROM estabelecimentos e WHERE {where}", params)[0][0]
+        return _total(conn, ctrl, ativa.caminho, where, params)
 
 
 DIMENSOES = {
@@ -1270,20 +1406,45 @@ DIMENSOES = {
 
 def contadores(f: Filtros, dimensoes: list[str], *, limite: int = 15,
                cancelar: threading.Event | None = None, timeout: float | None = None) -> dict[str, list[dict]]:
-    """Quantos resultados por valor de cada dimensao (para os filtros)."""
+    """Quantos resultados por valor de cada dimensao (para os filtros).
+
+    Todas as dimensoes saem de UMA varredura (GROUP BY GROUPING SETS), que tambem
+    devolve o total; antes era uma varredura da tabela por dimensao."""
+    dimensoes = list(dict.fromkeys(dimensoes))
+    for d in dimensoes:
+        if d not in DIMENSOES:
+            raise FiltroInvalido(f"Contador desconhecido: {d}.")
+    if not dimensoes:
+        return {}
     where, params = compilar(f)
     ativa = _base()
     ctrl = _Controle(cancelar, timeout)
-    out: dict[str, list[dict]] = {}
+    chave = _chave_cache("contadores", ativa.caminho, where, params, ",".join(dimensoes))
     with conectar_leitura(ativa.caminho) as conn:
         _checar_schema(conn)
-        for d in dimensoes:
-            if d not in DIMENSOES:
-                raise FiltroInvalido(f"Contador desconhecido: {d}.")
-            expr, rotulos = DIMENSOES[d]
+        grupos = _cache_get(chave)
+        if grupos is None:
+            exprs = [DIMENSOES[d][0] for d in dimensoes]
+            k = len(exprs)
+            cols = ", ".join(f"{e} AS d{i}" for i, e in enumerate(exprs))
+            conjuntos = ", ".join(["()"] + [f"({e})" for e in exprs])
             rows = _executar(conn, ctrl,
-                             f"SELECT {expr} AS v, count(*) AS n FROM estabelecimentos e WHERE {where} "
-                             f"GROUP BY 1 ORDER BY 2 DESC LIMIT {int(limite)}", params)
+                             f"SELECT GROUPING({', '.join(exprs)}) AS g, {cols}, count(*) AS n "
+                             f"FROM estabelecimentos e WHERE {where} GROUP BY GROUPING SETS ({conjuntos})", params)
+            todos = (1 << k) - 1
+            grupos = {d: [] for d in dimensoes}
+            for r in rows:
+                g, n = r[0], r[-1]
+                if g == todos:  # conjunto (): o total sai de graca
+                    _cache_put(_chave_cache("total", ativa.caminho, where, params), n)
+                    continue
+                i = k - (todos ^ g).bit_length()  # a unica dimensao agrupada nesta linha
+                grupos[dimensoes[i]].append((r[1 + i], n))
+            _cache_put(chave, grupos)
+        out: dict[str, list[dict]] = {}
+        for d in dimensoes:
+            rotulos = DIMENSOES[d][1]
+            rows = sorted(grupos[d], key=lambda x: (-x[1], str(x[0])))[:int(limite)]
             nomes: dict = {}
             if isinstance(rotulos, str) and rows:
                 cods = [r[0] for r in rows if r[0] is not None]
@@ -1300,28 +1461,33 @@ def contadores(f: Filtros, dimensoes: list[str], *, limite: int = 15,
 def duplicidades(cnpjs: list[str]) -> dict[str, dict]:
     """Para os CNPJs de uma pagina: quantas OUTRAS empresas (raizes) usam o
     mesmo telefone principal ou e-mail -- sinal de possivel duplicidade ou de
-    contato do escritorio de contabilidade, nao uma conclusao."""
+    contato do escritorio de contabilidade, nao uma conclusao.
+
+    Varre as colunas de telefone e e-mail da base inteira: a tela so chama quando
+    o usuario pede (botao "Contatos repetidos")."""
     cnpjs = [c for c in cnpjs if re.fullmatch(r"[0-9A-Z]{14}", c)][:200]
     if not cnpjs:
         return {}
     ativa = _base()
+    ctrl = _Controle(None, None)
     with conectar_leitura(ativa.caminho) as conn:
         _checar_schema(conn)
+        dica, p_dica = dica_uf(conn, ativa.caminho, "e", cnpjs=cnpjs)
         base = conn.execute(
-            f"SELECT cnpj_completo, cnpj_basico, telefone_1, email FROM estabelecimentos "
-            f"WHERE cnpj_completo IN ({_ph(len(cnpjs))})", cnpjs).fetchall()
+            f"SELECT e.cnpj_completo, e.cnpj_basico, e.telefone_1, e.email FROM estabelecimentos e "
+            f"WHERE e.cnpj_completo IN ({_ph(len(cnpjs))}){dica}", [*cnpjs, *p_dica]).fetchall()
         tels = sorted({r[2] for r in base if r[2]})
         mails = sorted({r[3] for r in base if r[3]})
         cont_tel: dict = {}
         cont_mail: dict = {}
         if tels:
-            cont_tel = {t: set(rs) for t, rs in conn.execute(
-                f"SELECT telefone_1, list(DISTINCT cnpj_basico) FROM estabelecimentos "
-                f"WHERE telefone_1 IN ({_ph(len(tels))}) GROUP BY 1", tels).fetchall()}
+            cont_tel = {t: set(rs) for t, rs in _executar(
+                conn, ctrl, f"SELECT telefone_1, list(DISTINCT cnpj_basico) FROM estabelecimentos "
+                f"WHERE telefone_1 IN ({_ph(len(tels))}) GROUP BY 1", tels)}
         if mails:
-            cont_mail = {m: set(rs) for m, rs in conn.execute(
-                f"SELECT email, list(DISTINCT cnpj_basico) FROM estabelecimentos "
-                f"WHERE email IN ({_ph(len(mails))}) GROUP BY 1", mails).fetchall()}
+            cont_mail = {m: set(rs) for m, rs in _executar(
+                conn, ctrl, f"SELECT email, list(DISTINCT cnpj_basico) FROM estabelecimentos "
+                f"WHERE email IN ({_ph(len(mails))}) GROUP BY 1", mails)}
     out = {}
     for cnpj, basico, tel, mail in base:
         t = len(cont_tel.get(tel, set()) - {basico}) if tel else 0

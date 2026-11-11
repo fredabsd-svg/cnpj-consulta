@@ -18,7 +18,15 @@ import duckdb
 
 from app.core.normalizer import normalize_name_for_search
 from app.receita.armazenamento import base_ativa
-from app.receita.duck import SCHEMA_VERSAO, conectar_leitura, metadados, rows_as_dicts
+from app.receita.duck import (
+    SCHEMA_VERSAO,
+    conectar_leitura,
+    dica_uf,
+    em_lista,
+    metadados,
+    organizada_por_uf,
+    rows_as_dicts,
+)
 from app.receita.layout import (
     FAIXAS_ETARIAS,
     MATRIZ_FILIAL,
@@ -106,8 +114,10 @@ def ficha_local(cnpj: str) -> dict[str, Any] | None:
         if not _schema_ok(conn):
             raise BaseIndisponivel("A base local está no formato antigo. Atualize pelo painel Base de Dados CNPJ.")
         meta = metadados(conn)
+        # Base organizada por UF: a tabela cnpj_uf leva a leitura direto ao bloco do estado
+        dica, p_dica = dica_uf(conn, ativa.caminho, "e", cnpj=cnpj)
         rows = conn.execute(
-            """
+            f"""
             SELECT e.*, m.descricao AS municipio_nome, p.descricao AS pais_nome,
                    mot.descricao AS motivo_descricao, c.descricao AS cnae_descricao,
                    em.qualificacao_responsavel, em.ente_federativo_responsavel,
@@ -122,9 +132,9 @@ def ficha_local(cnpj: str) -> dict[str, Any] | None:
             LEFT JOIN naturezas n ON n.codigo = e.natureza_juridica
             LEFT JOIN qualificacoes q ON q.codigo = em.qualificacao_responsavel
             LEFT JOIN simples s ON s.cnpj_basico = e.cnpj_basico
-            WHERE e.cnpj_completo = ?
+            WHERE e.cnpj_completo = ?{dica}
             """,
-            [cnpj],
+            [cnpj, *p_dica],
         ).fetchall()
         if not rows:
             return None
@@ -136,16 +146,18 @@ def ficha_local(cnpj: str) -> dict[str, Any] | None:
             "SELECT codigo, descricao FROM cnaes WHERE list_contains(?, codigo)", [sec]).fetchall()) if sec else {}
 
         socios = _socios(conn, e["cnpj_basico"])
+        dica_b, p_b = dica_uf(conn, ativa.caminho, "e", basicos=[e["cnpj_basico"]])
         estabs_total = conn.execute(
-            "SELECT count(*) FROM estabelecimentos WHERE cnpj_basico = ?", [e["cnpj_basico"]]).fetchone()[0]
+            f"SELECT count(*) FROM estabelecimentos e WHERE e.cnpj_basico = ?{dica_b}",
+            [e["cnpj_basico"], *p_b]).fetchone()[0]
         estabs = rows_as_dicts(conn, conn.execute(
-            """
+            f"""
             SELECT e.cnpj_completo, e.identificador_matriz_filial, e.nome_fantasia, e.situacao_cadastral,
                    e.uf, m.descricao AS municipio_nome, e.data_inicio_atividade
             FROM estabelecimentos e LEFT JOIN municipios m ON m.codigo = e.municipio
-            WHERE e.cnpj_basico = ? ORDER BY e.cnpj_ordem LIMIT 300
+            WHERE e.cnpj_basico = ?{dica_b} ORDER BY e.cnpj_ordem LIMIT 300
             """,
-            [e["cnpj_basico"]],
+            [e["cnpj_basico"], *p_b],
         ).fetchall())
 
     endereco = {
@@ -339,8 +351,12 @@ def alteracoes_desde_anterior(cnpj: str, ficha: dict | None = None) -> dict | No
             if not _schema_ok(old):
                 return None
             mes_old = metadados(old).get("mes_referencia")
-            a = old.execute(f"SELECT {cols} FROM estabelecimentos WHERE cnpj_completo = ?", [cnpj]).fetchone()
-            b = new.execute(f"SELECT {cols} FROM estabelecimentos WHERE cnpj_completo = ?", [cnpj]).fetchone()
+            d_old, p_old = dica_uf(old, anterior, "e", cnpj=cnpj)
+            d_new, p_new = dica_uf(new, ativa.caminho, "e", cnpj=cnpj)
+            a = old.execute(f"SELECT {cols} FROM estabelecimentos e WHERE e.cnpj_completo = ?{d_old}",
+                            [cnpj, *p_old]).fetchone()
+            b = new.execute(f"SELECT {cols} FROM estabelecimentos e WHERE e.cnpj_completo = ?{d_new}",
+                            [cnpj, *p_new]).fetchone()
     except duckdb.Error:
         return None
     if b is None:
@@ -362,6 +378,12 @@ def alteracoes_desde_anterior(cnpj: str, ficha: dict | None = None) -> dict | No
 # ---------- socio ----------
 
 
+def _tem_tabela(conn, nome: str) -> bool:
+    return bool(conn.execute(
+        "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'main' AND table_name = ?",
+        [nome]).fetchone()[0])
+
+
 def ficha_socio(chave: str, limite: int = 500) -> dict | None:
     if not re.fullmatch(r"[0-9a-f]{16}", chave or ""):
         return None
@@ -373,20 +395,40 @@ def ficha_socio(chave: str, limite: int = 500) -> dict | None:
         if r is None:
             return None
         resumo = rows_as_dicts(conn, [r])[0]
-        empresas = rows_as_dicts(conn, conn.execute(
-            """
-            SELECT e.cnpj_completo AS cnpj, e.razao_social, e.nome_fantasia, e.situacao_cadastral,
-                   e.uf, m.descricao AS municipio_nome, q.descricao AS qualificacao,
-                   s.qualificacao_socio, s.data_entrada_sociedade AS data_entrada
-            FROM socios s
-            JOIN estabelecimentos e ON e.cnpj_basico = s.cnpj_basico AND e.identificador_matriz_filial = 1
-            LEFT JOIN municipios m ON m.codigo = e.municipio
-            LEFT JOIN qualificacoes q ON q.codigo = s.qualificacao_socio
+        # 1) participacoes do socio; 2) matrizes dessas empresas (lista de CNPJs basicos +
+        # dica de UF: o banco le so os blocos necessarios, em vez de varrer a tabela).
+        # Na base organizada, socios_por_chave (em ordem de socio) evita varrer `socios`.
+        origem = "socios_por_chave" if organizada_por_uf(ativa.caminho) and _tem_tabela(conn, "socios_por_chave") \
+            else "socios"
+        partes = conn.execute(
+            f"""
+            SELECT s.cnpj_basico, q.descricao, s.qualificacao_socio, s.data_entrada_sociedade
+            FROM {origem} s LEFT JOIN qualificacoes q ON q.codigo = s.qualificacao_socio
             WHERE s.socio_chave = ?
-            ORDER BY e.razao_social LIMIT ?
-            """,
-            [chave, limite],
-        ).fetchall())
+            """, [chave]).fetchall()
+        por_basico: dict[str, list[tuple]] = {}
+        for p in partes:
+            por_basico.setdefault(p[0], []).append(p)
+        basicos = list(por_basico)
+        empresas = []
+        if basicos:
+            dica, p_dica = dica_uf(conn, ativa.caminho, "e", basicos=basicos)
+            cond, p_cond = em_lista("e.cnpj_basico", basicos)
+            matrizes = rows_as_dicts(conn, conn.execute(
+                f"""
+                SELECT e.cnpj_basico, e.cnpj_completo AS cnpj, e.razao_social, e.nome_fantasia,
+                       e.situacao_cadastral, e.uf, m.descricao AS municipio_nome
+                FROM estabelecimentos e LEFT JOIN municipios m ON m.codigo = e.municipio
+                WHERE {cond} AND e.identificador_matriz_filial = 1{dica}
+                """,
+                [*p_cond, *p_dica],
+            ).fetchall())
+            for mz in matrizes:
+                basico = mz.pop("cnpj_basico")
+                for _b, qual, cod, entrada in por_basico.get(basico, []):
+                    empresas.append({**mz, "qualificacao": qual, "qualificacao_socio": cod, "data_entrada": entrada})
+            empresas.sort(key=lambda x: (x["razao_social"] is None, x["razao_social"] or "", x["cnpj"]))
+            empresas = empresas[:limite]
     tipo = resumo["identificador_de_socio"]
     for x in empresas:
         x["situacao"] = SITUACOES.get(x["situacao_cadastral"])
@@ -414,18 +456,27 @@ def sugestoes(q: str, limite: int = 8) -> list[dict]:
     q = (q or "").strip()
     digitos = re.sub(r"\D", "", q)
     limite = max(1, min(limite, 20))
+    por_uf = organizada_por_uf(ativa.caminho)
+    ufs: dict[str, str | None] | None = None
     with conectar_leitura(ativa.caminho) as conn:
         if not _schema_ok(conn):
             return []
         if len(digitos) >= 4 and len(digitos) == len(re.sub(r"[\s./-]", "", q)):
-            rows = conn.execute(
-                """
-                SELECT e.cnpj_completo, e.razao_social AS nome, 'C' AS tipo
-                FROM estabelecimentos e WHERE e.cnpj_completo >= ? AND e.cnpj_completo < ?
-                ORDER BY e.cnpj_completo LIMIT ?
-                """,
-                [digitos, digitos + "~", limite],
-            ).fetchall()
+            # Prefixo do CNPJ: a tabela em ordem de CNPJ (cnpj_uf na base organizada por UF)
+            if por_uf:
+                ufs = dict(conn.execute(
+                    "SELECT cnpj_completo, uf FROM cnpj_uf WHERE cnpj_completo >= ? AND cnpj_completo < ? "
+                    "ORDER BY cnpj_completo LIMIT ?", [digitos, digitos + "~", limite]).fetchall())
+                rows = [(c, None, "C") for c in ufs]
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT e.cnpj_completo, NULL AS nome, 'C' AS tipo
+                    FROM estabelecimentos e WHERE e.cnpj_completo >= ? AND e.cnpj_completo < ?
+                    ORDER BY e.cnpj_completo LIMIT ?
+                    """,
+                    [digitos, digitos + "~", limite],
+                ).fetchall()
         else:
             norm = normalize_name_for_search(re.sub(r"[ºª°]", "", q)) or ""  # base tira o ordinal
             if len(norm) < 3:
@@ -446,15 +497,25 @@ def sugestoes(q: str, limite: int = 8) -> list[dict]:
         cnpjs = cnpjs[:limite]
         if not cnpjs:
             return []
-        det = {r[0]: r for r in conn.execute(
-            f"""
+        selecao = """
             SELECT e.cnpj_completo, e.razao_social, e.nome_fantasia, e.situacao_cadastral, e.uf,
                    m.descricao, e.identificador_matriz_filial
-            FROM estabelecimentos e LEFT JOIN municipios m ON m.codigo = e.municipio
-            WHERE e.cnpj_completo IN ({", ".join("?" * len(cnpjs))})
-            """,
-            cnpjs,
-        ).fetchall()}
+            FROM estabelecimentos e LEFT JOIN municipios m ON m.codigo = e.municipio WHERE """
+        if por_uf:
+            # Um trecho por empresa (UF + CNPJ): cada um le um unico bloco da tabela
+            if ufs is None:
+                cond, p_cond = em_lista("cnpj_completo", cnpjs)
+                ufs = dict(conn.execute(f"SELECT cnpj_completo, uf FROM cnpj_uf WHERE {cond}", p_cond).fetchall())
+            partes, params = [], []
+            for c in cnpjs:
+                if c in ufs:
+                    partes.append(selecao + "e.cnpj_completo = ? AND "
+                                  + ("e.uf = ?" if ufs[c] is not None else "e.uf IS NULL"))
+                    params += [c] if ufs[c] is None else [c, ufs[c]]
+            linhas = conn.execute(" UNION ALL ".join(partes), params).fetchall() if partes else []
+        else:
+            linhas = conn.execute(f"{selecao}e.cnpj_completo IN ({', '.join('?' * len(cnpjs))})", cnpjs).fetchall()
+        det = {r[0]: r for r in linhas}
     out = []
     for c in cnpjs:
         if c in det:

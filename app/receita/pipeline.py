@@ -72,6 +72,7 @@ ETAPAS: list[tuple[str, str, float]] = [
     ("download", "Download e importação", 70),
     ("consolidacao", "Consolidação", 22),
     ("validacao", "Validação", 4),
+    ("organizacao", "Organização por estado", 8),
     ("publicacao", "Publicação", 1),
     ("limpeza", "Limpeza", 1),
 ]
@@ -238,6 +239,11 @@ class Atualizacao:
         return self.dir / "final.duckdb"
 
     @property
+    def final_uf(self) -> Path:
+        """Base consolidada regravada por UF (o arquivo que e publicado)."""
+        return self.dir / "final_uf.duckdb"
+
+    @property
     def estado_path(self) -> Path:
         return self.dir / "estado.json"
 
@@ -323,7 +329,13 @@ class Atualizacao:
             self._validar()
             self._sair("validacao", t0)
 
-            self._checar(forcar=True)  # cancelar/pausar pedido durante a validacao
+            if self.settings.receita_organizar_por_uf:
+                self._checar(forcar=True)
+                t0 = self._entrar("organizacao", "Organizando a base por estado (buscas por UF mais rápidas)")
+                self._organizar()
+                self._sair("organizacao", t0)
+
+            self._checar(forcar=True)  # cancelar/pausar pedido durante a validacao/organizacao
             t0 = self._entrar("publicacao")
             self._publicar()
             self._sair("publicacao", t0)
@@ -1009,7 +1021,7 @@ class Atualizacao:
 
         # Etapas ja consolidadas so valem para os MESMOS arquivos importados: se algum
         # arquivo mudou no portal e foi reimportado, a consolidacao recomeca do zero.
-        assinatura = hashlib.sha256("|".join(
+        assinatura = self._assinatura = hashlib.sha256("|".join(
             f"{n}:{i.get('etag')}:{i.get('linhas')}" for n, i in sorted(importados.items())).encode()).hexdigest()
         if self.final_db.exists():
             conn = self._conectar(self.final_db)
@@ -1226,10 +1238,54 @@ class Atualizacao:
 
     # ---------- publicacao e limpeza ----------
 
+    def _organizar(self) -> None:
+        """Regrava a base consolidada agrupada por UF (app/receita/reorganizar.py).
+        E uma otimizacao: sem espaco em disco, ou se falhar, a base e publicada em
+        ordem de CNPJ mesmo (funciona igual; so as buscas por estado ficam mais lentas)."""
+        from app.receita.reorganizar import Interrompida, reorganizar
+
+        estado = self._estado()
+        assinatura = getattr(self, "_assinatura", None)
+        if self.final_uf.exists() and assinatura and estado.get("organizada") == assinatura:
+            self._log("Base ja organizada por estado na tentativa anterior.")
+            return
+        self._apagar_final_uf()
+        tamanho = self.final_db.stat().st_size
+        livre = arm.espaco_livre(self.dir)
+        if livre < tamanho * 1.15:
+            gb = 1024**3
+            self._log(f"Sem espaco para organizar a base por estado (precisa de ~{tamanho * 1.15 / gb:.1f} GB livres, "
+                      f"ha {livre / gb:.1f} GB): publicando em ordem de CNPJ. As buscas por estado ficam mais "
+                      "lentas; libere espaco e use Organizar por estado no painel.", "aviso")
+            return
+        try:
+            r = reorganizar(
+                self.final_db, self.final_uf, settings=self.settings, temp_dir=self.temp_base / "tmp",
+                progresso=lambda f, t: self._progresso(f, mensagem=f"Organizando: {t}", arquivo_atual=t),
+                deve_parar=self._deve_parar)
+        except Interrompida as e:
+            raise Interrompido(self._pedido or "pausar") from e
+        except Exception as e:  # noqa: BLE001 -- otimizacao opcional: nao impede a publicacao
+            self._apagar_final_uf()
+            self._log(f"Nao foi possivel organizar a base por estado ({type(e).__name__}: {str(e)[:200]}); "
+                      "publicando em ordem de CNPJ.", "aviso")
+            return
+        estado = self._estado()
+        estado["organizada"] = assinatura
+        self._salvar_estado(estado)
+        self._log(f"Base organizada por estado ({r['_segundos']:.0f}s)")
+
+    def _apagar_final_uf(self) -> None:
+        self.final_uf.unlink(missing_ok=True)
+        Path(str(self.final_uf) + ".wal").unlink(missing_ok=True)
+
     def _publicar(self) -> None:
         assert self.mes
         anterior = arm.base_ativa(self.settings)
-        destino = arm.publicar(self.final_db, self.mes, self.settings, podar=False)
+        assinatura = getattr(self, "_assinatura", None)
+        organizada = bool(self.settings.receita_organizar_por_uf and assinatura and self.final_uf.exists()
+                          and self._estado().get("organizada") == assinatura)
+        destino = arm.publicar(self.final_uf if organizada else self.final_db, self.mes, self.settings, podar=False)
         self.relatorio.publicada = destino.name
         self.relatorio.anterior = anterior.caminho.name if anterior else None
         # Grava "publicada" ANTES da poda: se o processo cair daqui ate o fim da
@@ -1254,6 +1310,7 @@ class Atualizacao:
     def _apagar_final(self) -> None:
         self.final_db.unlink(missing_ok=True)
         Path(str(self.final_db) + ".wal").unlink(missing_ok=True)
+        self._apagar_final_uf()  # derivada da consolidacao: refaz junto
 
     def descartar_trabalho(self, manter_downloads: bool = True) -> None:
         """Cancelamento: descarta a consolidacao. Com manter_downloads, o que ja foi

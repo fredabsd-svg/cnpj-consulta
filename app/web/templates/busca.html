@@ -274,6 +274,7 @@
                     {% for k, o in ordenacoes.items() %}<option value="{{ k }}" {% if r.ordem == k %}selected{% endif %}>Ordenar: {{ o[0] }}</option>{% endfor %}
                 </select>
                 <a class="btn btn-sm" href="/busca?{{ qs(params, direcao=('asc' if r.direcao == 'desc' else 'desc'), pagina=None) }}" title="Inverter ordem">{{ "↓ Decrescente" if r.direcao == "desc" else "↑ Crescente" }}</a>
+                <button type="button" class="btn btn-sm js-only" data-ver-duplicidades title="Marca as empresas desta página cujo telefone ou e-mail aparece em outras empresas">{{ ui.icon('phone') }} Contatos repetidos</button>
                 <details class="more-actions" data-colunas>
                     <summary class="btn btn-sm">{{ ui.icon('columns') }} Colunas</summary>
                     <div class="more-actions-menu colunas-menu">

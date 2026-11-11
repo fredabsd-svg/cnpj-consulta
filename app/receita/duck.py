@@ -13,6 +13,10 @@ import duckdb
 from app.config import Settings, get_settings
 
 SCHEMA_VERSAO = "2"
+# Ordem fisica de `estabelecimentos` (metadata): ausente = CNPJ; "uf" = agrupada por
+# UF e CNPJ, com a tabela cnpj_uf (CNPJ -> UF). Ver app/receita/reorganizar.py.
+META_ORDEM = "ordem_estabelecimentos"
+ORDEM_UF = "uf"
 
 
 def configurar(conn: duckdb.DuckDBPyConnection, temp_dir: Path | None, settings: Settings | None = None) -> None:
@@ -131,6 +135,65 @@ def _fechar(conn: duckdb.DuckDBPyConnection) -> None:
         pass
 
 
+# ---------- base organizada por UF (ver app/receita/reorganizar.py) ----------
+
+_por_uf: dict[str, bool] = {}
+
+
+def organizada_por_uf(path: str | Path) -> bool:
+    """`estabelecimentos` esta gravada por UF (com a tabela cnpj_uf)? Resposta em
+    cache por arquivo; uma base no formato anterior (ordem de CNPJ) devolve False."""
+    chave = _chave(path)
+    if chave not in _por_uf:
+        try:
+            with conectar_leitura(path) as c:
+                r = c.execute("SELECT valor FROM metadata WHERE chave = ?", [META_ORDEM]).fetchone()
+                tem = c.execute("SELECT count(*) FROM information_schema.tables WHERE table_name = 'cnpj_uf'"
+                                ).fetchone()[0]
+            _por_uf[chave] = bool(r and r[0] == ORDEM_UF and tem)
+        except duckdb.Error:
+            return False
+    return _por_uf[chave]
+
+
+def dica_uf(conn: duckdb.DuckDBPyConnection, path: str | Path, alias: str = "e", *, cnpj: str | None = None,
+            cnpjs: list[str] | None = None, basicos: list[str] | None = None) -> tuple[str, list[Any]]:
+    """Clausula extra (" AND e.uf IN (...)") para consultas por CNPJ numa base
+    organizada por UF: a tabela cnpj_uf (em ordem de CNPJ) diz em que estados estao
+    os estabelecimentos pedidos, e a leitura cai direto nos blocos desses estados.
+    Na base em ordem de CNPJ (formato anterior) devolve ("", []): nao precisa."""
+    if not organizada_por_uf(path):
+        return "", []
+    if cnpj is not None:
+        rows = conn.execute("SELECT DISTINCT uf FROM cnpj_uf WHERE cnpj_completo = ?", [cnpj]).fetchall()
+    else:
+        coluna, valores = ("cnpj_completo", cnpjs) if cnpjs is not None else ("cnpj_basico", basicos or [])
+        valores = list(dict.fromkeys(valores))
+        if not valores:
+            return " AND 1 = 0", []
+        cond, params = em_lista(coluna, valores)
+        rows = conn.execute(f"SELECT DISTINCT uf FROM cnpj_uf WHERE {cond}", params).fetchall()
+    ufs = [r[0] for r in rows]
+    if not ufs:
+        return " AND 1 = 0", []  # nao esta na base
+    com_valor = [u for u in ufs if u is not None]
+    partes = []
+    if com_valor:
+        partes.append(f"{alias}.uf IN ({', '.join('?' * len(com_valor))})")
+    if len(com_valor) != len(ufs):
+        partes.append(f"{alias}.uf IS NULL")
+    return " AND (" + " OR ".join(partes) + ")", com_valor
+
+
+def em_lista(coluna: str, valores: list[Any], maximo_literal: int = 200) -> tuple[str, list[Any]]:
+    """Condicao "coluna IN (...)". Listas pequenas vao como valores literais: so assim
+    o DuckDB usa o minimo/maximo dos blocos para pular os que nao interessam (com
+    subconsulta ele varre a coluna inteira). Listas grandes vao por unnest."""
+    if len(valores) <= maximo_literal:
+        return f"{coluna} IN ({', '.join('?' * len(valores))})", list(valores)
+    return f"{coluna} IN (SELECT unnest(?::VARCHAR[]))", [list(valores)]
+
+
 def _configurar_leitura(base: duckdb.DuckDBPyConnection) -> None:
     cfg = get_settings()
     if cfg.receita_duckdb_memoria:
@@ -157,7 +220,10 @@ def fechar_leituras(path: str | Path | None = None) -> None:
     ativa mudou no meio de uma busca) so fecha quando essa consulta termina."""
     with _leituras_lock:
         chaves = [_chave(path)] if path is not None else list(_leituras)
+        if path is None:
+            _por_uf.clear()
         for k in chaves:
+            _por_uf.pop(k, None)
             conn = _leituras.pop(k, None)
             if conn is None:
                 continue

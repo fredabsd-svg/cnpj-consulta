@@ -322,7 +322,7 @@ async def cpfs_remover(request: Request, registro_id: int) -> Response:
 
 @router.get("/empresa/{cnpj}/ficha.xlsx")
 async def ficha_xlsx(cnpj: str) -> Response:
-    from openpyxl import Workbook
+    from app.services import ficha_xlsx
 
     n = normalize_or_none(cnpj)
     if n is None:
@@ -334,62 +334,8 @@ async def ficha_xlsx(cnpj: str) -> Response:
     if f is None:
         return Response("CNPJ não encontrado na base local.", status_code=404)
     comp = await asyncio.to_thread(contatos_srv.listar, n)
-
-    def cel(v: Any) -> Any:
-        if isinstance(v, date):
-            return v.strftime("%d/%m/%Y")
-        if isinstance(v, dict):
-            return "Sim" if v.get("optante") else "Não"
-        if isinstance(v, str) and v[:1] in "=+-@":
-            return "'" + v
-        return v
-
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Identificação"
-    ws.append(["Campo", "Valor"])
-    rotulos = {
-        "cnpj": "CNPJ", "matriz_filial": "Matriz/filial", "razao_social": "Razão social",
-        "nome_fantasia": "Nome fantasia", "situacao": "Situação", "data_situacao": "Data da situação",
-        "motivo": "Motivo", "situacao_especial": "Situação especial", "data_abertura": "Abertura",
-        "natureza": "Natureza jurídica", "porte": "Porte", "capital_social": "Capital social",
-        "ente_federativo": "Ente federativo responsável", "qualificacao_responsavel": "Qualificação do responsável",
-        "simples": "Optante pelo Simples", "mei": "Optante pelo MEI",
-    }
-    for k, r in rotulos.items():
-        v = f["identificacao"].get(k)
-        if v not in (None, ""):
-            ws.append([r, cel(v)])
-    e = f["endereco"]
-    for r, v in (("Logradouro", " ".join(filter(None, [e["tipo_logradouro"], e["logradouro"]]))), ("Número", e["numero"]),
-                 ("Complemento", e["complemento"]), ("Bairro", e["bairro"]), ("CEP", e["cep"]),
-                 ("Município", e["municipio_nome"]), ("UF", e["uf"]), ("País", e["pais_nome"])):
-        if v:
-            ws.append([r, cel(v)])
-    ws.append(["Fonte", f"{f['base']['fonte']} — referência {f['base']['mes']}"])
-    wc = wb.create_sheet("Contatos")
-    wc.append(["Tipo", "Valor", "Classificação", "Origem", "Verificado em"])
-    for c in f["contatos_oficiais"]:
-        wc.append([c["tipo"], cel(c["formatado"]), c["subtipo"], "Oficial (Receita)", f"ref. {c['data_referencia']}"])
-    for c in comp:
-        wc.append([c["tipo"], cel(c["valor"]), c["subtipo"], f"Complementar: {c['fonte']}",
-                   cel(c["data_verificacao"]) if c["verificado"] else "não verificado"])
-    wn = wb.create_sheet("CNAEs")
-    wn.append(["Tipo", "Código", "Descrição"])
-    if f["cnaes"]["principal"]:
-        wn.append(["Principal", f"{f['cnaes']['principal']['codigo']:07d}", f["cnaes"]["principal"]["descricao"]])
-    for c in f["cnaes"]["secundarios"]:
-        wn.append(["Secundária", f"{c['codigo']:07d}", c["descricao"]])
-    wsoc = wb.create_sheet("Sócios")
-    wsoc.append(["Nome", "Tipo", "Documento (como publicado)", "Qualificação", "Entrada", "Faixa etária",
-                 "Representante legal", "Qualificação do representante"])
-    for s in f["socios"]:
-        rep = s["representante"] or {}
-        wsoc.append([cel(s["nome"]), s["tipo"], s["documento"], s["qualificacao"], cel(s["data_entrada"]),
-                     s["faixa_etaria"], cel(rep.get("nome")), rep.get("qualificacao")])
-    out = io.BytesIO()
-    wb.save(out)
-    return Response(out.getvalue(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    dados = await asyncio.to_thread(ficha_xlsx.montar, f, comp)
+    return Response(dados, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     headers={"Content-Disposition": f'attachment; filename="ficha-{n}.xlsx"'})
 
 
@@ -496,6 +442,10 @@ async def base_acao(request: Request, acao: str = Form(...), mes: str = Form("")
             job = await asyncio.to_thread(servico.iniciar_validacao)
             jobs.auditar("base.validar", detalhe=f"job={job['id']}", ip=ip)
             msg = "Validação iniciada."
+        elif acao == "organizar":
+            job = await asyncio.to_thread(servico.iniciar_organizacao)
+            jobs.auditar("base.organizar", detalhe=f"job={job['id']}", ip=ip)
+            msg = f"Organização por estado iniciada (tarefa #{job['id']}). As consultas continuam funcionando."
         elif acao == "restaurar":
             if confirmar.upper() != "CONFIRMAR":
                 msg = "Para restaurar a versão anterior, digite CONFIRMAR."

@@ -822,3 +822,6 @@ select[multiple].select { background-image: none; padding-right: var(--space-1);
 button.btn-link { padding: 0; border: 0; background: none; color: var(--color-primary); cursor: pointer; text-decoration: underline; font: inherit; }
 .exportacao-progresso { position: fixed; right: 16px; bottom: 16px; z-index: 60; display: flex; align-items: center; gap: 10px; max-width: calc(100vw - 32px); padding: 10px 14px; border-radius: 10px; background: var(--color-surface, #fff); border: 1px solid var(--color-border, rgba(127,127,127,.3)); box-shadow: 0 8px 24px rgba(0,0,0,.18); font-size: var(--text-sm); }
 .exportacoes { margin-top: var(--space-3); }
+
+/* So com JavaScript (acoes que dependem dele) */
+html:not(.js) .js-only { display: none; }
