@@ -731,6 +731,19 @@
 
     }
 
+    // Atalhos de prospeccao: lembra o ultimo estado escolhido (so neste navegador)
+    function initLembrarUf() {
+        $$("[data-lembrar-uf]").forEach((sel) => {
+            try {
+                const salvo = window.localStorage.getItem("cnpj-consulta:uf-atalho");
+                if (salvo && Array.from(sel.options).some((o) => o.value === salvo)) sel.value = salvo;
+                sel.addEventListener("change", () => window.localStorage.setItem("cnpj-consulta:uf-atalho", sel.value));
+            } catch (e) {
+                /* sem armazenamento local: so nao lembra */
+            }
+        });
+    }
+
     // Contatos repetidos: so quando pedido (a conferencia le a base inteira e
     // deixava toda busca mais lenta sem necessidade)
     function initDuplicidades() {
@@ -862,6 +875,7 @@
         initExportar();
         initContadores();
         initDuplicidades();
+        initLembrarUf();
         initApiForms();
         initPainelBase();
     });

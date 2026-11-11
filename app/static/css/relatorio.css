@@ -309,6 +309,13 @@ tr { break-inside: avoid; }
 }
 
 @media (max-width: 720px) {
+  .inner { padding-left: 5mm; padding-right: 5mm; }
+  .cover-top, .cover-body { padding-left: 5mm; padding-right: 5mm; }
+  .tabela { display: block; overflow-x: auto; }
+  .tabela .nowrap { white-space: normal; }
+  .check td:first-child, .check .item { width: auto; white-space: normal; }
+  .cover-meta dd.mono { white-space: normal; overflow-wrap: anywhere; }
+  .disclaimer { flex-direction: column; gap: 1mm; padding-left: 5mm; padding-right: 5mm; }
   .cover-top { flex-direction: column; }
   .cover-meta { text-align: left; }
   .kpis { grid-template-columns: repeat(2, 1fr); }

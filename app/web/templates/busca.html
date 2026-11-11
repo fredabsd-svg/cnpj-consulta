@@ -65,6 +65,27 @@
         </div>
 
         <details class="filtro-grupo" open>
+            <summary>Localização</summary>
+            <fieldset class="checks checks-uf">
+                <legend>UF</legend>
+                {% for u in ufs %}<label class="check"><input type="checkbox" name="uf" value="{{ u }}" {{ chk('uf', u) }} data-uf> {{ u }}</label>{% endfor %}
+            </fieldset>
+            <div class="field"><label for="f-municipio">Município <span class="muted small">(escolha a UF primeiro)</span></label>
+                <select class="select" id="f-municipio" name="municipio" multiple size="6" data-multi data-municipios>
+                    {% for m in municipios %}<option value="{{ m.codigo }}" {{ sel('municipio', m.codigo) }}>{{ m.nome }}/{{ m.uf }}</option>{% endfor %}
+                    {% for cod in params.get('municipio', []) %}{% if not (municipios | selectattr('codigo', 'equalto', cod|int) | list) %}<option value="{{ cod }}" selected>Código {{ cod }}</option>{% endif %}{% endfor %}
+                </select>
+                <span class="hint">Segure Ctrl (ou ⌘) para escolher vários: Palmas <strong>ou</strong> Araguaína.</span></div>
+            {{ campo("municipio_nome", placeholder="nome exato, ex.: PALMAS") }}
+            {{ campo("bairro") }}
+            {{ campo("cep", placeholder="início, ex.: 77") }}
+            {{ campo("logradouro") }}
+            {{ campo("endereco_completo") }}
+            <div class="field"><label for="f-excluir_municipio">Excluir municípios (NÃO)</label>
+                <input class="input" type="text" id="f-excluir_municipio" name="excluir_municipio" value="{{ params.get('excluir_municipio', []) | join(', ') }}" placeholder="códigos da Receita"></div>
+        </details>
+
+        <details class="filtro-grupo" open>
             <summary>Identificação</summary>
             {{ campo("razao", placeholder="ex.: contabil") }}
             {{ campo("fantasia") }}
@@ -87,27 +108,6 @@
                     {% for n in motivos %}<option value="{{ n.codigo }}" {{ sel('motivo', n.codigo) }}>{{ n.descricao }}</option>{% endfor %}
                 </select></div>
             {% endif %}
-        </details>
-
-        <details class="filtro-grupo" {% if params.uf or params.municipio or params.bairro or params.cep %}open{% endif %}>
-            <summary>Localização</summary>
-            <fieldset class="checks checks-uf">
-                <legend>UF</legend>
-                {% for u in ufs %}<label class="check"><input type="checkbox" name="uf" value="{{ u }}" {{ chk('uf', u) }} data-uf> {{ u }}</label>{% endfor %}
-            </fieldset>
-            <div class="field"><label for="f-municipio">Município <span class="muted small">(escolha a UF primeiro)</span></label>
-                <select class="select" id="f-municipio" name="municipio" multiple size="6" data-multi data-municipios>
-                    {% for m in municipios %}<option value="{{ m.codigo }}" {{ sel('municipio', m.codigo) }}>{{ m.nome }}/{{ m.uf }}</option>{% endfor %}
-                    {% for cod in params.get('municipio', []) %}{% if not (municipios | selectattr('codigo', 'equalto', cod|int) | list) %}<option value="{{ cod }}" selected>Código {{ cod }}</option>{% endif %}{% endfor %}
-                </select>
-                <span class="hint">Segure Ctrl (ou ⌘) para escolher vários: Palmas <strong>ou</strong> Araguaína.</span></div>
-            {{ campo("municipio_nome", placeholder="nome exato, ex.: PALMAS") }}
-            {{ campo("bairro") }}
-            {{ campo("cep", placeholder="início, ex.: 77") }}
-            {{ campo("logradouro") }}
-            {{ campo("endereco_completo") }}
-            <div class="field"><label for="f-excluir_municipio">Excluir municípios (NÃO)</label>
-                <input class="input" type="text" id="f-excluir_municipio" name="excluir_municipio" value="{{ params.get('excluir_municipio', []) | join(', ') }}" placeholder="códigos da Receita"></div>
         </details>
 
         <details class="filtro-grupo" {% if params.atividade or params.cnae or params.cnae_principal or params.cnae_descricao %}open{% endif %}>
@@ -251,6 +251,15 @@
             <li><a class="chip" href="/busca">Limpar filtros</a></li>
         </ul>
         {% endif %}
+        {% if info_base and info_base.schema_ok %}
+        <div class="rapidos no-print" role="group" aria-label="Filtros rápidos">
+            <span class="rapidos-titulo">{{ ui.icon('zap') }} Filtros rápidos</span>
+            {% for r in rapidos %}
+            <a class="chip chip-rapido{% if r.ativo %} ativo{% endif %}" href="/busca?{{ r.href }}" aria-pressed="{{ 'true' if r.ativo else 'false' }}"
+               title="{{ 'Remover este filtro' if r.ativo else 'Adicionar este filtro' }}">{% if r.ativo %}{{ ui.icon('check') }}{% endif %}{{ r.rotulo }}</a>
+            {% endfor %}
+        </div>
+        {% endif %}
     </div>
 
     {% if erro %}
@@ -269,6 +278,7 @@
                 <p class="muted small">Fonte: Receita Federal — dados abertos do CNPJ{% if r.mes_referencia %}, referência {{ r.mes_referencia }}{% endif %} · {{ r.tempo_ms }} ms</p>
             </div>
             <div class="resultado-ferramentas no-print">
+                {% if r.total > 0 %}<a class="btn btn-sm btn-primary" href="#exportar">{{ ui.icon('table') }} Exportar para Excel</a>{% endif %}
                 <label class="visually-hidden" for="f-ordem">Ordenar por</label>
                 <select class="select" id="f-ordem" data-troca-param="ordem">
                     {% for k, o in ordenacoes.items() %}<option value="{{ k }}" {% if r.ordem == k %}selected{% endif %}>Ordenar: {{ o[0] }}</option>{% endfor %}
@@ -365,7 +375,7 @@
             <p class="muted small" data-contadores-vazio>Carregando contadores…</p>
             <noscript><p class="muted small">Os contadores precisam de JavaScript.</p></noscript>
         </div>
-        <div class="card">
+        <div class="card" id="exportar">
             <h2>{{ ui.icon('download') }} Exportar e salvar</h2>
             <form action="/api/busca/exportar.csv" method="get" class="export-form" data-exportar>
                 {% for k, vs in params.items() %}{% if k not in ('pagina', 'colunas', 'finalidade') %}{% for v in vs %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}{% endif %}{% endfor %}
@@ -399,10 +409,7 @@
     </div>
     {% endif %}
     {% elif info_base and info_base.schema_ok and not erro %}
-    <div class="card section empty-state">
-        <p><strong>Escolha os filtros e clique em Aplicar.</strong> Exemplo: situação <em>Ativa</em>, UF <em>TO</em>, municípios Palmas ou Araguaína, atividade <em>Contabilidade</em>, combinação <em>Telefone e e-mail</em>, idade mínima 2 anos e <em>Tem sócios</em>.</p>
-        <p><a class="btn" href="/busca?situacao=2&uf=TO&municipio_nome=PALMAS&municipio_nome=ARAGUAINA&atividade=contabilidade&contato=telefone_e_email&idade_min=2&tem_socios=sim">Ver este exemplo</a></p>
-    </div>
+    {% include "_atalhos.html" %}
     {% endif %}
   </section>
 </div>

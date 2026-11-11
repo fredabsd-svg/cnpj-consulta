@@ -29,7 +29,12 @@ DICAS_SQL_BASE = (
     "1=matriz 2=filial; porte_empresa 0=nao informado 1=micro empresa 3=EPP 5=demais; opcao_simples/opcao_mei "
     "'S'/'N'; municipio = codigo da Receita (JOIN municipios ON codigo = municipio); cnae_fiscal_principal "
     "inteiro de 7 digitos (JOIN cnaes ON codigo = cnae_fiscal_principal); cnaes_secundarios INTEGER[]. "
-    "Use cnpj_completo para o CNPJ de 14 caracteres. A tabela metadata tem mes_referencia."
+    "Use cnpj_completo para o CNPJ de 14 caracteres. A tabela metadata tem mes_referencia. "
+    "DESEMPENHO: estabelecimentos fica gravada por UF (e CNPJ dentro da UF); sempre que souber o estado, "
+    "inclua `uf = 'XX'` no WHERE (le so o trecho do estado). Para achar um CNPJ sem saber a UF, consulte antes "
+    "cnpj_uf (cnpj_completo, cnpj_basico, uf), que esta em ordem de CNPJ. Participacoes de um socio: "
+    "socios_por_chave (socio_chave, cnpj_basico, ...), em ordem de socio. Essas duas tabelas so existem na "
+    "base organizada por estado."
 )
 
 EXTRAS: list[dict[str, Any]] = [
