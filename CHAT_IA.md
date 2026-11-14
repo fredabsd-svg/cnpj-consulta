@@ -100,6 +100,26 @@ que a IA só usa quando você pede: `cpf_completo_dos_socios`, `buscar_por_cpf`,
 Exportações feitas pelo chat aparecem como link de download na resposta
 (`/chat/arquivos/...`, só para o administrador).
 
+### Exportar a conversa em PDF ou Excel
+
+O botão **Exportar** (no alto da conversa) baixa a conversa inteira; os botões
+**PDF** e **Excel** que aparecem embaixo de cada resposta baixam só aquela
+pergunta e a resposta. O arquivo é montado no próprio app, sem passar pelo
+modelo (não gasta tokens).
+
+- **PDF:** relatório A4 com o título da conversa, modelo e data, cada pergunta
+  destacada e as respostas formatadas (títulos, listas, citações e tabelas com o
+  cabeçalho repetido em cada página e números alinhados à direita). Tabelas com
+  muitas colunas deixam a página deitada. Cabeçalho e rodapé com “Página X de Y”
+  e o aviso de que o conteúdo foi gerado por IA.
+- **Excel:** aba **Conversa** com o texto, e uma aba para cada tabela das
+  respostas (com link a partir da aba Conversa), com cabeçalho congelado, setas
+  de filtro e larguras ajustadas. Valores (R$), percentuais, quantidades e datas
+  viram números e datas de verdade; colunas de CNPJ, CPF, CEP, telefone e
+  códigos ficam como texto, sem perder zeros à esquerda.
+
+Cada exportação fica na auditoria (`chat.exportacao`, com conversa e formato).
+
 Exemplos:
 
 - “Faça a diligência cadastral do CNPJ 12.345.678/0001-95.”

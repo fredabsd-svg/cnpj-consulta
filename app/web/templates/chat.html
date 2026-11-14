@@ -42,7 +42,24 @@
             </div>
             <span class="chat-plano small" data-chat-plano hidden>Usando o plano do ChatGPT ·
                 <a href="https://chatgpt.com/settings/usage" target="_blank" rel="noopener noreferrer">Gerenciar uso</a></span>
-            <span class="faint small" data-chat-uso></span>
+            <div class="chat-topo-direita">
+                <span class="faint small" data-chat-uso></span>
+                <details class="more-actions chat-exportar" data-chat-exportar hidden>
+                    <summary class="btn btn-sm" aria-haspopup="menu">{{ ui.icon('download') }} Exportar</summary>
+                    <div class="more-actions-menu chat-exportar-menu" role="menu" aria-label="Exportar a conversa">
+                        <p class="chat-exportar-titulo">Exportar a conversa inteira</p>
+                        <button type="button" class="chat-exportar-opcao" role="menuitem" data-exportar="pdf">
+                            <span class="chat-exportar-icone" data-tipo="pdf">{{ ui.icon('file') }}</span>
+                            <span class="chat-exportar-texto"><strong>PDF</strong><span>Relatório A4, pronto para imprimir ou enviar</span></span>
+                        </button>
+                        <button type="button" class="chat-exportar-opcao" role="menuitem" data-exportar="xlsx">
+                            <span class="chat-exportar-icone" data-tipo="xlsx">{{ ui.icon('table') }}</span>
+                            <span class="chat-exportar-texto"><strong>Excel</strong><span>Texto da conversa e uma aba por tabela, com filtros</span></span>
+                        </button>
+                        <p class="chat-exportar-dica">Para exportar só uma resposta, use os botões abaixo dela.</p>
+                    </div>
+                </details>
+            </div>
         </div>
 
         <div class="chat-mensagens" data-chat-mensagens aria-live="polite">
