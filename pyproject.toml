@@ -28,6 +28,8 @@ dependencies = [
     "python-dotenv>=1.0",
     # Exportacao Excel (modo write_only: linhas em fluxo, sem carregar tudo)
     "openpyxl>=3.1",
+    # Exportacao do chat com IA em PDF (relatorio A4 gerado no servidor)
+    "reportlab>=4.0",
     # Servidor MCP (assistentes de IA usam as funcoes do app); API MCPServer da v2
     "mcp>=2.0,<3",
     # Chat com IA: modelos Claude pelo SDK oficial (outros provedores via httpx)

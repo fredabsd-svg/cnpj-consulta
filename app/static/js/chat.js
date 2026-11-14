@@ -25,8 +25,11 @@
         boasVindas: $("[data-chat-boasvindas]"),
         dialogo: $("[data-chat-dialogo]"),
         config: $("[data-chat-config-lista]"),
+        exportar: $("[data-chat-exportar]"),
     };
-    const estado = { provedores: [], conversas: [], atual: null, controle: null, enviando: false };
+    // turno: perguntas na tela (a exportacao de uma resposta usa esse numero, a partir de 1)
+    const estado = { provedores: [], conversas: [], atual: null, controle: null, enviando: false,
+        turno: 0, turnoComResposta: false };
 
     // ------------------------------------------------------------ utilitarios
 
@@ -49,6 +52,10 @@
         falha: ['<circle cx="12" cy="12" r="10"/>', "m15 9-6 6", "m9 9 6 6"],
         ferramenta: [null, "M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"],
         lixo: [null, "M3 6h18", "M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6", "M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"],
+        arquivo: [null, "M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z", "M14 2v4a2 2 0 0 0 2 2h4",
+            "M16 13H8", "M16 17H8", "M10 9H8"],
+        tabela: [null, "M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z", "M3 9h18",
+            "M3 15h18", "M9 3v18"],
     };
 
     function icone(nome) {
@@ -206,17 +213,45 @@
 
     function limparTela() {
         ui.msgs.replaceChildren();
+        estado.turno = 0;
+        estado.turnoComResposta = false;
+        atualizarExportar();
     }
 
     function mostrarVazio() {
-        ui.msgs.replaceChildren(ui.vazio);
+        limparTela();
+        ui.msgs.appendChild(ui.vazio);
     }
 
     function bolhaUsuario(texto) {
+        estado.turno += 1;
+        estado.turnoComResposta = false;
         ui.msgs.appendChild(el("div", "msg msg-usuario", texto));
     }
 
+    // Fim de um turno com resposta: atalhos para exportar so aquela resposta.
+    function fecharTurno() {
+        if (!estado.turno || !estado.turnoComResposta) return;
+        estado.turnoComResposta = false;
+        const barra = el("div", "msg-acoes");
+        barra.setAttribute("role", "group");
+        barra.setAttribute("aria-label", "Exportar esta resposta");
+        barra.appendChild(el("span", "msg-acoes-rotulo", "Exportar resposta"));
+        for (const [formato, rotulo, ic] of [["pdf", "PDF", "arquivo"], ["xlsx", "Excel", "tabela"]]) {
+            const b = el("button", "msg-acao");
+            b.type = "button";
+            b.dataset.exportar = formato;
+            b.dataset.turno = String(estado.turno);
+            b.title = "Baixar esta pergunta e a resposta em " + rotulo;
+            b.append(icone(ic), el("span", null, rotulo));
+            barra.appendChild(b);
+        }
+        ui.msgs.appendChild(barra);
+        atualizarExportar();
+    }
+
     function bolhaAssistente(texto) {
+        estado.turnoComResposta = true;
         const d = el("div", "msg msg-assistente prose");
         d.dataset.bruto = texto || "";
         d.appendChild(markdown(d.dataset.bruto));
@@ -253,11 +288,12 @@
     function renderExibicao(itens) {
         limparTela();
         for (const it of itens || []) {
-            if (it.tipo === "usuario") bolhaUsuario(it.texto);
+            if (it.tipo === "usuario") { fecharTurno(); bolhaUsuario(it.texto); }
             else if (it.tipo === "assistente") bolhaAssistente(it.texto);
             else if (it.tipo === "aviso") aviso(it.texto);
             else if (it.tipo === "ferramenta") concluirFerramenta(blocoFerramenta(it.nome, it.entrada), it.ok, it.resumo);
         }
+        fecharTurno();
         if (!ui.msgs.children.length) mostrarVazio();
         rolar();
     }
@@ -448,6 +484,7 @@
         ui.provedor.disabled = sim;
         ui.modelo.disabled = sim;
         ui.modeloOutro.disabled = sim;
+        if (sim) ui.exportar.open = false;
     }
 
     async function enviar(texto) {
@@ -475,6 +512,8 @@
             if (e.name !== "AbortError") { aviso(e.message); toast(e.message); }
         } finally {
             estado.controle = null;
+            fecharTurno();
+            rolar();
             ocupado(false);
             carregarConversas();
             ui.texto.focus();
@@ -587,6 +626,57 @@
     function ajustarAltura() {
         ui.texto.style.height = "auto";
         ui.texto.style.height = Math.min(ui.texto.scrollHeight, 240) + "px";
+    }
+
+    // ------------------------------------------------------------ exportar (PDF / Excel)
+
+    function atualizarExportar() {
+        const tem = !!estado.atual && !!ui.msgs.querySelector(".msg-acoes");
+        ui.exportar.hidden = !tem;
+        if (!tem) ui.exportar.open = false;
+    }
+
+    const NOME_FORMATO = { pdf: "PDF", xlsx: "Excel" };
+
+    async function exportar(formato, turno, botao) {
+        if (!estado.atual) return;
+        if (estado.enviando) { toast("Aguarde a resposta terminar para exportar."); return; }
+        const q = new URLSearchParams({ formato });
+        if (turno) q.set("turno", turno);
+        let conteudoOriginal = null;
+        if (botao) {
+            botao.disabled = true;
+            botao.setAttribute("aria-busy", "true");
+            if (botao.classList.contains("msg-acao")) {
+                conteudoOriginal = Array.from(botao.childNodes);
+                const sp = el("span", "spinner");
+                sp.setAttribute("aria-hidden", "true");
+                botao.replaceChildren(sp, el("span", null, "Gerando…"));
+            }
+        }
+        try {
+            const r = await api("/chat/api/conversas/" + estado.atual.id + "/exportar?" + q.toString());
+            const blob = await r.blob();
+            const m = /filename="([^"]+)"/.exec(r.headers.get("Content-Disposition") || "");
+            const nome = m ? m[1] : "consulta-ia." + formato;
+            const url = URL.createObjectURL(blob);
+            const a = el("a");
+            a.href = url;
+            a.download = nome;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 60000);
+            toast(NOME_FORMATO[formato] + " pronto: " + nome);
+        } catch (e) {
+            toast("Não foi possível exportar: " + e.message);
+        } finally {
+            if (botao) {
+                botao.disabled = false;
+                botao.removeAttribute("aria-busy");
+                if (conteudoOriginal) botao.replaceChildren(...conteudoOriginal);
+            }
+        }
     }
 
     // ------------------------------------------------------------ configuracao dos provedores
@@ -741,8 +831,30 @@
     $('[data-chat="fechar"]').addEventListener("click", () => ui.dialogo.close());
     $('[data-chat="entendi"]').addEventListener("click", () => ui.boasVindas.close());
     ui.msgs.addEventListener("click", (ev) => {
+        const ex = ev.target.closest("[data-exportar]");
+        if (ex) { exportar(ex.dataset.exportar, Number(ex.dataset.turno) || null, ex); return; }
         const b = ev.target.closest("[data-exemplo]");
         if (b) enviar(b.textContent);
+    });
+    ui.exportar.addEventListener("toggle", () => {
+        if (ui.exportar.open && estado.enviando) {
+            ui.exportar.open = false;
+            toast("Aguarde a resposta terminar para exportar.");
+        }
+    });
+    ui.exportar.querySelectorAll("[data-exportar]").forEach((b) => b.addEventListener("click", async () => {
+        await exportar(b.dataset.exportar, null, b);
+        ui.exportar.open = false;
+    }));
+    // Menu fecha ao clicar fora ou com Esc (volta o foco para o botao).
+    document.addEventListener("click", (ev) => {
+        if (ui.exportar.open && !ui.exportar.contains(ev.target)) ui.exportar.open = false;
+    });
+    ui.exportar.addEventListener("keydown", (ev) => {
+        if (ev.key === "Escape" && ui.exportar.open) {
+            ui.exportar.open = false;
+            ui.exportar.querySelector("summary").focus();
+        }
     });
 
     (async function iniciar() {

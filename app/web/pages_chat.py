@@ -11,10 +11,10 @@ import json
 from typing import Any
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse
 
-from app.chat import chatgpt, conversas, motor, oauth, provedores
+from app.chat import chatgpt, conversas, exportar, motor, oauth, provedores
 from app.chat.ferramentas import arquivo_exportado_valido
 from app.config import get_settings
 from app.receita import jobs
@@ -251,6 +251,35 @@ async def enviar(request: Request, conversa_id: int, dados: dict[str, Any] = Bod
 
     return StreamingResponse(eventos(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
+
+
+_FORMATOS_EXPORTACAO = {
+    "pdf": (exportar.gerar_pdf, "application/pdf"),
+    "xlsx": (exportar.gerar_xlsx, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+}
+
+
+@router.get("/chat/api/conversas/{conversa_id}/exportar", dependencies=api)
+async def exportar_conversa(request: Request, conversa_id: int, formato: str = "pdf",
+                            turno: int | None = None) -> Response:
+    """Conversa inteira (ou so a resposta `turno`, contada a partir de 1) em PDF ou Excel."""
+    if formato not in _FORMATOS_EXPORTACAO:
+        raise HTTPException(status_code=422, detail="Formato inválido: use pdf ou xlsx.")
+    c = await asyncio.to_thread(conversas.obter, conversa_id)
+    if c is None:
+        raise HTTPException(status_code=404, detail="Conversa não encontrada.")
+    gerar, tipo = _FORMATOS_EXPORTACAO[formato]
+    try:
+        conteudo = await asyncio.to_thread(gerar, c, turno)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    jobs.auditar("chat.exportacao", ip=ip_de(request),
+                 detalhe=f"origem=chat conversa={conversa_id} formato={formato} turno={turno or 'todos'}")
+    nome = exportar.nome_arquivo(c, formato, turno)
+    return Response(conteudo, media_type=tipo, headers={
+        "Content-Disposition": f'attachment; filename="{nome}"', "Cache-Control": "no-store"})
 
 
 @router.get("/chat/arquivos/{nome}", dependencies=api)
